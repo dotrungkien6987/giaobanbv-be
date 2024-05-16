@@ -7,7 +7,7 @@ const userController = {};
 userController.insertOne = catchAsync(async (req, res, next) => {
   //get data from request
   console.log(req.body)
-  let { UserName, Email, PassWord, KhoaID, HoTen, PhanQuyen } = req.body;
+  let { UserName, Email, PassWord, KhoaID, HoTen, PhanQuyen,KhoaTaiChinh } = req.body;
 
   //Business Logic Validation
   let user = await User.findOne({ UserName });
@@ -24,6 +24,7 @@ userController.insertOne = catchAsync(async (req, res, next) => {
     KhoaID,
     HoTen,
     PhanQuyen,
+    KhoaTaiChinh,
   });
   const accessToken = await user.generateToken();
   //Response
@@ -112,7 +113,7 @@ console.log("userID",userId)
   
     "PhanQuyen",
     "UserName",
-    
+    "KhoaTaiChinh",
   ];
   // const salt = await bcrypt.genSalt(10);
   // let PassWord = req.body["PassWord"]

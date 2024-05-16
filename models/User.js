@@ -15,6 +15,7 @@ const userSchema = Schema(
       type: String,
       enum: ["admin","manager","nomal"],
     },
+    KhoaTaiChinh:{type:[String],require:false,default:[]}
   },
   { timestamps: true }
 );

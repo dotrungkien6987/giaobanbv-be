@@ -77,7 +77,7 @@ router.get("/",authentication.loginRequired,authentication.adminRequired, userCo
  */
  router.put(
   "/me/resetpass",
-  authentication.loginRequired,authentication.adminRequired,
+  authentication.loginRequired,
   
   userController.resetPassMe
 );

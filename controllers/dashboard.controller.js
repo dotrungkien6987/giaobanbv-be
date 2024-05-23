@@ -227,6 +227,8 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
                     "json_doanhthu_chuaduyetkt_thanghientai_theovienphi_chuaravien",
                     "json_doanhthu_chuaduyetkt_thangtruoc_theovienphi_daravien",
                     "json_doanhthu_chuaduyetkt_thangtruoc_theovienphi_chuaravien",
+                    "json_doanhthu_chuaduyetketoan_thanghientai_theokhoa",
+                    "json_doanhthu_chuaduyetketoan_thangtruoc_theokhoa",
                   ],
                 ],
               },

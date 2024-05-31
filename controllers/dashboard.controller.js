@@ -257,7 +257,7 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
     const chisoKhoa = {};
 
     dashboard[0].ChiSoDashBoard.forEach((item) => {
-      const chiSoJson = JSON.parse(item.Value); // Chuyển đổi từ chuỗi JSON thành đối tượng
+      const chiSoJson = item.Value!=="null"?JSON.parse(item.Value):[]; // Chuyển đổi từ chuỗi JSON thành đối tượng
       const chiSoTheoKhoaid = chiSoJson.filter(
         (item) => item.khoaid === parseInt(KhoaID, 10) // Lọc theo khoaid
       );

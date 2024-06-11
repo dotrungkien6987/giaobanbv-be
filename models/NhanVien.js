@@ -2,8 +2,8 @@ const mongosee = require("mongoose");
 const Schema = mongosee.Schema;
 const nhanvienSchema = Schema(
   {
-    Ngay: { type: Date, require: true },
-    KhoaID: { type: Schema.ObjectId, required: true, ref: "Khoa" },
+    
+    KhoaID: { type: Schema.ObjectId, required: false, ref: "Khoa" },
     TinChiBanDau:{type:Number, required:false, default:0},
     MaNhanVien: { type: String, require: true, unique: true },
     Ten: { type: String, required: true,},
@@ -13,6 +13,9 @@ const nhanvienSchema = Schema(
       enum: [0,1,2],
     },
     TrinhDoChuyenMon: { type: String, default: "" },
+    SoDienThoai: { type: String, default: "" },
+    Email: { type: String, default: "" },
+    
     Images: { type: [String], default: [] },
     isDeleted: { type: Boolean, default: false, select: false },
    

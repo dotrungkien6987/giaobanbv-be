@@ -28,7 +28,7 @@ router.post(
 router.get(
   "/",
   authentication.loginRequired,
-  nhanvienController.getNhanviens
+  nhanvienController.getNhanviensPhanTrang
 );
 
 /**

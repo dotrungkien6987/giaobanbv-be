@@ -42,12 +42,12 @@ console.log("userID",nhanvienID)
 });
 
 
-nhanvienController.getNhanviens = catchAsync(async (req, res, next) => {
+nhanvienController.getNhanviensPhanTrang = catchAsync(async (req, res, next) => {
   // const curentUserId = req.userId;
   let { page, limit, ...filter } = { ...req.query };
 
   page = parseInt(page) || 1;
-  limit = parseInt(limit) || 10;
+  limit = parseInt(limit) || 100;
 
   const filterConditions = [];
 
@@ -69,7 +69,7 @@ nhanvienController.getNhanviens = catchAsync(async (req, res, next) => {
   const offset = limit * (page - 1);
 
   console.log("filter",filterConditions)
-  let nhanviens = await NhanVien.find(filterCriteria).populate('KhoaSuCo')
+  let nhanviens = await NhanVien.find(filterCriteria).populate('KhoaID')
     .sort({ createdAt: -1 })
     .skip(offset)
     .limit(limit);

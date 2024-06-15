@@ -15,7 +15,10 @@ const nhanvienSchema = Schema(
     TrinhDoChuyenMon: { type: String, default: "" },
     SoDienThoai: { type: String, default: "" },
     Email: { type: String, default: "" },
-    
+    GioiTinh: {
+      type: Number,
+      enum: [0,1],
+    },
     Images: { type: [String], default: [] },
     isDeleted: { type: Boolean, default: false, select: false },
    

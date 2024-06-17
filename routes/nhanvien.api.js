@@ -18,6 +18,18 @@ router.post(
   
   nhanvienController.insertOne
 );
+/**
+ * @route PUT /nhanvien
+ * @description Insert  new nhanvien
+ * @body {nhanvien}
+ * @access  login require,
+ */
+router.put(
+  "/",
+  authentication.loginRequired,
+  
+  nhanvienController.updateOneNhanVien
+);
 
 /**
  * @route GET /nhanvien

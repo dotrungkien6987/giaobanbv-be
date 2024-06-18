@@ -49,7 +49,7 @@ nhanvienController.getNhanviensPhanTrang = catchAsync(async (req, res, next) => 
   page = parseInt(page) || 1;
   limit = parseInt(limit) || 100;
 
-  const filterConditions = [];
+  const filterConditions = [{ isDeleted: false }];
 
   if (filter.UserName) {
     // filterConditions.push({ UserName: { $regex: filter.UserName, $options: "i" } });
@@ -86,10 +86,10 @@ nhanvienController.getNhanviensPhanTrang = catchAsync(async (req, res, next) => 
 
 nhanvienController.deleteOneNhanVien = catchAsync(async (req, res, next) => {
   
-  const sucoId = req.params.sucoId;
-
-  const suco = await NhanVien.findOneAndUpdate({
-    _id: sucoId,
+  const nhanvienID = req.params.nhanvienID;
+console.log('nhanvienID',req.params)
+  const nhanvien = await NhanVien.findOneAndUpdate({
+    _id: nhanvienID,
     },{ isDeleted: true },
     { new: true });
  
@@ -97,7 +97,7 @@ nhanvienController.deleteOneNhanVien = catchAsync(async (req, res, next) => {
     res,
     200,
     true,
-    suco,
+    nhanvien,
     null,
     "Delete User successful"
   );
@@ -106,13 +106,13 @@ nhanvienController.deleteOneNhanVien = catchAsync(async (req, res, next) => {
 nhanvienController.updateOneNhanVien = catchAsync(async (req, res, next) => {
  
   let {nhanvien } = req.body;
-  console.log("bcsuco",nhanvien)
-let suco = await NhanVien.findById(nhanvien._id||0);
-if(!suco) throw new AppError(400,"SuCo not found","Update Suco error");
-if (suco) {
+  console.log("body",nhanvien)
+let nhanvienUpdate = await NhanVien.findById(nhanvien._id||0);
+if(!nhanvienUpdate) throw new AppError(400,"nhanvienUpdate not found","Update nhanvienUpdate error");
+if (nhanvienUpdate) {
   
-  const id = suco._id;
-  suco = await NhanVien.findByIdAndUpdate(id, nhanvien, {
+  const id = nhanvienUpdate._id;
+  nhanvienUpdate = await NhanVien.findByIdAndUpdate(id, nhanvien, {
     new: true,
   });
 }
@@ -121,7 +121,7 @@ if (suco) {
     res,
     200,
     true,
-    suco,
+    nhanvien,
     null,
     "Update Suco successful"
   );

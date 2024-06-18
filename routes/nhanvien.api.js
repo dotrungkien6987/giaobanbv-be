@@ -50,4 +50,14 @@ router.get(
  * @access  login require,
  */
 
+
+router.delete(
+  "/:nhanvienID",
+  authentication.loginRequired,
+  validators.validate([
+    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
+      ]),
+      nhanvienController.deleteOneNhanVien
+);
+
 module.exports = router;

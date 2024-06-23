@@ -7,13 +7,12 @@ nhanvienController.insertOne = catchAsync(async (req, res, next) => {
   //get data from request
   // let { Ngay,KhoaID, BSTruc, DDTruc, GhiChu,CBThemGio,UserID,ChiTietBenhNhan,ChiTietChiSo } = req.body;
   console.log("reqbody", req.body);
-  let nhanvien = {...req.body};
+  const nhanvienData = {...req.body};
 
   //Business Logic Validation
-  
-  console.log(nhanvien);
-
-  nhanvien = await NhanVien.create(nhanvien)
+ 
+  let nhanvien = await NhanVien.create(nhanvienData);
+  nhanvien = await NhanVien.findById(nhanvien._id).populate('KhoaID');
  
   //Process
 
@@ -114,14 +113,14 @@ if (nhanvienUpdate) {
   const id = nhanvienUpdate._id;
   nhanvienUpdate = await NhanVien.findByIdAndUpdate(id, nhanvien, {
     new: true,
-  });
+  }).populate('KhoaID');
 }
-
+console.log('nhanvienupdate',nhanvienUpdate)
   return sendResponse(
     res,
     200,
     true,
-    nhanvien,
+    nhanvienUpdate,
     null,
     "Update Suco successful"
   );

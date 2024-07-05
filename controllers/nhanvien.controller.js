@@ -43,8 +43,8 @@ console.log("userID",nhanvienID)
 
 nhanvienController.getNhanviensPhanTrang = catchAsync(async (req, res, next) => {
   // const curentUserId = req.userId;
+  console.log("getNhanViensPhanTrang")
   let { page, limit, ...filter } = { ...req.query };
-
   page = parseInt(page) || 1;
   limit = parseInt(limit) || 100;
 

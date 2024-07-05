@@ -10,6 +10,7 @@ var whitelist = [
   `http://bvdktphutho.net`,
   `http://192.168.5.136:3000`,
   `http://localhost:3000`,
+  `http://localhost:3001`,
   `http://192.168.2.48:3000`,
 ];
 var corsOptionsDelegate = function (req, callback) {

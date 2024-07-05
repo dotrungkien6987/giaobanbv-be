@@ -39,4 +39,7 @@ router.use("/daotao", daotaoApi);
 const nhanvienApi = require("./nhanvien.api");
 router.use("/nhanvien", nhanvienApi);
 
+const datafixApi = require("./datafix.api");
+router.use("/datafix", datafixApi);
+
 module.exports = router;

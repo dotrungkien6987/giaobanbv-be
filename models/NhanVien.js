@@ -13,6 +13,7 @@ const nhanvienSchema = Schema(
       enum: [0,1,2],
     },
     TrinhDoChuyenMon: { type: String, default: "" },
+    CMND: { type: String, default: "" },
     SoDienThoai: { type: String, default: "" },
     Email: { type: String, default: "" },
     GioiTinh: {

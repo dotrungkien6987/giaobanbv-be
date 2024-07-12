@@ -1,6 +1,7 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const NhanVien = require("../models/NhanVien");
 const Khoa = require("../models/Khoa");
+const moment = require("moment-timezone");
 const nhanvienController = {};
 
 nhanvienController.insertOne = catchAsync(async (req, res, next) => {
@@ -123,6 +124,62 @@ console.log('nhanvienupdate',nhanvienUpdate)
     nhanvienUpdate,
     null,
     "Update Suco successful"
+  );
+});
+
+
+nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
+  console.log("body",req.body)
+  const nhanVienArray = req.body.jsonData; // Mảng đối tượng nhân viên
+
+  if (!Array.isArray(nhanVienArray)) {
+    throw new AppError(400, "Dữ liệu nhập vào không hợp lệ", "Import NhanVien Error");
+  }
+
+  for (const nhanvien of nhanVienArray) {
+    // Chuyển đổi TenKhoa thành KhoaID
+    const khoa = await Khoa.findOne({ TenKhoa: nhanvien.TenKhoa });
+    if (!khoa) {
+      throw new AppError(400, `Không tìm thấy khoa với tên: ${nhanvien.TenKhoa}`, "Import NhanVien Error");
+    }
+    nhanvien.KhoaID = khoa._id;
+
+     // Chuyển đổi NgaySinh từ text sang Date với múi giờ
+     nhanvien.NgaySinh = moment.tz(nhanvien.NgaySinh, "DD/MM/YYYY", "Asia/Ho_Chi_Minh").toDate();
+
+    // Chuyển đổi GioiTinh từ text sang số
+    if (nhanvien.GioiTinh === "Nam") {
+      nhanvien.GioiTinh = 0;
+    } else if (nhanvien.GioiTinh === "Nữ") {
+      nhanvien.GioiTinh = 1;
+    } else {
+      throw new AppError(400, `Giới tính không hợp lệ: ${nhanvien.GioiTinh}`, "Import NhanVien Error");
+    }
+
+    // Tạo một đối tượng mới từ model để validate dữ liệu
+    let newNhanVien = new NhanVien(nhanvien);
+
+    // Validate dữ liệu
+    const validationError = newNhanVien.validateSync();
+    if (validationError) {
+      throw new AppError(400, `Dữ liệu không hợp lệ cho nhân viên: ${JSON.stringify(nhanvien)}`, validationError.message);
+    }
+
+    // Nếu dữ liệu hợp lệ, thực hiện cập nhật hoặc thêm mới
+    await NhanVien.findOneAndUpdate(
+      { MaNhanVien: nhanvien.MaNhanVien },
+      { $set: nhanvien },
+      { upsert: true, new: true }
+    );
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    null,
+    null,
+    "Import NhanVien thành công"
   );
 });
 

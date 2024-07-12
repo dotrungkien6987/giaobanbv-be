@@ -61,3 +61,10 @@ router.delete(
 );
 
 module.exports = router;
+
+router.post(
+  "/import",
+  authentication.loginRequired,
+  
+  nhanvienController.importNhanVien
+);

@@ -1,4 +1,5 @@
 const express = require("express");
+const bodyParser = require('body-parser');
 require("dotenv").config();
 const path = require("path");
 const cookieParser = require("cookie-parser");
@@ -28,6 +29,10 @@ const { sendResponse } = require("./helpers/utils");
 const indexRouter = require("./routes/index");
 
 const app = express();
+
+// Tăng giới hạn kích thước payload
+app.use(bodyParser.json({ limit: '1mb' })); // 10mb là giới hạn mới, bạn có thể thay đổi theo nhu cầu của mình
+app.use(bodyParser.urlencoded({ limit: '1mb', extended: true }));
 
 app.use(logger("dev"));
 app.use(express.json());

@@ -12,6 +12,15 @@ const authentication = require("../middlewares/authentication");
  * @params {Thang, Nam}
  * @access login require,
  */
-router.get("/getAll",authentication.loginRequired,datafixController.getDataFix)
+router.get(
+  "/getAll",
+  authentication.loginRequired,
+  datafixController.getDataFix
+);
 
+router.post(
+  "/insertorupdate",
+  authentication.loginRequired,
+  datafixController.insertOrUpdateDataFix
+);
 module.exports = router;

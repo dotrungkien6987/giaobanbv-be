@@ -19,7 +19,7 @@ router.get(
 );
 
 router.post(
-  "/insertorupdate",
+  "/insertOrUpdate",
   authentication.loginRequired,
   datafixController.insertOrUpdateDataFix
 );

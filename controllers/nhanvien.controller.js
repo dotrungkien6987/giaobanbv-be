@@ -47,18 +47,9 @@ nhanvienController.getNhanviensPhanTrang = catchAsync(async (req, res, next) => 
   console.log("getNhanViensPhanTrang")
   let { page, limit, ...filter } = { ...req.query };
   page = parseInt(page) || 1;
-  limit = parseInt(limit) || 100;
+  limit = parseInt(limit) || 2000;
 
   const filterConditions = [{ isDeleted: false }];
-
-  if (filter.UserName) {
-    // filterConditions.push({ UserName: { $regex: filter.UserName, $options: "i" } });
-    filterConditions.push({ $or: [
-      { HinhThuc: { $regex: filter.UserName, $options: "i" } },
-      { TenBN: { $regex: filter.UserName, $options: "i" } },
-      { SoBA: { $regex: filter.UserName, $options: "i" } }
-    ] });
-  }
 
   const filterCriteria = filterConditions.length
     ? { $and: filterConditions }

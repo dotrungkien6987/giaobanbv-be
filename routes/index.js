@@ -39,6 +39,9 @@ router.use("/daotao", daotaoApi);
 const nhanvienApi = require("./nhanvien.api");
 router.use("/nhanvien", nhanvienApi);
 
+const hinhthuccapnhatApi = require("./hinhthuccapnhat.api");
+router.use("/hinhthuccapnhat", hinhthuccapnhatApi);
+
 const datafixApi = require("./datafix.api");
 router.use("/datafix", datafixApi);
 

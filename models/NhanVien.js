@@ -6,6 +6,7 @@ const nhanvienSchema = Schema(
     KhoaID: { type: Schema.ObjectId, required: false, ref: "Khoa" },
     TinChiBanDau:{type:Number, required:false, default:0},
     MaNhanVien: { type: String, require: true, unique: true },
+
     Ten: { type: String, required: true,},
     NgaySinh: { type: Date, require: true },
     Loai:  {
@@ -13,6 +14,8 @@ const nhanvienSchema = Schema(
       enum: [0,1,2],
     },
     TrinhDoChuyenMon: { type: String, default: "" },
+    DanToc: { type: String, default: "" },
+    PhamViHanhNghe: { type: String, default: "" },
     ChucDanh: { type: String, default: "" },
     ChucVu: { type: String, default: "" },
     

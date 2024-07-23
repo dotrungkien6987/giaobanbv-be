@@ -18,6 +18,9 @@ const datafixSchema = Schema({
   TrinhDoChuyenMon: [{ TrinhDoChuyenMon: { type: String, required: true } ,_id:false} ],
   NguonKinhPhi: [{ NguonKinhPhi: { type: String, required: true } ,_id:false} ],
   NoiDaoTao: [{ NoiDaoTao: { type: String, required: true } ,_id:false} ],
+  HinhThucDaoTao: [{ HinhThucDaoTao: { type: String, required: true } ,_id:false} ],
+  DanToc: [{ DanToc: { type: String, required: true } ,_id:false} ],
+  PhamViHanhNghe: [{ PhamViHanhNghe: { type: String, required: true } ,_id:false} ],
   
 });
 const DaTaFix = mongoose.model("DaTaFix", datafixSchema);

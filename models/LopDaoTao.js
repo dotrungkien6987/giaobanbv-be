@@ -4,14 +4,15 @@ const Schema = mongosee.Schema;
 const lopdaotaoSchema = Schema(
   {
    
-    HinhThucCapNhatID: { type: Schema.ObjectId, required: true, ref: "HinhThucCapNhat" },
+    // HinhThucCapNhatID: { type: Schema.ObjectId, required: true, ref: "HinhThucCapNhat" },
     
+    MaHinhThucCapNhat: { type: String, required: true,},
     Ten: { type: String, required: true,},
     QuyetDinh: { type: String, require: true, unique: true },
-    
     NoiDaoTao: { type: String, default: "" },
     NguonKinhPhi: { type: String, default: "" },
     HinhThucDaoTao: { type: String, default: "" },
+    GhiChu: { type: String, default: "" },
     SoLuong: { type: Number, default: 1 },
     Images: { type: [String], default: [] },
     NgayBatDau: { type: Date, require: false },

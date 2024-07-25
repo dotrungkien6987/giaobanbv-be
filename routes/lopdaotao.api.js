@@ -49,7 +49,11 @@ router.get(
  * @params {sucoId}
  * @access  login require,
  */
-
+router.get(
+  "/:lopdaotaoID",
+  authentication.loginRequired, validators.validate([param("lopdaotaoID").exists().isString().custom(validators.checkObjectId)]),
+  lopdaotaoController.getById
+);
 
 router.delete(
   "/:lopdaotaoID",

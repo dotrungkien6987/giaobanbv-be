@@ -8,7 +8,7 @@ const lopdaotaoSchema = Schema(
     
     MaHinhThucCapNhat: { type: String, required: true,},
     Ten: { type: String, required: true,},
-    QuyetDinh: { type: String, require: true, unique: true },
+    QuyetDinh: { type: String, require: true, default: "" },
     NoiDaoTao: { type: String, default: "" },
     NguonKinhPhi: { type: String, default: "" },
     HinhThucDaoTao: { type: String, default: "" },

@@ -105,7 +105,7 @@ if (lopdaotaoUpdate) {
   const id = lopdaotaoUpdate._id;
   lopdaotaoUpdate = await LopDaoTao.findByIdAndUpdate(id, lopdaotao, {
     new: true,
-  }).populate('KhoaID');
+  });
 }
 console.log('lopdaotaoupdate',lopdaotaoUpdate)
   return sendResponse(
@@ -117,7 +117,6 @@ console.log('lopdaotaoupdate',lopdaotaoUpdate)
     "Update Suco successful"
   );
 });
-
 
 
 module.exports = lopdaotaoController;

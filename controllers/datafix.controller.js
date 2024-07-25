@@ -71,6 +71,9 @@ datafixController.insertOrUpdateDataFix = catchAsync(async (req, res, next) => {
   datafixUpdate.TrinhDoChuyenMon = addIndexToItems(datafixUpdate.TrinhDoChuyenMon);
   datafixUpdate.NguonKinhPhi = addIndexToItems(datafixUpdate.NguonKinhPhi);
   datafixUpdate.NoiDaoTao = addIndexToItems(datafixUpdate.NoiDaoTao);
+  datafixUpdate.HinhThucDaoTao = addIndexToItems(datafixUpdate.HinhThucDaoTao);
+  datafixUpdate.DanToc = addIndexToItems(datafixUpdate.DanToc);
+  datafixUpdate.PhamViHanhNghe = addIndexToItems(datafixUpdate.PhamViHanhNghe);
 
   console.log("datafixUpdate", datafixUpdate);
   //response

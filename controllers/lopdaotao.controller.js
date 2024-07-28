@@ -7,8 +7,8 @@ const lopdaotaoController = {};
 lopdaotaoController.insertOne = catchAsync(async (req, res, next) => {
   //get data from request
   // let { Ngay,KhoaID, BSTruc, DDTruc, GhiChu,CBThemGio,UserID,ChiTietBenhNhan,ChiTietChiSo } = req.body;
-  console.log("reqbody", req.body);
-  const lopdaotaoData = {...req.body};
+  const lopdaotaoData = {...req.body.lopdaotaoData};
+  console.log("reqbody",lopdaotaoData);
 
   //Business Logic Validation
  
@@ -96,8 +96,8 @@ console.log('lopdaotaoID',req.params)
 
 lopdaotaoController.updateOneLopDaoTao = catchAsync(async (req, res, next) => {
  
-  let {lopdaotao } = req.body;
-  console.log("body",lopdaotao)
+  let lopdaotao  = req.body;
+  console.log("body",req.body);
 let lopdaotaoUpdate = await LopDaoTao.findById(lopdaotao._id||0);
 if(!lopdaotaoUpdate) throw new AppError(400,"lopdaotaoUpdate not found","Update lopdaotaoUpdate error");
 if (lopdaotaoUpdate) {

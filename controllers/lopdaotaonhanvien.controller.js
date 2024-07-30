@@ -1,12 +1,19 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
+const mongoose = require("mongoose");
 const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const lopdaotaonhanvienController = {};
+
+
 lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (req, res, next) => {
   // Lấy dữ liệu từ request
-  const lopdaotaonhanvienData = req.body.lopdaotaonhanvienData;
-  const lopdaotaoID = req.body.lopdaotaoID;
+  const lopdaotaonhanvienData = req.body.lopdaotaonhanvienData.map(item => ({
+    ...item,
+    LopDaoTaoID: new mongoose.Types.ObjectId(item.LopDaoTaoID),
+    NhanVienID: new mongoose.Types.ObjectId(item.NhanVienID)
+  }));
+  const lopdaotaoID = new mongoose.Types.ObjectId(req.body.lopdaotaoID);
   console.log("reqbody", lopdaotaonhanvienData);
 
   // Tìm tất cả các bản ghi trong LopDaoTaoNhanVien có LopDaoTaoID bằng với lopdaotaoID
@@ -15,10 +22,16 @@ lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (
   // So sánh dữ liệu
   const toInsert = [];
   const toUpdate = [];
-  const toDelete = lopdaotaonhanvienOld.filter(oldItem => !lopdaotaonhanvienData.some(newItem => newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)));
+  const toDelete = lopdaotaonhanvienOld.filter(oldItem => 
+    !lopdaotaonhanvienData.some(newItem => 
+      newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)
+    )
+  );
 
   lopdaotaonhanvienData.forEach(newItem => {
-    const matchingOldItem = lopdaotaonhanvienOld.find(oldItem => newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID));
+    const matchingOldItem = lopdaotaonhanvienOld.find(oldItem => 
+      newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)
+    );
     if (matchingOldItem) {
       toUpdate.push(newItem);
     } else {
@@ -31,7 +44,9 @@ lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (
   await LopDaoTaoNhanVien.deleteMany({ _id: { $in: toDelete.map(item => item._id) } });
 
   for (const newItem of toUpdate) {
-    const oldItem = lopdaotaonhanvienOld.find(oldItem => newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID));
+    const oldItem = lopdaotaonhanvienOld.find(oldItem => 
+      newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)
+    );
     const updatedItem = {
       ...oldItem.toObject(),
       VaiTro: newItem.VaiTro,
@@ -48,6 +63,7 @@ lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (
   // Response
   sendResponse(res, 200, true, newLopDaoTaoNhanVien, null, "Cập nhật thành công");
 });
+
 
 lopdaotaonhanvienController.getById = catchAsync(async (req, res, next) => {
   const lopdaotaonhanvienID = req.params.lopdaotaonhanvienID;

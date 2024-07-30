@@ -1,5 +1,6 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const LopDaoTao = require("../models/LopDaoTao");
+const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const lopdaotaoController = {};
@@ -37,8 +38,9 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
 console.log("userID",lopdaotaoID)
   let lopdaotao = await LopDaoTao.findById(lopdaotaoID);
   if (!lopdaotao) throw new AppError(400, "lopdaotao not found", "Update  lopdaotao Error");
-
-  return sendResponse(res, 200, true, lopdaotao, null, "Get lopdaotao successful");
+const lopdaotaonhanvien = await LopDaoTaoNhanVien.find({LopDaoTaoID:lopdaotaoID}).populate('NhanVienID');
+console.log("lopdaotaonhanvien",lopdaotaonhanvien)
+  return sendResponse(res, 200, true, {lopdaotao,lopdaotaonhanvien}, null, "Get lopdaotao successful");
 });
 
 

@@ -31,6 +31,13 @@ router.put(
   lopdaotaoController.updateOneLopDaoTao
 );
 
+router.put(
+  "/trangthai",
+  authentication.loginRequired,
+  
+  lopdaotaoController.updateTrangThaiLopDaoTao
+);
+
 /**
  * @route GET /lopdaotao
  * @description Get all lopdaotao

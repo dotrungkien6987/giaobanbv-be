@@ -28,7 +28,7 @@ router.put(
   "/",
   authentication.loginRequired,
   
-  lopdaotaonhanvienController.updateOneLopDaoTaoNhanVien
+  lopdaotaonhanvienController.updateDiemDanhForMultiple
 );
 
 /**

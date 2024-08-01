@@ -1,6 +1,7 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const mongoose = require("mongoose");
 const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
+const LopDaoTao = require("../models/LopDaoTao");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const lopdaotaonhanvienController = {};
@@ -15,7 +16,8 @@ lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (
   }));
   const lopdaotaoID = new mongoose.Types.ObjectId(req.body.lopdaotaoID);
   console.log("reqbody", lopdaotaonhanvienData);
-
+const lopdaotao = await LopDaoTao.findById(lopdaotaoID);
+const soluong = lopdaotao.SoLuong;
   // Tìm tất cả các bản ghi trong LopDaoTaoNhanVien có LopDaoTaoID bằng với lopdaotaoID
   const lopdaotaonhanvienOld = await LopDaoTaoNhanVien.find({ LopDaoTaoID: lopdaotaoID });
 
@@ -35,6 +37,9 @@ lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (
     if (matchingOldItem) {
       toUpdate.push(newItem);
     } else {
+      let diemdanh = [];
+      for (let i = 0; i < soluong; i++) {diemdanh.push(true);}
+      newItem.DiemDanh = diemdanh;
       toInsert.push(newItem);
     }
   });
@@ -178,5 +183,55 @@ lopdaotaonhanvienController.updateOneLopDaoTaoNhanVien = catchAsync(
     );
   }
 );
+
+lopdaotaonhanvienController.updateDiemDanhForMultiple = catchAsync(
+  async (req, res, next) => {
+    let lopdaotaonhanvienArray = req.body.lopdaotaonhanvienDiemDanhData; // Giả sử body là một mảng các đối tượng với _id và DiemDanh
+    console.log("lopdaotaonhanvienArray", lopdaotaonhanvienArray);
+
+    // Mảng lưu kết quả của các bản ghi đã được cập nhật
+    let updatedRecords = [];
+
+    // Sử dụng vòng lặp để duyệt qua từng phần tử của mảng
+    for (let lopdaotaonhanvien of lopdaotaonhanvienArray) {
+      let lopdaotaonhanvienUpdate = await LopDaoTaoNhanVien.findById(
+        lopdaotaonhanvien._id || 0
+      );
+
+      if (!lopdaotaonhanvienUpdate) {
+        throw new AppError(
+          400,
+          "lopdaotaonhanvienUpdate not found",
+          "Update lopdaotaonhanvienUpdate error"
+        );
+      }
+
+      if (lopdaotaonhanvienUpdate) {
+        const id = lopdaotaonhanvienUpdate._id;
+        lopdaotaonhanvienUpdate = await LopDaoTaoNhanVien.findByIdAndUpdate(
+          id,
+          { DiemDanh: lopdaotaonhanvien.DiemDanh ,SoTinChiTichLuy:lopdaotaonhanvien.SoTinChiTichLuy}, // Chỉ cập nhật trường DiemDanh
+          {
+            new: true,
+          }
+        );
+
+        // Thêm bản ghi đã được cập nhật vào mảng kết quả
+        updatedRecords.push(lopdaotaonhanvienUpdate);
+      }
+    }
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      updatedRecords,
+      null,
+      "Update DiemDanh for multiple LopDaoTaoNhanVien successful"
+    );
+  }
+);
+
+
 
 module.exports = lopdaotaonhanvienController;

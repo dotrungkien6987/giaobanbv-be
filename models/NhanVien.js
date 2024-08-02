@@ -15,6 +15,8 @@ const nhanvienSchema = Schema(
     },
     TrinhDoChuyenMon: { type: String, default: "" },
     DanToc: { type: String, default: "" },
+    SoCCHN: { type: String, default: "" },
+    NgayCapCCHN: { type: Date, require: false },
     PhamViHanhNghe: { type: String, default: "" },
     ChucDanh: { type: String, default: "" },
     ChucVu: { type: String, default: "" },

@@ -1,5 +1,7 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const NhanVien = require("../models/NhanVien");
+const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
+const HinhThucCapNhat = require("../models/HinhThucCapNhat");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const nhanvienController = {};
@@ -35,10 +37,107 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
   
   const nhanvienID = req.params.nhanvienID;
 console.log("userID",nhanvienID)
-  let nhanvien = await NhanVien.findById(nhanvienID);
-  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Update  NhanVien Error");
+  let nhanvien = await NhanVien.findById(nhanvienID).populate('KhoaID');
+  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
 
-  return sendResponse(res, 200, true, nhanvien, null, "Get NhanVien successful");
+  
+  // Tìm các bản ghi LopDaoTaoNhanVien theo nhanvienID
+  const daotaos = await LopDaoTaoNhanVien.find({ NhanVienID: nhanvienID }).populate({
+    path: 'LopDaoTaoID',
+    populate: {
+      path: 'HinhThucCapNhatID',
+      match: { Loai: 'ĐT' }
+    }
+  });
+
+  const nghiencuukhoahocs = await LopDaoTaoNhanVien.find({ NhanVienID: nhanvienID }).populate({
+    path: 'LopDaoTaoID',
+    populate: {
+      path: 'HinhThucCapNhatID',
+      match: { Loai: 'NCKH' }
+    }
+  });
+
+  // Tính tổng TinChiTichLuy theo từng năm
+  const allRecords = [...daotaos, ...nghiencuukhoahocs];
+  const tinChiTichLuys = allRecords.reduce((acc, record) => {
+    const year = new Date(record.createdAt).getFullYear(); // Chuyển sang múi giờ Việt Nam nếu cần
+    const foundYear = acc.find(item => item.Year === year);
+
+    if (foundYear) {
+      foundYear.TongTinChi += record.SoTinChiTichLuy;
+    } else {
+      acc.push({ Year: year, TongTinChi: record.SoTinChiTichLuy });
+    }
+
+    return acc;
+  }, []);
+
+  return sendResponse(res, 200, true, {
+    nhanvien,
+    daotaos,
+    nghiencuukhoahocs,
+    tinChiTichLuys
+  }, null, "Get NhanVien successful");
+
+});
+
+// Hàm hỗ trợ để lấy thông tin `Loai` từ `HinhThucCapNhat`
+async function getLoai(maHinhThucCapNhat) {
+  const hinhThucCapNhat = await HinhThucCapNhat.findOne({ Ma: maHinhThucCapNhat });
+  return hinhThucCapNhat ? hinhThucCapNhat.Loai : null;
+}
+
+nhanvienController.getByIdCoze = catchAsync(async (req, res, next) => {
+  
+  const nhanvienID = req.params.nhanvienID;
+console.log("userID",nhanvienID)
+  let nhanvien = await NhanVien.findById(nhanvienID).populate('KhoaID');
+  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
+  // Lấy danh sách LopDaoTaoNhanVien của nhanvienID
+  const daotaos = await LopDaoTaoNhanVien.find({ NhanVienID: nhanvienID }).populate('LopDaoTaoID');
+
+  // Phân loại daotaos thành daotaos và nghiencuukhoahocs dựa trên Loai của HinhThucCapNhat
+  const daotaosFiltered = [];
+  const nghiencuukhoahocsFiltered = [];
+  const tinChiTichLuys = {};
+
+  for (const daoTao of daotaos) {
+    const loai = await getLoai(daoTao.LopDaoTaoID.MaHinhThucCapNhat);
+    const lopDaoTaoInfo = {
+      ...daoTao.LopDaoTaoID.toObject(),
+      VaiTro: daoTao.VaiTro,
+      SoTinChiTichLuy: daoTao.SoTinChiTichLuy
+    };
+
+    if (loai === 'Đào tạo') {
+      daotaosFiltered.push(lopDaoTaoInfo);
+    } else if (loai === 'Nghiên cứu khoa học') {
+      nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
+    }
+
+    // Tính tổng TinChiTichLuy theo năm
+    const year = daoTao.createdAt.getFullYear();
+    if (!tinChiTichLuys[year]) {
+      tinChiTichLuys[year] = 0;
+    }
+    tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
+  }
+
+  // Chuyển đổi tinChiTichLuys thành mảng
+  const tinChiTichLuyArray = Object.keys(tinChiTichLuys).map(year => ({
+    Year: year,
+    TongTinChi: tinChiTichLuys[year]
+  }));
+
+  const result = {
+    nhanvien,
+    daotaos: daotaosFiltered,
+    nghiencuukhoahocs: nghiencuukhoahocsFiltered,
+    TinChiTichLuys: tinChiTichLuyArray
+  };
+
+  return sendResponse(res, 200, true, result, null, "Get NhanVien successful");
 });
 
 

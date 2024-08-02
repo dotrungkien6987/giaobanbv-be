@@ -42,6 +42,14 @@ router.get(
   authentication.loginRequired,
   nhanvienController.getNhanviensPhanTrang
 );
+router.get(
+  "/:nhanvienID",
+  authentication.loginRequired,
+  validators.validate([
+    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
+      ]),
+  nhanvienController.getByIdCoze
+);
 
 /**
  * @route GET /nhanvien/:sucoId

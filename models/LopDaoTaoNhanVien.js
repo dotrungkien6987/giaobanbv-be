@@ -4,7 +4,7 @@ const Schema = mongosee.Schema;
 const lopdaotaonhanvienSchema = Schema(
   {
    
-    LopDaoTaoID: { type: Schema.ObjectId, required: true,  },
+    LopDaoTaoID: { type: Schema.ObjectId, required: true,ref: "LopDaoTao" },
     NhanVienID: { type: Schema.ObjectId, required: true, ref: "NhanVien" },
     
     VaiTro: { type: String, required: false,},

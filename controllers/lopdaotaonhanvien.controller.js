@@ -233,5 +233,4 @@ lopdaotaonhanvienController.updateDiemDanhForMultiple = catchAsync(
 );
 
 
-
 module.exports = lopdaotaonhanvienController;

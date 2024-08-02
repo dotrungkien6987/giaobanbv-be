@@ -122,12 +122,12 @@ console.log('lopdaotaoupdate',lopdaotaoUpdate)
 lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(async (req, res, next) => {
  
   let {TrangThai,lopdaotaoID}  = {...req.body};
-  console.log("body",req.body);
+  console.log("bodykk",req.body);
 let lopdaotaoUpdate = await LopDaoTao.findById(lopdaotaoID||0);
 if(!lopdaotaoUpdate) throw new AppError(400,"lopdaotaoUpdate not found","Update lopdaotaoUpdate error");
 if (lopdaotaoUpdate) {
   
-  lopdaotaoUpdate = await LopDaoTao.findByIdAndUpdate(lopdaotaoID, TrangThai, {
+  lopdaotaoUpdate = await LopDaoTao.findByIdAndUpdate(lopdaotaoID, {TrangThai}, {
     new: true,
   });
 }

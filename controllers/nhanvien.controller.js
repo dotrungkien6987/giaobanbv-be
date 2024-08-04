@@ -32,63 +32,13 @@ nhanvienController.insertOne = catchAsync(async (req, res, next) => {
   );
 });
 
-
-nhanvienController.getById = catchAsync(async (req, res, next) => {
-  
-  const nhanvienID = req.params.nhanvienID;
-console.log("userID",nhanvienID)
-  let nhanvien = await NhanVien.findById(nhanvienID).populate('KhoaID');
-  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
-
-  
-  // Tìm các bản ghi LopDaoTaoNhanVien theo nhanvienID
-  const daotaos = await LopDaoTaoNhanVien.find({ NhanVienID: nhanvienID }).populate({
-    path: 'LopDaoTaoID',
-    populate: {
-      path: 'HinhThucCapNhatID',
-      match: { Loai: 'ĐT' }
-    }
-  });
-
-  const nghiencuukhoahocs = await LopDaoTaoNhanVien.find({ NhanVienID: nhanvienID }).populate({
-    path: 'LopDaoTaoID',
-    populate: {
-      path: 'HinhThucCapNhatID',
-      match: { Loai: 'NCKH' }
-    }
-  });
-
-  // Tính tổng TinChiTichLuy theo từng năm
-  const allRecords = [...daotaos, ...nghiencuukhoahocs];
-  const tinChiTichLuys = allRecords.reduce((acc, record) => {
-    const year = new Date(record.createdAt).getFullYear(); // Chuyển sang múi giờ Việt Nam nếu cần
-    const foundYear = acc.find(item => item.Year === year);
-
-    if (foundYear) {
-      foundYear.TongTinChi += record.SoTinChiTichLuy;
-    } else {
-      acc.push({ Year: year, TongTinChi: record.SoTinChiTichLuy });
-    }
-
-    return acc;
-  }, []);
-
-  return sendResponse(res, 200, true, {
-    nhanvien,
-    daotaos,
-    nghiencuukhoahocs,
-    tinChiTichLuys
-  }, null, "Get NhanVien successful");
-
-});
-
 // Hàm hỗ trợ để lấy thông tin `Loai` từ `HinhThucCapNhat`
 async function getLoai(maHinhThucCapNhat) {
   const hinhThucCapNhat = await HinhThucCapNhat.findOne({ Ma: maHinhThucCapNhat });
   return hinhThucCapNhat ? hinhThucCapNhat.Loai : null;
 }
 
-nhanvienController.getByIdCoze = catchAsync(async (req, res, next) => {
+nhanvienController.getById = catchAsync(async (req, res, next) => {
   
   const nhanvienID = req.params.nhanvienID;
 console.log("userID",nhanvienID)
@@ -116,20 +66,28 @@ console.log("userID",nhanvienID)
       nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
     }
 
-    // Tính tổng TinChiTichLuy theo năm
-    const year = daoTao.createdAt.getFullYear();
-    if (!tinChiTichLuys[year]) {
-      tinChiTichLuys[year] = 0;
+     // Tính tổng TinChiTichLuy theo năm nếu TrangThai của LopDaoTao là true
+     if (daoTao.LopDaoTaoID.TrangThai) {
+      console.log("daoTao",daoTao)
+      const year =  new Date(daoTao.LopDaoTaoID.NgayBatDau).getFullYear();
+      if (!tinChiTichLuys[year]) {
+        tinChiTichLuys[year] = 0;
+      }
+      tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
     }
-    tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
   }
+  
+// Sắp xếp daotaosFiltered và nghiencuukhoahocsFiltered theo NgayBatDau
+daotaosFiltered.sort((a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau));
+nghiencuukhoahocsFiltered.sort((a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau));
 
-  // Chuyển đổi tinChiTichLuys thành mảng
+  // Chuyển đổi tinChiTichLuys thành mảng và sắp xếp theo năm
   const tinChiTichLuyArray = Object.keys(tinChiTichLuys).map(year => ({
     Year: year,
     TongTinChi: tinChiTichLuys[year]
-  }));
+  })).sort((a, b) => a.Year - b.Year);
 
+  
   const result = {
     nhanvien,
     daotaos: daotaosFiltered,

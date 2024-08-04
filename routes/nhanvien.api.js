@@ -48,7 +48,7 @@ router.get(
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
       ]),
-  nhanvienController.getByIdCoze
+  nhanvienController.getById
 );
 
 /**

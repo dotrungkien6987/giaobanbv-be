@@ -15,6 +15,7 @@ const lopdaotaoSchema = Schema(
     HinhThucDaoTao: { type: String, default: "" },
     GhiChu: { type: String, default: "" },
     SoLuong: { type: Number, default: 1 },
+    SoThanhVien: { type: Number, default: 0 },
     Images: { type: [String], default: [] },
     NgayBatDau: { type: Date, require: false },
     NgayKetThuc: { type: Date, require: false },

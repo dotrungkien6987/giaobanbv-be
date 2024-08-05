@@ -6,69 +6,99 @@ const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const lopdaotaonhanvienController = {};
 
-
-lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(async (req, res, next) => {
-  // Lấy dữ liệu từ request
-  const lopdaotaonhanvienData = req.body.lopdaotaonhanvienData.map(item => ({
-    ...item,
-    LopDaoTaoID: new mongoose.Types.ObjectId(item.LopDaoTaoID),
-    NhanVienID: new mongoose.Types.ObjectId(item.NhanVienID)
-  }));
-  const lopdaotaoID = new mongoose.Types.ObjectId(req.body.lopdaotaoID);
-  console.log("reqbody", lopdaotaonhanvienData);
-const lopdaotao = await LopDaoTao.findById(lopdaotaoID);
-const soluong = lopdaotao.SoLuong;
-  // Tìm tất cả các bản ghi trong LopDaoTaoNhanVien có LopDaoTaoID bằng với lopdaotaoID
-  const lopdaotaonhanvienOld = await LopDaoTaoNhanVien.find({ LopDaoTaoID: lopdaotaoID });
-
-  // So sánh dữ liệu
-  const toInsert = [];
-  const toUpdate = [];
-  const toDelete = lopdaotaonhanvienOld.filter(oldItem => 
-    !lopdaotaonhanvienData.some(newItem => 
-      newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)
-    )
-  );
-
-  lopdaotaonhanvienData.forEach(newItem => {
-    const matchingOldItem = lopdaotaonhanvienOld.find(oldItem => 
-      newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)
+lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(
+  async (req, res, next) => {
+    // Lấy dữ liệu từ request
+    console.log("reqbody", req.body);
+    const lopdaotaonhanvienData = req.body.lopdaotaonhanvienData.map(
+      (item) => ({
+        ...item,
+        LopDaoTaoID: new mongoose.Types.ObjectId(item.LopDaoTaoID),
+        NhanVienID: new mongoose.Types.ObjectId(item.NhanVienID),
+      })
     );
-    if (matchingOldItem) {
-      toUpdate.push(newItem);
-    } else {
-      let diemdanh = [];
-      for (let i = 0; i < soluong; i++) {diemdanh.push(true);}
-      newItem.DiemDanh = diemdanh;
-      toInsert.push(newItem);
+
+    console.log("lopdaotaonhanvienData", lopdaotaonhanvienData);
+    const lopdaotaoID = new mongoose.Types.ObjectId(req.body.lopdaotaoID);
+    const lopdaotao = await LopDaoTao.findById(lopdaotaoID);
+    const soluong = lopdaotao.SoLuong;
+
+    // Tìm tất cả các bản ghi trong LopDaoTaoNhanVien có LopDaoTaoID bằng với lopdaotaoID
+    const lopdaotaonhanvienOld = await LopDaoTaoNhanVien.find({
+      LopDaoTaoID: lopdaotaoID,
+    });
+console.log("lopdaotaonhanvienOld",lopdaotaonhanvienOld)
+    // So sánh dữ liệu
+    const toInsert = [];
+    const toUpdate = [];
+    const toDelete = lopdaotaonhanvienOld.filter(
+      (oldItem) =>
+        !lopdaotaonhanvienData.some(
+          (newItem) =>
+            newItem.LopDaoTaoID.toString() === oldItem.LopDaoTaoID.toString() &&
+            newItem.NhanVienID.toString() === oldItem.NhanVienID.toString()
+        )
+    );
+    console.log("toDelete", toDelete);
+
+    lopdaotaonhanvienData.forEach((newItem) => {
+      const matchingOldItem = lopdaotaonhanvienOld.find(
+        (oldItem) =>
+          newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) &&
+          newItem.NhanVienID.equals(oldItem.NhanVienID)
+      );
+      if (matchingOldItem) {
+        toUpdate.push(newItem);
+        console.log("newItem", newItem);
+      } else {
+        let diemdanh = [];
+        for (let i = 0; i < soluong; i++) {
+          diemdanh.push(true);
+        }
+        newItem.DiemDanh = diemdanh;
+        toInsert.push(newItem);
+      }
+    });
+console.log("toInsert",toInsert)
+console.log("toUpdate",toUpdate)  
+    // Thực hiện insert, delete, update trong DB
+    await LopDaoTaoNhanVien.insertMany(toInsert);
+    await LopDaoTaoNhanVien.deleteMany({
+      _id: { $in: toDelete.map((item) => item._id) },
+    });
+
+    for (const newItem of toUpdate) {
+      const oldItem = lopdaotaonhanvienOld.find(
+        (oldItem) =>
+          newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) &&
+          newItem.NhanVienID.equals(oldItem.NhanVienID)
+      );
+      const updatedItem = {
+        ...oldItem.toObject(),
+        VaiTro: newItem.VaiTro,
+      };
+      await LopDaoTaoNhanVien.updateOne({ _id: oldItem._id }, updatedItem);
     }
-  });
 
-  // Thực hiện insert, delete, update trong DB
-  await LopDaoTaoNhanVien.insertMany(toInsert);
-  await LopDaoTaoNhanVien.deleteMany({ _id: { $in: toDelete.map(item => item._id) } });
+    // Lấy mảng mới trong DB
+    const newLopDaoTaoNhanVien = await LopDaoTaoNhanVien.find({
+      LopDaoTaoID: lopdaotaoID,
+    });
 
-  for (const newItem of toUpdate) {
-    const oldItem = lopdaotaonhanvienOld.find(oldItem => 
-      newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) && newItem.NhanVienID.equals(oldItem.NhanVienID)
-    );
-    const updatedItem = {
-      ...oldItem.toObject(),
-      VaiTro: newItem.VaiTro,
-    };
-    await LopDaoTaoNhanVien.updateOne(
-      { _id: oldItem._id },
-      updatedItem
+    await LopDaoTao.findByIdAndUpdate(lopdaotaoID, {
+      SoThanhVien: newLopDaoTaoNhanVien.length,
+    });
+    // Response
+    sendResponse(
+      res,
+      200,
+      true,
+      newLopDaoTaoNhanVien,
+      null,
+      "Cập nhật thành công"
     );
   }
-
-  // Lấy mảng mới trong DB
-  const newLopDaoTaoNhanVien = await LopDaoTaoNhanVien.find({ LopDaoTaoID: lopdaotaoID });
-
-  // Response
-  sendResponse(res, 200, true, newLopDaoTaoNhanVien, null, "Cập nhật thành công");
-});
-
+);
 
 lopdaotaonhanvienController.getById = catchAsync(async (req, res, next) => {
   const lopdaotaonhanvienID = req.params.lopdaotaonhanvienID;
@@ -210,7 +240,10 @@ lopdaotaonhanvienController.updateDiemDanhForMultiple = catchAsync(
         const id = lopdaotaonhanvienUpdate._id;
         lopdaotaonhanvienUpdate = await LopDaoTaoNhanVien.findByIdAndUpdate(
           id,
-          { DiemDanh: lopdaotaonhanvien.DiemDanh ,SoTinChiTichLuy:lopdaotaonhanvien.SoTinChiTichLuy}, // Chỉ cập nhật trường DiemDanh
+          {
+            DiemDanh: lopdaotaonhanvien.DiemDanh,
+            SoTinChiTichLuy: lopdaotaonhanvien.SoTinChiTichLuy,
+          }, // Chỉ cập nhật trường DiemDanh
           {
             new: true,
           }
@@ -231,6 +264,5 @@ lopdaotaonhanvienController.updateDiemDanhForMultiple = catchAsync(
     );
   }
 );
-
 
 module.exports = lopdaotaonhanvienController;

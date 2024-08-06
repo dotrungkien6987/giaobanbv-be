@@ -76,7 +76,7 @@ console.log("userID",nhanvienID)
       tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
     }
   }
-  
+
 // Sắp xếp daotaosFiltered và nghiencuukhoahocsFiltered theo NgayBatDau
 daotaosFiltered.sort((a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau));
 nghiencuukhoahocsFiltered.sort((a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau));
@@ -194,6 +194,9 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
 
      // Chuyển đổi NgaySinh từ text sang Date với múi giờ
      nhanvien.NgaySinh = moment.tz(nhanvien.NgaySinh, "DD/MM/YYYY", "Asia/Ho_Chi_Minh").toDate();
+     if (nhanvien.NgayCapCCHN) {
+     nhanvien.NgayCapCCHN = moment.tz(nhanvien.NgayCapCCHN, "DD/MM/YYYY", "Asia/Ho_Chi_Minh").toDate();
+     }
 
     // Chuyển đổi GioiTinh từ text sang số
     if (nhanvien.GioiTinh === "Nam") {

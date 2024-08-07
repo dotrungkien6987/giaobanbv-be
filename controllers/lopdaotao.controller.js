@@ -88,19 +88,20 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(async (req, res, next) =
 lopdaotaoController.deleteOneLopDaoTao = catchAsync(async (req, res, next) => {
   
   const lopdaotaoID = req.params.lopdaotaoID;
-console.log('lopdaotaoID',req.params)
+
   const lopdaotao = await LopDaoTao.findOneAndUpdate({
     _id: lopdaotaoID,
     },{ isDeleted: true },
     { new: true });
- 
+    await LopDaoTaoNhanVien.deleteMany({ LopDaoTaoID: lopdaotaoID });
+
   return sendResponse(
     res,
     200,
     true,
     lopdaotao,
     null,
-    "Delete User successful"
+    "Delete LopDaoTao successful"
   );
 });
 

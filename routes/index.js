@@ -51,4 +51,7 @@ router.use("/datafix", datafixApi);
 const lopdaotaonhanvienApi = require("./lopdaotaonhanvien.api");
 router.use("/lopdaotaonhanvien", lopdaotaonhanvienApi);
 
+const lopdaotaonhanvientamApi = require("./lopdaotaonhanvientam.api");
+router.use("/lopdaotaonhanvientam", lopdaotaonhanvientamApi);
+
 module.exports = router;

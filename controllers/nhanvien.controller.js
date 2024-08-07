@@ -69,7 +69,7 @@ console.log("userID",nhanvienID)
      // Tính tổng TinChiTichLuy theo năm nếu TrangThai của LopDaoTao là true
      if (daoTao.LopDaoTaoID.TrangThai) {
       console.log("daoTao",daoTao)
-      const year =  new Date(daoTao.LopDaoTaoID.NgayBatDau).getFullYear();
+      const year =  new Date(daoTao.LopDaoTaoID.NgayKetThuc).getFullYear();
       if (!tinChiTichLuys[year]) {
         tinChiTichLuys[year] = 0;
       }

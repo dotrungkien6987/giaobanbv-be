@@ -91,7 +91,7 @@ console.log('hinhthuccapnhatID',req.params)
     true,
     hinhthuccapnhat,
     null,
-    "Delete User successful"
+    "Delete HinhThucCapNhat successful"
   );
 });
 

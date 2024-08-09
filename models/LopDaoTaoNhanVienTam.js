@@ -8,9 +8,10 @@ const lopdaotaonhanvientamSchema = Schema(
     NhanVienID: { type: Schema.ObjectId, required: true, ref: "NhanVien" },
     UserID: { type: Schema.ObjectId, required: true, ref: "User" },
     VaiTro: { type: String, required: false,},
+    UserName : { type: String, required: false,},
     
   },
   { timestamps: true }
 );
-const LopDaoTaoNhanVien = mongosee.model("LopDaoTaoNhanVien", lopdaotaonhanvientamSchema);
-module.exports = LopDaoTaoNhanVien;
+const LopDaoTaoNhanVienTam = mongosee.model("LopDaoTaoNhanVienTam", lopdaotaonhanvientamSchema);
+module.exports = LopDaoTaoNhanVienTam;

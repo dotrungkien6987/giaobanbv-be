@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { body, param } = require("express-validator");
+const { body, param,query } = require("express-validator");
 const validators = require("../middlewares/validators");
 
 const lopdaotaoController = require("../controllers/lopdaotao.controller");
@@ -15,7 +15,7 @@ const authentication = require("../middlewares/authentication");
 router.post(
   "/",
   authentication.loginRequired,
-  
+
   lopdaotaoController.insertOne
 );
 /**
@@ -27,14 +27,14 @@ router.post(
 router.put(
   "/",
   authentication.loginRequired,
-  
+
   lopdaotaoController.updateOneLopDaoTao
 );
 
 router.put(
   "/trangthai",
   authentication.loginRequired,
-  
+
   lopdaotaoController.updateTrangThaiLopDaoTao
 );
 
@@ -56,9 +56,18 @@ router.get(
  * @params {sucoId}
  * @access  login require,
  */
+// router.get(
+//   "/:lopdaotaoID",
+//   authentication.loginRequired, validators.validate([param("lopdaotaoID").exists().isString().custom(validators.checkObjectId)]),
+//   lopdaotaoController.getById
+// );
 router.get(
-  "/:lopdaotaoID",
-  authentication.loginRequired, validators.validate([param("lopdaotaoID").exists().isString().custom(validators.checkObjectId)]),
+  "/getextra/",
+  authentication.loginRequired,
+  validators.validate([
+    query("lopdaotaoID").exists().isString().custom(validators.checkObjectId),
+    query("tam").optional().isBoolean(), // Kiểm tra giá trị `tam` nếu có
+  ]),
   lopdaotaoController.getById
 );
 
@@ -67,8 +76,8 @@ router.delete(
   authentication.loginRequired,
   validators.validate([
     param("lopdaotaoID").exists().isString().custom(validators.checkObjectId),
-      ]),
-      lopdaotaoController.deleteOneLopDaoTao
+  ]),
+  lopdaotaoController.deleteOneLopDaoTao
 );
 
 module.exports = router;

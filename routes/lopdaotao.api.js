@@ -71,6 +71,17 @@ router.get(
   lopdaotaoController.getById
 );
 
+//
+router.get(
+  "/dongbothanhvientam/:lopdaotaoID",
+  authentication.loginRequired,
+  validators.validate([
+    param("lopdaotaoID").exists().isString().custom(validators.checkObjectId),
+    
+  ]),
+  lopdaotaoController.getUniqueNhanVienByLopDaoTaoID
+);
+
 router.delete(
   "/:lopdaotaoID",
   authentication.loginRequired,

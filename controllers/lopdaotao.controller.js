@@ -290,4 +290,31 @@ lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(
   }
 );
 
+
+lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(async (req, res, next) => {
+  const { lopdaotaoID } = req.params;
+
+  console.log("lopdaotaoID", lopdaotaoID);
+ 
+  // Lấy tất cả các bản ghi của LopDaoTaoNhanVienTam theo LopDaoTaoID
+  let nhanVienTamList = await LopDaoTaoNhanVienTam.find({ LopDaoTaoID: lopdaotaoID }).populate("NhanVienID");
+
+  // Loại bỏ các bản ghi trùng NhanVienID, chỉ giữ lại một NhanVienID duy nhất
+  const uniqueNhanVienMap = new Map();
+
+  nhanVienTamList.forEach((nhanVienTam) => {
+    if (!uniqueNhanVienMap.has(nhanVienTam.NhanVienID._id.toString())) {
+      uniqueNhanVienMap.set(nhanVienTam.NhanVienID._id.toString(), nhanVienTam);
+    }
+  });
+
+  console.log("uniqueNhanVienMap", uniqueNhanVienMap);
+  // Chuyển đổi Map thành mảng các bản ghi duy nhất
+  const uniqueNhanVienList = Array.from(uniqueNhanVienMap.values());
+
+  console.log("uniqueNhanVienList", uniqueNhanVienList);
+
+  return sendResponse(res, 200, true, uniqueNhanVienList, null, "Get unique NhanVien by LopDaoTaoID successful");
+});
+
 module.exports = lopdaotaoController;

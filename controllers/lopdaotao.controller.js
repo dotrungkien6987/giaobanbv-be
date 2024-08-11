@@ -46,13 +46,13 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
   const tam = req.query.tam;
   const userID = req.query.userID;
   let isTam = false;
-    if (tam === 'true') {
-      isTam = true;
-    } else if (tam === 'false') {
-      isTam = false;
-    } else if (typeof tam === 'boolean') {
-      isTam = tam;
-    }
+  if (tam === "true") {
+    isTam = true;
+  } else if (tam === "false") {
+    isTam = false;
+  } else if (typeof tam === "boolean") {
+    isTam = tam;
+  }
   console.log("tam", tam);
   let lopdaotao = await LopDaoTao.findById(lopdaotaoID);
   if (!lopdaotao)
@@ -74,34 +74,34 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
     MaNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ma,
     TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
   };
-let lopdaotaonhanvien =[]
-if (!isTam) {
-  console.log("tam", tam);
-  lopdaotaonhanvien = await LopDaoTaoNhanVien.find({
-    LopDaoTaoID: lopdaotaoID,
-  })
-    .populate("NhanVienID")
-    .populate({
-      path: "NhanVienID",
-      populate: {
-        path: "KhoaID",
-      },
-    });
-} else {
-  lopdaotaonhanvien = await LopDaoTaoNhanVienTam.find({
-    LopDaoTaoID: lopdaotaoID,
-    UserID:userID
-  })
-    .populate("NhanVienID")
-    .populate({
-      path: "NhanVienID",
-      populate: {
-        path: "KhoaID",
-      },
-    });
-}
-   
-console.log("lopdaotaonhanvien", lopdaotaonhanvien);
+  let lopdaotaonhanvien = [];
+  if (!isTam) {
+    console.log("tam", tam);
+    lopdaotaonhanvien = await LopDaoTaoNhanVien.find({
+      LopDaoTaoID: lopdaotaoID,
+    })
+      .populate("NhanVienID")
+      .populate({
+        path: "NhanVienID",
+        populate: {
+          path: "KhoaID",
+        },
+      });
+  } else {
+    lopdaotaonhanvien = await LopDaoTaoNhanVienTam.find({
+      LopDaoTaoID: lopdaotaoID,
+      UserID: userID,
+    })
+      .populate("NhanVienID")
+      .populate({
+        path: "NhanVienID",
+        populate: {
+          path: "KhoaID",
+        },
+      });
+  }
+
+  console.log("lopdaotaonhanvien", lopdaotaonhanvien);
   return sendResponse(
     res,
     200,
@@ -175,7 +175,17 @@ lopdaotaoController.deleteOneLopDaoTao = catchAsync(async (req, res, next) => {
     { isDeleted: true },
     { new: true }
   );
-  await LopDaoTaoNhanVien.deleteMany({ LopDaoTaoID: lopdaotaoID });
+  
+  if (!lopdaotao) {
+    return next(new AppError(404, "LopDaoTao not found", "Delete LopDaoTao error"));
+  }
+
+  
+  // Tìm và cập nhật tất cả các LopDaoTaoNhanVien liên quan, đánh dấu là đã xóa (isDeleted: true)
+  await LopDaoTaoNhanVien.updateMany(
+    { LopDaoTaoID: lopdaotaoID },
+    { isDeleted: true }
+  );
 
   return sendResponse(
     res,
@@ -290,31 +300,46 @@ lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(
   }
 );
 
+lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(
+  async (req, res, next) => {
+    const { lopdaotaoID } = req.params;
 
-lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(async (req, res, next) => {
-  const { lopdaotaoID } = req.params;
+    console.log("lopdaotaoID", lopdaotaoID);
 
-  console.log("lopdaotaoID", lopdaotaoID);
- 
-  // Lấy tất cả các bản ghi của LopDaoTaoNhanVienTam theo LopDaoTaoID
-  let nhanVienTamList = await LopDaoTaoNhanVienTam.find({ LopDaoTaoID: lopdaotaoID }).populate("NhanVienID");
+    // Lấy tất cả các bản ghi của LopDaoTaoNhanVienTam theo LopDaoTaoID
+    let nhanVienTamList = await LopDaoTaoNhanVienTam.find({
+      LopDaoTaoID: lopdaotaoID,
+    })
+      .populate("NhanVienID")
+      .populate({ path: "NhanVienID", populate: { path: "KhoaID" } });
 
-  // Loại bỏ các bản ghi trùng NhanVienID, chỉ giữ lại một NhanVienID duy nhất
-  const uniqueNhanVienMap = new Map();
+    // Loại bỏ các bản ghi trùng NhanVienID, chỉ giữ lại một NhanVienID duy nhất
+    const uniqueNhanVienMap = new Map();
 
-  nhanVienTamList.forEach((nhanVienTam) => {
-    if (!uniqueNhanVienMap.has(nhanVienTam.NhanVienID._id.toString())) {
-      uniqueNhanVienMap.set(nhanVienTam.NhanVienID._id.toString(), nhanVienTam);
-    }
-  });
+    nhanVienTamList.forEach((nhanVienTam) => {
+      if (!uniqueNhanVienMap.has(nhanVienTam.NhanVienID._id.toString())) {
+        uniqueNhanVienMap.set(
+          nhanVienTam.NhanVienID._id.toString(),
+          nhanVienTam
+        );
+      }
+    });
 
-  console.log("uniqueNhanVienMap", uniqueNhanVienMap);
-  // Chuyển đổi Map thành mảng các bản ghi duy nhất
-  const uniqueNhanVienList = Array.from(uniqueNhanVienMap.values());
+    console.log("uniqueNhanVienMap", uniqueNhanVienMap);
+    // Chuyển đổi Map thành mảng các bản ghi duy nhất
+    const uniqueNhanVienList = Array.from(uniqueNhanVienMap.values());
 
-  console.log("uniqueNhanVienList", uniqueNhanVienList);
+    console.log("uniqueNhanVienList", uniqueNhanVienList);
 
-  return sendResponse(res, 200, true, uniqueNhanVienList, null, "Get unique NhanVien by LopDaoTaoID successful");
-});
+    return sendResponse(
+      res,
+      200,
+      true,
+      uniqueNhanVienList,
+      null,
+      "Get unique NhanVien by LopDaoTaoID successful"
+    );
+  }
+);
 
 module.exports = lopdaotaoController;

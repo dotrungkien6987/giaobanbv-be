@@ -9,7 +9,9 @@ const lopdaotaonhanvienSchema = Schema(
     
     VaiTro: { type: String, required: false,},
     SoTinChiTichLuy: { type: Number, require: true, default: 0 },
-    DiemDanh:{type:[Boolean],default:[]}
+    DiemDanh:{type:[Boolean],default:[]},
+    Images: { type: [String], default: [] },
+    isDeleted: { type: Boolean, default: false, select: false },
   },
   { timestamps: true }
 );

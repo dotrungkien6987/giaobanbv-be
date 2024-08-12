@@ -31,6 +31,13 @@ router.put(
   lopdaotaonhanvienController.updateDiemDanhForMultiple
 );
 
+router.put(
+  "/upload",
+  authentication.loginRequired,
+  
+  lopdaotaonhanvienController.uploadImagesForOneLopDaoTaoNhanVien
+);
+
 /**
  * @route GET /lopdaotao
  * @description Get all lopdaotao

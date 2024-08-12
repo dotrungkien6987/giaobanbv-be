@@ -27,7 +27,7 @@ lopdaotaonhanvienController.insertOrUpdateLopdaotaoNhanVien = catchAsync(
     const lopdaotaonhanvienOld = await LopDaoTaoNhanVien.find({
       LopDaoTaoID: lopdaotaoID,
     });
-console.log("lopdaotaonhanvienOld",lopdaotaonhanvienOld)
+    console.log("lopdaotaonhanvienOld", lopdaotaonhanvienOld);
     // So sánh dữ liệu
     const toInsert = [];
     const toUpdate = [];
@@ -59,8 +59,8 @@ console.log("lopdaotaonhanvienOld",lopdaotaonhanvienOld)
         toInsert.push(newItem);
       }
     });
-console.log("toInsert",toInsert)
-console.log("toUpdate",toUpdate)  
+    console.log("toInsert", toInsert);
+    console.log("toUpdate", toUpdate);
     // Thực hiện insert, delete, update trong DB
     await LopDaoTaoNhanVien.insertMany(toInsert);
     await LopDaoTaoNhanVien.deleteMany({
@@ -103,14 +103,16 @@ console.log("toUpdate",toUpdate)
 lopdaotaonhanvienController.getById = catchAsync(async (req, res, next) => {
   const lopdaotaonhanvienID = req.params.lopdaotaonhanvienID;
   console.log("userID", lopdaotaonhanvienID);
-  let lopdaotaonhanvien = await LopDaoTaoNhanVien.findById(lopdaotaonhanvienID);
+  let lopdaotaonhanvien = await LopDaoTaoNhanVien.findById(
+    lopdaotaonhanvienID
+  ).populate("NhanVienID");
   if (!lopdaotaonhanvien)
     throw new AppError(
       400,
       "lopdaotaonhanvien not found",
-      "Update  lopdaotaonhanvien Error"
+      "get  lopdaotaonhanvien Error"
     );
-
+  console.log("lopdaotaonhanvien", lopdaotaonhanvien);
   return sendResponse(
     res,
     200,
@@ -261,6 +263,44 @@ lopdaotaonhanvienController.updateDiemDanhForMultiple = catchAsync(
       updatedRecords,
       null,
       "Update DiemDanh for multiple LopDaoTaoNhanVien successful"
+    );
+  }
+);
+lopdaotaonhanvienController.uploadImagesForOneLopDaoTaoNhanVien = catchAsync(
+  async (req, res, next) => {
+    const { lopdaotaonhanvienID, Images } = req.body;
+    console.log("Images", Images);
+    console.log("lopdaotaonhanvienID", lopdaotaonhanvienID);
+
+    // Kiểm tra dữ liệu đầu vào
+    if (!lopdaotaonhanvienID || !Images) {
+      throw new AppError(400, "Invalid input data", "Upload Images error");
+    }
+    
+    let lopdaotaonhanvienUpdate = await LopDaoTaoNhanVien.findById(
+      lopdaotaonhanvienID
+    );
+    if (!lopdaotaonhanvienUpdate) {
+      throw new AppError(
+        400,
+        "lopdaotaonhanvienUpdate not found",
+        "Update lopdaotaonhanvienUpdate error"
+      );
+    }
+
+    lopdaotaonhanvienUpdate = await LopDaoTaoNhanVien.findByIdAndUpdate(
+      lopdaotaonhanvienID,
+      { Images: Images },
+      { new: true }
+    );
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      lopdaotaonhanvienUpdate,
+      null,
+      "Upload Images LopDaoTaoNhanVien successful"
     );
   }
 );

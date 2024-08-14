@@ -57,7 +57,9 @@ console.log("userID",nhanvienID)
     const lopDaoTaoInfo = {
       ...daoTao.LopDaoTaoID.toObject(),
       VaiTro: daoTao.VaiTro,
-      SoTinChiTichLuy: daoTao.SoTinChiTichLuy
+      SoTinChiTichLuy: daoTao.SoTinChiTichLuy,
+      Images:daoTao.Images,
+      LopDaoTaoNhanVienID:daoTao._id
     };
 
     if (loai === 'Đào tạo') {
@@ -233,5 +235,59 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
     "Import NhanVien thành công"
   );
 });
+
+nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(async (req, res, next) => {
+  const { FromDate, ToDate } = req.query;
+
+  // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
+  if (!FromDate || !ToDate) {
+    throw new AppError(400, "FromDate and ToDate are required", "Get NhanVien Error");
+  }
+
+  const fromDate = new Date(FromDate);
+  const toDate = new Date(ToDate);
+console.log("fromDate",fromDate)
+  // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
+  const lopDaoTaoNhanVienList = await LopDaoTaoNhanVien.find({ isDeleted: false })
+    .populate({
+      path: 'LopDaoTaoID',
+      match: {
+        isDeleted: false,
+        TrangThai: true,
+        NgayKetThuc: {
+          $gte: fromDate,
+          $lte: toDate
+        }
+      }
+    })
+    .populate({
+      path: 'NhanVienID',
+      populate: { path: 'KhoaID' }
+    });
+
+    console.log("lopDaoTaoNhanVienList",lopDaoTaoNhanVienList)
+  const nhanVienMap = new Map();
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên
+  for (const lopDaoTaoNhanVien of lopDaoTaoNhanVienList) {
+    const { NhanVienID, LopDaoTaoID, SoTinChiTichLuy } = lopDaoTaoNhanVien;
+    if (LopDaoTaoID && NhanVienID && !NhanVienID.isDeleted) { // Chỉ tính những bản ghi hợp lệ
+      if (!nhanVienMap.has(NhanVienID._id.toString())) {
+        nhanVienMap.set(NhanVienID._id.toString(), {
+          nhanVien: NhanVienID,
+          totalSoTinChiTichLuy: 0
+        });
+      }
+      const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+      nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+    }
+  }
+
+  // Chuyển đổi Map thành mảng kết quả
+  const result = Array.from(nhanVienMap.values());
+
+  return sendResponse(res, 200, true, result, null, "Get NhanVien with TinChiTichLuy successful");
+});
+ 
 
 module.exports = nhanvienController;

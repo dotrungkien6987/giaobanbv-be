@@ -42,6 +42,13 @@ router.get(
   authentication.loginRequired,
   nhanvienController.getNhanviensPhanTrang
 );
+
+router.get(
+  "/tichluytinchi",
+  authentication.loginRequired,
+  nhanvienController.getNhanVienWithTinChiTichLuy
+);
+
 router.get(
   "/:nhanvienID",
   authentication.loginRequired,

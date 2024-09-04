@@ -6,6 +6,7 @@ const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const DaTaFix = require("../models/DaTaFix");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
+const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const lopdaotaoController = {};
 
 lopdaotaoController.insertOne = catchAsync(async (req, res, next) => {
@@ -101,12 +102,12 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
       });
   }
 
-  console.log("lopdaotaonhanvien", lopdaotaonhanvien);
+  let lopdaotaonhanvienDT06 = await LopDaoTaoNhanVienDT06.find({LopDaoTaoID: lopdaotaoID})  
   return sendResponse(
     res,
     200,
     true,
-    { lopdaotao, lopdaotaonhanvien },
+    { lopdaotao, lopdaotaonhanvien,lopdaotaonhanvienDT06 },
     null,
     "Get lopdaotao successful"
   );

@@ -133,6 +133,7 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
 
     console.log("filter", filterConditions);
     let lopdaotaos = await LopDaoTao.find(filterCriteria)
+    .populate("UserIDCreated")
       .sort({ createdAt: -1 })
       .skip(offset)
       .limit(limit);

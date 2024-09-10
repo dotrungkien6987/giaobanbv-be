@@ -45,6 +45,9 @@ router.use("/lopdaotao", lopdaotaoApi);
 const hinhthuccapnhatApi = require("./hinhthuccapnhat.api");
 router.use("/hinhthuccapnhat", hinhthuccapnhatApi);
 
+const hoidongApi = require("./hoidong.api");
+router.use("/hoidong", hoidongApi);
+
 const datafixApi = require("./datafix.api");
 router.use("/datafix", datafixApi);
 

@@ -73,14 +73,14 @@ console.log('lopdaotaoID',req.params)
 
 lopdaotaonhanviendt06Controller.updateOne = catchAsync(async (req, res, next) => {
  
-  let {lopdaotaonhanviendt06 } = req.body;
-  console.log("body",lopdaotaonhanviendt06)
-let lopdaotaonhanviendt06Update = await LopDaoTaoNhanVienDT06.findById(lopdaotaonhanviendt06._id||0);
+  let lopdaotaonhanvienDT06Data  = req.body;
+  console.log("body",req.body)
+let lopdaotaonhanviendt06Update = await LopDaoTaoNhanVienDT06.findById(lopdaotaonhanvienDT06Data._id||0);
 if(!lopdaotaonhanviendt06Update) throw new AppError(400,"lopdaotaonhanviendt06Update not found","Update lopdaotaonhanviendt06Update error");
 if (lopdaotaonhanviendt06Update) {
   
   const id = lopdaotaonhanviendt06Update._id;
-  lopdaotaonhanviendt06Update = await LopDaoTaoNhanVienDT06.findByIdAndUpdate(id, lopdaotaonhanviendt06, {
+  lopdaotaonhanviendt06Update = await LopDaoTaoNhanVienDT06.findByIdAndUpdate(id, lopdaotaonhanvienDT06Data, {
     new: true,
   });
 }
@@ -91,7 +91,7 @@ console.log('lopdaotaonhanviendt06update',lopdaotaonhanviendt06Update)
     true,
     lopdaotaonhanviendt06Update,
     null,
-    "Update Suco successful"
+    "updateOneQuaTrinhDT06 successful"
   );
 });
 

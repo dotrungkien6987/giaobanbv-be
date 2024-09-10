@@ -20,6 +20,7 @@ const lopdaotaoSchema = Schema(
     NgayBatDau: { type: Date, require: false },
     NgayKetThuc: { type: Date, require: false },
     isDeleted: { type: Boolean, default: false, select: false },
+    UserIDCreated: {type: Schema.ObjectId,required:false,ref:"User"},
   },
   { timestamps: true }
 );

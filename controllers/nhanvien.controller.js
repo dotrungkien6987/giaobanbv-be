@@ -2,6 +2,7 @@ const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const NhanVien = require("../models/NhanVien");
 const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
+const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const nhanvienController = {};
@@ -288,6 +289,110 @@ console.log("fromDate",fromDate)
 
   return sendResponse(res, 200, true, result, null, "Get NhanVien with TinChiTichLuy successful");
 });
- 
 
+nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(async (req, res, next) => {
+  const { FromDate, ToDate } = req.query;
+
+  // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
+  if (!FromDate || !ToDate) {
+    throw new AppError(400, "FromDate and ToDate are required", "Get NhanVien Error");
+  }
+
+  const fromDate = new Date(FromDate);
+  const toDate = new Date(ToDate);
+  console.log("fromDate", fromDate);
+
+  // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
+  const lopDaoTaoNhanVienList = await LopDaoTaoNhanVien.find({ isDeleted: false })
+    .populate({
+      path: 'LopDaoTaoID',
+      match: {
+        isDeleted: false,
+        TrangThai: true,
+        NgayKetThuc: {
+          $gte: fromDate,
+          $lte: toDate
+        },
+        MaHinhThucCapNhat: { $ne: 'ĐT06' }
+      }
+    })
+    .populate({
+      path: 'NhanVienID',
+      populate: { path: 'KhoaID' }
+    });
+
+  console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
+  const nhanVienMap = new Map();
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
+  for (const lopDaoTaoNhanVien of lopDaoTaoNhanVienList) {
+    const { NhanVienID, LopDaoTaoID, SoTinChiTichLuy } = lopDaoTaoNhanVien;
+    if (LopDaoTaoID && NhanVienID && !NhanVienID.isDeleted) { // Chỉ tính những bản ghi hợp lệ
+      if (!nhanVienMap.has(NhanVienID._id.toString())) {
+        nhanVienMap.set(NhanVienID._id.toString(), {
+          nhanVien: NhanVienID,
+          totalSoTinChiTichLuy: 0
+        });
+      }
+      const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+      nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+    }
+  }
+
+  // Lấy danh sách nhân viên từ bảng LopDaoTaoNhanVienDT06 với các điều kiện
+  const lopDaoTaoNhanVienDT06List = await LopDaoTaoNhanVienDT06.find({
+    isDeleted: false,
+    DenNgay: {
+      $gte: fromDate,
+      $lte: toDate
+    }
+  })
+  .populate({
+    path: 'LopDaoTaoID',
+    match: {
+      isDeleted: false,
+     
+      MaHinhThucCapNhat: 'ĐT06'
+    }
+  })
+  .populate({
+    path: 'NhanVienID',
+    // populate: { path: 'KhoaID' }
+  });
+
+  console.log("lopDaoTaoNhanVienDT06List", lopDaoTaoNhanVienDT06List);
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
+  for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
+    const { NhanVienID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
+    if (NhanVienID && !NhanVienID.isDeleted) { // Chỉ tính những bản ghi hợp lệ
+      if (!nhanVienMap.has(NhanVienID._id.toString())) {
+        nhanVienMap.set(NhanVienID._id.toString(), {
+          nhanVien: NhanVienID,
+          totalSoTinChiTichLuy: 0
+        });
+      }
+      const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+      nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+    }
+  }
+
+  // Lấy tất cả các nhân viên không bị xóa
+  const allNhanVien = await NhanVien.find({ isDeleted: false }).populate('KhoaID');
+
+  // Thêm những nhân viên không có trong lopDaoTaoNhanVienList và lopDaoTaoNhanVienDT06List vào kết quả với totalSoTinChiTichLuy = 0
+  for (const nhanVien of allNhanVien) {
+    if (!nhanVienMap.has(nhanVien._id.toString())) {
+      nhanVienMap.set(nhanVien._id.toString(), {
+        nhanVien: nhanVien,
+        totalSoTinChiTichLuy: 0
+      });
+    }
+  }
+
+  // Chuyển đổi Map thành mảng kết quả
+  const result = Array.from(nhanVienMap.values());
+
+  return sendResponse(res, 200, true, result, null, "Get NhanVien with TinChiTichLuy successful");
+});
 module.exports = nhanvienController;

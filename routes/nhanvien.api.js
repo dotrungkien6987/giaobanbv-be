@@ -46,7 +46,7 @@ router.get(
 router.get(
   "/tichluytinchi",
   authentication.loginRequired,
-  nhanvienController.getNhanVienWithTinChiTichLuy
+  nhanvienController.getAllNhanVienWithTinChiTichLuy
 );
 
 router.get(

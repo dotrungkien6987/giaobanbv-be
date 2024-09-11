@@ -357,13 +357,14 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(async (req, res,
   })
   .populate({
     path: 'NhanVienID',
-    // populate: { path: 'KhoaID' }
+    populate: { path: 'KhoaID' }
   });
 
   console.log("lopDaoTaoNhanVienDT06List", lopDaoTaoNhanVienDT06List);
 
   // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
   for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
+    console.log("lopDaoTaoNhanVienDT06", lopDaoTaoNhanVienDT06);
     const { NhanVienID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
     if (NhanVienID && !NhanVienID.isDeleted) { // Chỉ tính những bản ghi hợp lệ
       if (!nhanVienMap.has(NhanVienID._id.toString())) {

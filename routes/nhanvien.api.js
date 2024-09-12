@@ -50,6 +50,18 @@ router.get(
 );
 
 router.get(
+  "/soluongthuchien",
+  authentication.loginRequired,
+  nhanvienController.getTongHopSoLuongThucHien
+);
+
+router.get(
+  "/soluongtheokhoa",
+  authentication.loginRequired,
+  nhanvienController.getTongHopSoLuongTheoKhoa
+);
+
+router.get(
   "/:nhanvienID",
   authentication.loginRequired,
   validators.validate([

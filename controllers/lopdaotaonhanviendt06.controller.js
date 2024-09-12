@@ -21,7 +21,7 @@ lopdaotaonhanviendt06Controller.insertOne = catchAsync(async (req, res, next) =>
     true,
     lopdaotaonhanviendt06,
     null,
-    "Cập nhật quá trình đào tạo ĐT06 thành công"
+    "Cập nhật quá trình đào tạo sau đại học thành công"
   );
 });
 

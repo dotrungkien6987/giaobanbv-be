@@ -1,6 +1,7 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const NhanVien = require("../models/NhanVien");
 const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
+const LopDaoTao = require("../models/LopDaoTao");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
 const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const Khoa = require("../models/Khoa");
@@ -258,7 +259,8 @@ console.log("fromDate",fromDate)
         NgayKetThuc: {
           $gte: fromDate,
           $lte: toDate
-        }
+        },
+        MaHinhThucCapNhat: { $nin: ['ĐT061', 'ĐT062', 'ĐT063', 'ĐT064'] }
       }
     })
     .populate({
@@ -291,7 +293,7 @@ console.log("fromDate",fromDate)
 });
 
 nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(async (req, res, next) => {
-  const { FromDate, ToDate } = req.query;
+  const { FromDate, ToDate, KhuyenCao } = req.query;
 
   // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
   if (!FromDate || !ToDate) {
@@ -313,7 +315,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(async (req, res,
           $gte: fromDate,
           $lte: toDate
         },
-        MaHinhThucCapNhat: { $ne: 'ĐT06' }
+        MaHinhThucCapNhat: { $nin: ['ĐT061','ĐT062','ĐT063','ĐT064'] }
       }
     })
     .populate({
@@ -352,13 +354,183 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(async (req, res,
     match: {
       isDeleted: false,
      
-      MaHinhThucCapNhat: 'ĐT06'
+      MaHinhThucCapNhat: {$in: ['ĐT061','ĐT062','ĐT063','ĐT064']}
     }
   })
   .populate({
     path: 'NhanVienID',
     populate: { path: 'KhoaID' }
   });
+
+  
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
+  for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
+    console.log("lopDaoTaoNhanVienDT06", lopDaoTaoNhanVienDT06);
+    const { NhanVienID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
+    if (NhanVienID && !NhanVienID.isDeleted) { // Chỉ tính những bản ghi hợp lệ
+      if (!nhanVienMap.has(NhanVienID._id.toString())) {
+        nhanVienMap.set(NhanVienID._id.toString(), {
+          nhanVien: NhanVienID,
+          totalSoTinChiTichLuy: 0
+        });
+      }
+      const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+      nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+    }
+  }
+
+  // Lấy tất cả các nhân viên không bị xóa
+  const allNhanVien = await NhanVien.find({ isDeleted: false }).populate('KhoaID');
+
+  // Thêm những nhân viên không có trong lopDaoTaoNhanVienList và lopDaoTaoNhanVienDT06List vào kết quả với totalSoTinChiTichLuy = 0
+  for (const nhanVien of allNhanVien) {
+    if (!nhanVienMap.has(nhanVien._id.toString())) {
+      nhanVienMap.set(nhanVien._id.toString(), {
+        nhanVien: nhanVien,
+        totalSoTinChiTichLuy: 0
+      });
+    }
+  }
+  
+  // Chuyển đổi Map thành mảng kết quả
+  // const result = Array.from(nhanVienMap.values());
+ // Chuyển đổi Map thành mảng kết quả
+ const result = Array.from(nhanVienMap.values()).map(nhanVienData => {
+  return {
+    ...nhanVienData,
+    Dat: KhuyenCao ? nhanVienData.totalSoTinChiTichLuy >= Number(KhuyenCao) : false // Xử lý logic Dat
+  };
+});
+  return sendResponse(res, 200, true, result, null, "Get NhanVien with TinChiTichLuy successful");
+});
+
+nhanvienController.getTongHopSoLuongThucHien = catchAsync(async (req, res, next) => {
+  const { FromDate, ToDate } = req.query;
+
+  // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
+  if (!FromDate || !ToDate) {
+    throw new AppError(400, "FromDate and ToDate are required", "Get Summary Error");
+  }
+
+  const fromDate = new Date(FromDate);
+  const toDate = new Date(ToDate);
+  console.log("fromDate", fromDate);
+  console.log("toDate", toDate);
+
+  // Lấy danh sách HinhThucCapNhat
+  const hinhThucCapNhatList = await HinhThucCapNhat.find({});
+
+  const result = [];
+
+  for (const hinhThuc of hinhThucCapNhatList) {
+    const maHinhThucCapNhat = hinhThuc.Ma;
+
+    // Tính tổng số lượng và số bản ghi từ bảng LopDaoTao
+    const lopDaoTaoList = await LopDaoTao.find({
+      MaHinhThucCapNhat: maHinhThucCapNhat,
+      isDeleted: false,
+      
+      NgayBatDau: {
+        $gte: fromDate,
+        $lte: toDate
+      }
+    });
+
+    const totalSoThanhVien = lopDaoTaoList.reduce((acc, curr) => acc + curr.SoThanhVien, 0);
+    const lopDaoTaoCount = lopDaoTaoList.length;
+
+    result.push({
+      MaHinhThucCapNhat: maHinhThucCapNhat,
+      Ten: hinhThuc.Ten,
+      Loai: hinhThuc.Loai,
+      totalSoThanhVien,
+      lopDaoTaoCount
+    });
+  }
+// Sắp xếp kết quả theo lopDaoTaoCount từ lớn đến bé
+result.sort((a, b) => b.lopDaoTaoCount - a.lopDaoTaoCount);
+
+  return sendResponse(res, 200, true, result, null, "Get Summary by HinhThucCapNhat successful");
+});
+
+module.exports = nhanvienController;
+
+
+
+nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(async (req, res, next) => {
+  const { FromDate, ToDate, KhuyenCao } = req.query;
+
+  // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
+  if (!FromDate || !ToDate) {
+    throw new AppError(400, "FromDate and ToDate are required", "Get Khoa Summary Error");
+  }
+
+  const fromDate = new Date(FromDate);
+  const toDate = new Date(ToDate);
+  console.log("fromDate", fromDate);
+  console.log("toDate", toDate);
+
+  // Lấy tất cả các khoa
+  const khoaList = await Khoa.find({});
+  let result = [];
+
+  // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
+  const lopDaoTaoNhanVienList = await LopDaoTaoNhanVien.find({ isDeleted: false })
+    .populate({
+      path: 'LopDaoTaoID',
+      match: {
+        isDeleted: false,
+        TrangThai: true,
+        NgayKetThuc: {
+          $gte: fromDate,
+          $lte: toDate
+        },
+        MaHinhThucCapNhat: { $nin: ['ĐT061', 'ĐT062', 'ĐT063', 'ĐT064'] }
+      }
+    })
+    .populate({
+      path: 'NhanVienID',
+      populate: { path: 'KhoaID' }
+    });
+
+  console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
+  const nhanVienMap = new Map();
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
+  for (const lopDaoTaoNhanVien of lopDaoTaoNhanVienList) {
+    const { NhanVienID, LopDaoTaoID, SoTinChiTichLuy } = lopDaoTaoNhanVien;
+    if (LopDaoTaoID && NhanVienID && !NhanVienID.isDeleted) { // Chỉ tính những bản ghi hợp lệ
+      if (!nhanVienMap.has(NhanVienID._id.toString())) {
+        nhanVienMap.set(NhanVienID._id.toString(), {
+          nhanVien: NhanVienID,
+          totalSoTinChiTichLuy: 0
+        });
+      }
+      const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+      nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+    }
+  }
+
+  // Lấy danh sách nhân viên từ bảng LopDaoTaoNhanVienDT06 với các điều kiện
+  const lopDaoTaoNhanVienDT06List = await LopDaoTaoNhanVienDT06.find({
+    isDeleted: false,
+    DenNgay: {
+      $gte: fromDate,
+      $lte: toDate
+    }
+  })
+    .populate({
+      path: 'LopDaoTaoID',
+      match: {
+        isDeleted: false,
+        MaHinhThucCapNhat: { $in: ['ĐT061', 'ĐT062', 'ĐT063', 'ĐT064'] }
+      }
+    })
+    .populate({
+      path: 'NhanVienID',
+      populate: { path: 'KhoaID' }
+    });
 
   console.log("lopDaoTaoNhanVienDT06List", lopDaoTaoNhanVienDT06List);
 
@@ -390,10 +562,26 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(async (req, res,
       });
     }
   }
+  console.log('nhanvienMap',Array.from(nhanVienMap.values()).filter((item)=>item.totalSoTinChiTichLuy>0))
+  // Tính tổng số nhân viên trong mỗi khoa, số nhân viên Dat=true và Dat=false
+  for (const khoa of khoaList) {
+    const khoaId = khoa._id;
+    const nhanVienList = Array.from(nhanVienMap.values()).filter(nvData => nvData.nhanVien.KhoaID._id.toString() === khoaId.toString());
 
-  // Chuyển đổi Map thành mảng kết quả
-  const result = Array.from(nhanVienMap.values());
+    const totalNhanVien = nhanVienList.length;
+    const countDatTrue = nhanVienList.filter(nvData => KhuyenCao ? nvData.totalSoTinChiTichLuy >= Number(KhuyenCao) : false).length;
+    const countDatFalse = totalNhanVien - countDatTrue;
 
-  return sendResponse(res, 200, true, result, null, "Get NhanVien with TinChiTichLuy successful");
+    result.push({
+      KhoaID: khoaId,
+      TenKhoa: khoa.TenKhoa,
+      totalNhanVien,
+      countDatTrue,
+      countDatFalse
+    });
+  }
+  result = result.filter((item)=>item.totalNhanVien >0)
+  result.sort((a, b) => b.totalNhanVien - a.totalNhanVien);
+
+  return sendResponse(res, 200, true, result, null, "Get Summary by Khoa successful");
 });
-module.exports = nhanvienController;

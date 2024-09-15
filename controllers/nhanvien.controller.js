@@ -41,9 +41,92 @@ async function getLoai(maHinhThucCapNhat) {
 }
 
 nhanvienController.getById = catchAsync(async (req, res, next) => {
+  const nhanvienID = req.params.nhanvienID;
+  console.log("userID", nhanvienID);
+
+  let nhanvien = await NhanVien.findById(nhanvienID).populate('KhoaID');
+  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
+
+  // Lấy danh sách LopDaoTaoNhanVien của nhanvienID với các điều kiện
+  const daotaos = await LopDaoTaoNhanVien.find({ NhanVienID: nhanvienID, isDeleted: false })
+    .populate({
+      path: 'LopDaoTaoID',
+      match: {
+        isDeleted: false,
+        TrangThai: true,
+        MaHinhThucCapNhat: { $nin: ['ĐT061', 'ĐT062', 'ĐT063', 'ĐT064'] }
+      }
+    });
+
+  // Lấy danh sách LopDaoTaoNhanVienDT06 của nhanvienID với các điều kiện
+  const daotaosDT06 = await LopDaoTaoNhanVienDT06.find({ NhanVienID: nhanvienID, isDeleted: false })
+    .populate({
+      path: 'LopDaoTaoID',
+      match: {
+        isDeleted: false,
+        MaHinhThucCapNhat: { $in: ['ĐT061', 'ĐT062', 'ĐT063', 'ĐT064'] }
+      }
+    });
+
+  const daotaosFiltered = [];
+  const nghiencuukhoahocsFiltered = [];
+  const tinChiTichLuys = {};
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi năm
+  const calculateTinChiTichLuy = async (daotaosList) => {
+    for (const daoTao of daotaosList) {
+      const loai = await getLoai(daoTao.LopDaoTaoID.MaHinhThucCapNhat);
+      const lopDaoTaoInfo = {
+        ...daoTao.LopDaoTaoID.toObject(),
+        VaiTro: daoTao.VaiTro,
+        SoTinChiTichLuy: daoTao.SoTinChiTichLuy,
+        Images: daoTao.Images,
+        LopDaoTaoNhanVienID: daoTao._id
+      };
+
+      if (loai === 'Đào tạo') {
+        daotaosFiltered.push(lopDaoTaoInfo);
+      } else if (loai === 'Nghiên cứu khoa học') {
+        nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
+      }
+
+      if (daoTao.LopDaoTaoID.TrangThai) {
+        const year = new Date(daoTao.LopDaoTaoID.NgayKetThuc).getFullYear();
+        if (!tinChiTichLuys[year]) {
+          tinChiTichLuys[year] = 0;
+        }
+        tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
+      }
+    }
+  };
+
+  // Tính tổng số tín chỉ tích lũy từ hai danh sách
+  await calculateTinChiTichLuy(daotaos);
+  await calculateTinChiTichLuy(daotaosDT06);
+
+  // Sắp xếp daotaosFiltered và nghiencuukhoahocsFiltered theo NgayBatDau
+  daotaosFiltered.sort((a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau));
+  nghiencuukhoahocsFiltered.sort((a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau));
+
+  // Chuyển đổi tinChiTichLuys thành mảng và sắp xếp theo năm
+  const tinChiTichLuyArray = Object.keys(tinChiTichLuys).map(year => ({
+    Year: year,
+    TongTinChi: tinChiTichLuys[year]
+  })).sort((a, b) => a.Year - b.Year);
+
+  const result = {
+    nhanvien,
+    daotaos: daotaosFiltered,
+    nghiencuukhoahocs: nghiencuukhoahocsFiltered,
+    TinChiTichLuys: tinChiTichLuyArray
+  };
+
+  return sendResponse(res, 200, true, result, null, "Get NhanVien successful");
+});
+nhanvienController.getById1 = catchAsync(async (req, res, next) => {
   
   const nhanvienID = req.params.nhanvienID;
-console.log("userID",nhanvienID)
+
   let nhanvien = await NhanVien.findById(nhanvienID).populate('KhoaID');
   if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
   // Lấy danh sách LopDaoTaoNhanVien của nhanvienID

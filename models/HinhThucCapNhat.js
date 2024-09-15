@@ -4,6 +4,8 @@ const hinhthuccapnhatSchema = Schema(
   {
     MaNhomHinhThucCapNhat: { type:String, required: true },
     Ten: { type: String, require: false, default: "" },
+    TenBenhVien: { type: String, require: false, default: "" },
+    
     Loai: { type: String, require: false, default: "" },
     Ma: { type: String, require: true, default: "" },
    VaiTroQuyDoi:[

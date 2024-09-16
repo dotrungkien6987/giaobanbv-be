@@ -62,6 +62,12 @@ router.get(
 );
 
 router.get(
+  "/cocaunhanluc",
+  authentication.loginRequired,
+  nhanvienController.getCoCauNguonNhanLuc
+);
+
+router.get(
   "/:nhanvienID",
   authentication.loginRequired,
   validators.validate([

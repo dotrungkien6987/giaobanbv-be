@@ -52,7 +52,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
     match: {
       isDeleted: false,
       TrangThai: true,
-      MaHinhThucCapNhat: { $nin: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+      MaHinhThucCapNhat: { $not: { $regex: '^ĐT06' } },  // Điều kiện không bắt đầu bằng 'ĐT06'
     },
   });
 
@@ -64,7 +64,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
     path: "LopDaoTaoID",
     match: {
       isDeleted: false,
-      MaHinhThucCapNhat: { $in: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+      MaHinhThucCapNhat: { $regex: '^ĐT06' },  // Điều kiện bắt đầu bằng 'ĐT06'
     },
   });
 
@@ -99,11 +99,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
           nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
         }
         // Trường hợp lop dao tao là ĐT06
-        if (
-          ["ĐT061", "ĐT062", "ĐT063", "ĐT064"].includes(
-            daoTao.LopDaoTaoID.MaHinhThucCapNhat
-          )
-        ) {
+        if (daoTao.LopDaoTaoID.MaHinhThucCapNhat.startsWith('ĐT06')) {
           console.log("daotao", daoTao);
           const year = new Date(daoTao.DenNgay).getFullYear();
 
@@ -358,7 +354,7 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
             $gte: fromDate,
             $lte: toDate,
           },
-          MaHinhThucCapNhat: { $nin: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+          MaHinhThucCapNhat: { $not: { $regex: '^ĐT06' } },  // Điều kiện không bắt đầu bằng 'ĐT06'
         },
       })
       .populate({
@@ -429,7 +425,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
             $gte: fromDate,
             $lte: toDate,
           },
-          MaHinhThucCapNhat: { $nin: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+          MaHinhThucCapNhat: { $not: { $regex: '^ĐT06' } },  // Điều kiện không bắt đầu bằng 'ĐT06'
         },
       })
       .populate({
@@ -469,7 +465,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
         match: {
           isDeleted: false,
 
-          MaHinhThucCapNhat: { $in: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+          MaHinhThucCapNhat: { $regex: '^ĐT06' },  // Điều kiện bắt đầu bằng 'ĐT06'
         },
       })
       .populate({
@@ -841,7 +837,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
             $gte: fromDate,
             $lte: toDate,
           },
-          MaHinhThucCapNhat: { $nin: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+          MaHinhThucCapNhat: { $not: { $regex: '^ĐT06' } },  // Điều kiện không bắt đầu bằng 'ĐT06'
         },
       })
       .populate({
@@ -880,7 +876,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
         path: "LopDaoTaoID",
         match: {
           isDeleted: false,
-          MaHinhThucCapNhat: { $in: ["ĐT061", "ĐT062", "ĐT063", "ĐT064"] },
+          MaHinhThucCapNhat: { $regex: '^ĐT06' },  // Điều kiện bắt đầu bằng 'ĐT06'
         },
       })
       .populate({

@@ -576,7 +576,7 @@ nhanvienController.getTongHopSoLuongThucHien = catchAsync(
 
       result.push({
         MaHinhThucCapNhat: maHinhThucCapNhat,
-        Ten: hinhThuc.Ten,
+        Ten: hinhThuc.TenBenhVien,
         Loai: hinhThuc.Loai,
         totalSoThanhVien,
         lopDaoTaoCount,

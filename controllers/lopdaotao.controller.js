@@ -7,6 +7,7 @@ const moment = require("moment-timezone");
 const DaTaFix = require("../models/DaTaFix");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
 const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
+const NhanVien = require("../models/NhanVien");
 const lopdaotaoController = {};
 
 lopdaotaoController.insertOne = catchAsync(async (req, res, next) => {
@@ -142,6 +143,76 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
 
     const hinhthuccapnhats = await HinhThucCapNhat.find();
 
+    lopdaotaos = await Promise.all(lopdaotaos.map(async (lopdaotao) => {
+      const hinhthuccapnhat = hinhthuccapnhats.find(
+        (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+      );
+      const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
+        (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+      );
+
+      // Kiểm tra nếu MaHinhThucCapNhat bắt đầu bằng "ĐT06"
+      let canBoThamGia = null;
+      if (lopdaotao.MaHinhThucCapNhat.startsWith("ĐT06")) {
+        // Tìm bản ghi LopDaoTaoNhanVien theo LopDaoTaoID
+        const lopDaoTaoNhanVien = await LopDaoTaoNhanVien.findOne({ LopDaoTaoID: lopdaotao._id }).populate('NhanVienID');
+        if (lopDaoTaoNhanVien) {
+          const nhanvien = lopDaoTaoNhanVien.NhanVienID;
+          if (nhanvien) {
+            // Lấy thông tin TrinhDoChuyenMon và Ten của NhanVien
+            canBoThamGia = `${nhanvien.TrinhDoChuyenMon} - ${nhanvien.Ten}`;
+          }
+        }
+      }
+
+      return {
+        ...lopdaotao.toObject(),
+        TenHinhThucCapNhat: hinhthuccapnhat.TenBenhVien,
+        MaNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ma,
+        TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
+        CanBoThamGia: canBoThamGia || "", // Nếu không có NhanVien, ghi ""
+      };
+    }));
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      { lopdaotaos, totalPages, count },
+      null,
+      ""
+    );
+  }
+);
+lopdaotaoController.getlopdaotaosPhanTrang1 = catchAsync(
+  async (req, res, next) => {
+    // const curentUserId = req.userId;
+    console.log("getlopdaotaosPhanTrang");
+    let { page, limit, ...filter } = { ...req.query };
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 2000;
+
+    const filterConditions = [{ isDeleted: false }];
+
+    const filterCriteria = filterConditions.length
+      ? { $and: filterConditions }
+      : {};
+
+    const count = await LopDaoTao.countDocuments(filterCriteria);
+    const totalPages = Math.ceil(count / limit);
+    const offset = limit * (page - 1);
+
+    console.log("filter", filterConditions);
+    let lopdaotaos = await LopDaoTao.find(filterCriteria)
+    .populate("UserIDCreated")
+      .sort({ createdAt: -1 })
+      .skip(offset)
+      .limit(limit);
+
+    const nhomhinhthuccapnhats = (await DaTaFix.findOne()).NhomHinhThucCapNhat;
+
+    const hinhthuccapnhats = await HinhThucCapNhat.find();
+
     lopdaotaos = lopdaotaos.map((lopdaotao) => {
       const hinhthuccapnhat = hinhthuccapnhats.find(
         (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
@@ -149,11 +220,14 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
       const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
         (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
       );
+      
+      // const nhanvien = NhanVien.findOne({LopDaoTaoID:lopdaotao._id})
       return {
         ...lopdaotao.toObject(),
-        TenHinhThucCapNhat: hinhthuccapnhat.Ten,
+        TenHinhThucCapNhat: hinhthuccapnhat.TenBenhVien,
         MaNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ma,
         TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
+        // CanBoThamGia:`${nhanvien.TrinhDoChuyenMon} - ${nhanvien.Ten}`,
       };
     });
     return sendResponse(

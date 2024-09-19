@@ -33,7 +33,7 @@ async function getLoai(maHinhThucCapNhat) {
   const hinhThucCapNhat = await HinhThucCapNhat.findOne({
     Ma: maHinhThucCapNhat,
   });
-  return hinhThucCapNhat ? hinhThucCapNhat.Loai : null;
+  return hinhThucCapNhat ? hinhThucCapNhat : null;
 }
 
 nhanvienController.getById = catchAsync(async (req, res, next) => {
@@ -72,6 +72,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
   const daotaosFiltered = [];
   const nghiencuukhoahocsFiltered = [];
   const tinChiTichLuys = {};
+  const hinhThuCapNhatMap = new Map(); // Map để lưu trữ thông tin HinhThucCapNhat
 
   // Tính tổng số tín chỉ tích lũy cho mỗi năm
   const calculateTinChiTichLuy = async (daotaosList) => {
@@ -89,14 +90,15 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
           SoTinChiTichLuy: daoTao.SoTinChiTichLuy,
           Images: daoTao.Images,
           LopDaoTaoNhanVienID: daoTao._id,
+          TenHinhThucCapNhat:loai.TenBenhVien
         };
 
-        if (loai === "Đào tạo") {
+        if (loai.Loai === "Đào tạo") {
           daotaosFiltered.push(lopDaoTaoInfo);
-        } else if (loai === "Nghiên cứu khoa học") {
+        } else if (loai.Loai === "Nghiên cứu khoa học") {
           nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
         }
-        //Trường hợp lop dao tao  la ĐT06
+        // Trường hợp lop dao tao là ĐT06
         if (
           ["ĐT061", "ĐT062", "ĐT063", "ĐT064"].includes(
             daoTao.LopDaoTaoID.MaHinhThucCapNhat
@@ -110,7 +112,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
           }
           tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
         }
-        //trường hợp không là ĐT06
+        // Trường hợp không là ĐT06
         else if (daoTao.LopDaoTaoID.TrangThai) {
           console.log("daotao", daoTao);
           const year = new Date(daoTao.LopDaoTaoID.NgayKetThuc).getFullYear();
@@ -118,6 +120,26 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
             tinChiTichLuys[year] = 0;
           }
           tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
+        }
+
+        // Tính toán thông tin HinhThucCapNhat
+        if (!hinhThuCapNhatMap.has(daoTao.LopDaoTaoID.MaHinhThucCapNhat)) {
+          const hinhThucCapNhatInfo = await HinhThucCapNhat.findOne({
+            Ma: daoTao.LopDaoTaoID.MaHinhThucCapNhat,
+          });
+          if (hinhThucCapNhatInfo) {
+            hinhThuCapNhatMap.set(daoTao.LopDaoTaoID.MaHinhThucCapNhat, {
+              ma: hinhThucCapNhatInfo.Ma,
+              label: hinhThucCapNhatInfo.TenBenhVien,
+              value: 0,
+            });
+          }
+        }
+        if (hinhThuCapNhatMap.has(daoTao.LopDaoTaoID.MaHinhThucCapNhat)) {
+          const hinhThucCapNhatData = hinhThuCapNhatMap.get(
+            daoTao.LopDaoTaoID.MaHinhThucCapNhat
+          );
+          hinhThucCapNhatData.value += 1;
         }
       }
     }
@@ -144,83 +166,20 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
     }))
     .sort((a, b) => a.Year - b.Year);
 
-  const result = {
-    nhanvien,
-    daotaos: daotaosFiltered,
-    nghiencuukhoahocs: nghiencuukhoahocsFiltered,
-    TinChiTichLuys: tinChiTichLuyArray,
-  };
-
-  return sendResponse(res, 200, true, result, null, "Get NhanVien successful");
-});
-
-nhanvienController.getById1 = catchAsync(async (req, res, next) => {
-  const nhanvienID = req.params.nhanvienID;
-
-  let nhanvien = await NhanVien.findById(nhanvienID).populate("KhoaID");
-  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
-  // Lấy danh sách LopDaoTaoNhanVien của nhanvienID
-  const daotaos = await LopDaoTaoNhanVien.find({
-    NhanVienID: nhanvienID,
-  }).populate("LopDaoTaoID");
-
-  // Phân loại daotaos thành daotaos và nghiencuukhoahocs dựa trên Loai của HinhThucCapNhat
-  const daotaosFiltered = [];
-  const nghiencuukhoahocsFiltered = [];
-  const tinChiTichLuys = {};
-
-  for (const daoTao of daotaos) {
-    const loai = await getLoai(daoTao.LopDaoTaoID.MaHinhThucCapNhat);
-    const lopDaoTaoInfo = {
-      ...daoTao.LopDaoTaoID.toObject(),
-      VaiTro: daoTao.VaiTro,
-      SoTinChiTichLuy: daoTao.SoTinChiTichLuy,
-      Images: daoTao.Images,
-      LopDaoTaoNhanVienID: daoTao._id,
-    };
-
-    if (loai === "Đào tạo") {
-      daotaosFiltered.push(lopDaoTaoInfo);
-    } else if (loai === "Nghiên cứu khoa học") {
-      nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
-    }
-
-    // Tính tổng TinChiTichLuy theo năm nếu TrangThai của LopDaoTao là true
-    if (daoTao.LopDaoTaoID.TrangThai) {
-      console.log("daoTao", daoTao);
-      const year = new Date(daoTao.LopDaoTaoID.NgayKetThuc).getFullYear();
-      if (!tinChiTichLuys[year]) {
-        tinChiTichLuys[year] = 0;
-      }
-      tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
-    }
-  }
-
-  // Sắp xếp daotaosFiltered và nghiencuukhoahocsFiltered theo NgayBatDau
-  daotaosFiltered.sort(
-    (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau)
-  );
-  nghiencuukhoahocsFiltered.sort(
-    (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau)
-  );
-
-  // Chuyển đổi tinChiTichLuys thành mảng và sắp xếp theo năm
-  const tinChiTichLuyArray = Object.keys(tinChiTichLuys)
-    .map((year) => ({
-      Year: year,
-      TongTinChi: tinChiTichLuys[year],
-    }))
-    .sort((a, b) => a.Year - b.Year);
+  // Chuyển đổi hinhThuCapNhatMap thành mảng
+  const hinhThuCapNhatArray = Array.from(hinhThuCapNhatMap.values());
 
   const result = {
     nhanvien,
     daotaos: daotaosFiltered,
     nghiencuukhoahocs: nghiencuukhoahocsFiltered,
     TinChiTichLuys: tinChiTichLuyArray,
+    hinhthuccapnhats: hinhThuCapNhatArray,
   };
 
   return sendResponse(res, 200, true, result, null, "Get NhanVien successful");
 });
+
 
 nhanvienController.getNhanviensPhanTrang = catchAsync(
   async (req, res, next) => {
@@ -637,59 +596,215 @@ nhanvienController.getTongHopSoLuongThucHien = catchAsync(
   }
 );
 
-nhanvienController.getCoCauNguonNhanLuc = catchAsync(async (req, res, next) => {
+nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
+  async (req, res, next) => {
+    // Lấy thông tin các nhóm QuyDoi từ DaTaFix
+    const dataFix = await DaTaFix.findOne(); // Giả sử chỉ có một document trong DaTaFix
+    const nhomQuyDoi1 = [
+      ...new Set(
+        dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi1).filter(
+          (quyDoi) => quyDoi
+        )
+      ),
+    ];
+    const nhomQuyDoi2 = [
+      ...new Set(
+        dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi2).filter(
+          (quyDoi) => quyDoi
+        )
+      ),
+    ];
 
+    // Lấy toàn bộ danh sách NhanVien
+    const nhanViens = await NhanVien.find({ isDeleted: false });
+
+    // Nhóm lại theo QuyDoi1 với nhóm 'Khác' nếu không ánh xạ được
+    const resultQuyDoi1 = nhomQuyDoi1.map((quyDoi1) => {
+      const soLuong = nhanViens.filter((nv) => {
+        const trinhDo = nv.TrinhDoChuyenMon;
+        return dataFix.TrinhDoChuyenMon.some(
+          (td) => td.QuyDoi1 === quyDoi1 && td.TrinhDoChuyenMon === trinhDo
+        );
+      }).length;
+      return { QuyDoi: quyDoi1, SoLuong: soLuong };
+    });
+
+    // Xử lý nhóm 'Khác' cho QuyDoi1
+    const soLuongKhacQuyDoi1 = nhanViens.filter((nv) => {
+      const trinhDo = nv.TrinhDoChuyenMon;
+      return !dataFix.TrinhDoChuyenMon.some((td) => td.QuyDoi1 === trinhDo);
+    }).length;
+    resultQuyDoi1.push({ QuyDoi: "Khác", SoLuong: soLuongKhacQuyDoi1 });
+
+    // Nhóm lại theo QuyDoi2 với nhóm 'Khác' nếu không ánh xạ được
+    const resultQuyDoi2 = nhomQuyDoi2.map((quyDoi2) => {
+      const soLuong = nhanViens.filter((nv) => {
+        const trinhDo = nv.TrinhDoChuyenMon;
+        return dataFix.TrinhDoChuyenMon.some(
+          (td) => td.QuyDoi2 === quyDoi2 && td.TrinhDoChuyenMon === trinhDo
+        );
+      }).length;
+      return { QuyDoi: quyDoi2, SoLuong: soLuong };
+    });
+
+    // Xử lý nhóm 'Khác' cho QuyDoi2
+    const soLuongKhacQuyDoi2 = nhanViens.filter((nv) => {
+      const trinhDo = nv.TrinhDoChuyenMon;
+      return !dataFix.TrinhDoChuyenMon.some((td) => td.QuyDoi2 === trinhDo);
+    }).length;
+    resultQuyDoi2.push({ QuyDoi: "Khác", SoLuong: soLuongKhacQuyDoi2 });
+
+    // Trả về kết quả với 2 key nhomQuyDoi1 và nhomQuyDoi2
+    return sendResponse(
+      res,
+      200,
+      true,
+      { nhomQuyDoi1: resultQuyDoi1, nhomQuyDoi2: resultQuyDoi2 },
+      null,
+      "Lấy dữ liệu nhân viên theo QuyDoi thành công"
+    );
+  }
+);
+
+nhanvienController.getCoCauNguonNhanLuc = catchAsync(async (req, res, next) => {
   // Lấy thông tin các nhóm QuyDoi từ DaTaFix
-  const dataFix = await DaTaFix.findOne(); // Giả sử chỉ có một document trong DaTaFix
-  const nhomQuyDoi1 = [...new Set(dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi1).filter(quyDoi => quyDoi))];
-  const nhomQuyDoi2 = [...new Set(dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi2).filter(quyDoi => quyDoi))];
+  const dataFix = await DaTaFix.findOne();
+  if (!dataFix) {
+    throw new AppError(404, "DataFix not found", "Get CoCauNguonNhanLuc error");
+  }
+
+  const nhomQuyDoi1 = [
+    ...new Set(
+      dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi1).filter(
+        (quyDoi) => quyDoi
+      )
+    ),
+  ];
+  const nhomQuyDoi2 = [
+    ...new Set(
+      dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi2).filter(
+        (quyDoi) => quyDoi
+      )
+    ),
+  ];
 
   // Lấy toàn bộ danh sách NhanVien
-  const nhanViens = await NhanVien.find({});
+  const nhanViens = await NhanVien.find({ isDeleted: false });
 
-  // Nhóm lại theo QuyDoi1 với nhóm 'Khác' nếu không ánh xạ được
-  const resultQuyDoi1 = nhomQuyDoi1.map((quyDoi1) => {
-    const soLuong = nhanViens.filter(nv => {
+  // Hàm hỗ trợ để nhóm nhân viên theo QuyDoi
+  const groupByQuyDoi = (nhanViens, nhomQuyDoi, quyDoiType) => {
+    const result = nhomQuyDoi.map((quyDoi) => {
+      const soLuong = nhanViens.filter((nv) => {
+        const trinhDo = nv.TrinhDoChuyenMon;
+        return dataFix.TrinhDoChuyenMon.some(
+          (td) => td[quyDoiType] === quyDoi && td.TrinhDoChuyenMon === trinhDo
+        );
+      }).length;
+      return { label: quyDoi, value: soLuong };
+    });
+
+    // Xử lý nhóm 'Khác'
+    const soLuongKhac = nhanViens.filter((nv) => {
       const trinhDo = nv.TrinhDoChuyenMon;
-      return dataFix.TrinhDoChuyenMon.some(td => td.QuyDoi1 === quyDoi1 && td.TrinhDoChuyenMon === trinhDo);
+      return !dataFix.TrinhDoChuyenMon.some(
+        (td) =>
+          td[quyDoiType] &&
+          nhomQuyDoi.includes(td[quyDoiType]) &&
+          td.TrinhDoChuyenMon === trinhDo
+      );
     }).length;
-    return { QuyDoi: quyDoi1, SoLuong: soLuong };
-  });
 
-  // Xử lý nhóm 'Khác' cho QuyDoi1
-  const soLuongKhacQuyDoi1 = nhanViens.filter(nv => {
-    const trinhDo = nv.TrinhDoChuyenMon;
-    return !dataFix.TrinhDoChuyenMon.some(td => td.QuyDoi1 === trinhDo);
-  }).length;
-  resultQuyDoi1.push({ QuyDoi: 'Khác', SoLuong: soLuongKhacQuyDoi1 });
+    const khacIndex = result.findIndex((item) => item.label === "Khác");
+    if (khacIndex !== -1) {
+      result[khacIndex].value += soLuongKhac;
+    } else {
+      result.push({ label: "Khác", value: soLuongKhac });
+    }
 
-  // Nhóm lại theo QuyDoi2 với nhóm 'Khác' nếu không ánh xạ được
-  const resultQuyDoi2 = nhomQuyDoi2.map((quyDoi2) => {
-    const soLuong = nhanViens.filter(nv => {
-      const trinhDo = nv.TrinhDoChuyenMon;
-      return dataFix.TrinhDoChuyenMon.some(td => td.QuyDoi2 === quyDoi2 && td.TrinhDoChuyenMon === trinhDo);
-    }).length;
-    return { QuyDoi: quyDoi2, SoLuong: soLuong };
-  });
+    return result;
+  };
 
-  // Xử lý nhóm 'Khác' cho QuyDoi2
-  const soLuongKhacQuyDoi2 = nhanViens.filter(nv => {
-    const trinhDo = nv.TrinhDoChuyenMon;
-    return !dataFix.TrinhDoChuyenMon.some(td => td.QuyDoi2 === trinhDo);
-  }).length;
-  resultQuyDoi2.push({ QuyDoi: 'Khác', SoLuong: soLuongKhacQuyDoi2 });
+  const resultQuyDoi1 = groupByQuyDoi(nhanViens, nhomQuyDoi1, "QuyDoi1");
+  const resultQuyDoi2 = groupByQuyDoi(nhanViens, nhomQuyDoi2, "QuyDoi2");
 
-  // Trả về kết quả với 2 key nhomQuyDoi1 và nhomQuyDoi2
+  // Sắp xếp kết quả
+  const sortOrderQuyDoi1 = ["Bác sĩ", "Điều dưỡng", "Kỹ thuật viên", "Dược sĩ"];
+  const sortOrderQuyDoi2 = [
+    "PGS - Tiến sĩ y học",
+    "Tiến sĩ y học",
+    "Bác sĩ CKII",
+    "Bác sĩ CKI",
+    "Thạc sĩ bác sĩ",
+    "Bác sĩ nội trú",
+    "Bác sĩ",
+    "Điều dưỡng CKI",
+    "Điều dưỡng đại học",
+    "Điều dưỡng cao đẳng",
+    "Thạc sĩ khác",
+    "CKI khác",
+    "Kỹ sư",
+    "Cử nhân",
+  ];
+
+  const sortResult = (result, sortOrder) => {
+    const sorted = result.sort((a, b) => {
+      const indexA = sortOrder.indexOf(a.label);
+      const indexB = sortOrder.indexOf(b.label);
+
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+
+    // Đưa nhóm 'Khác' xuống cuối cùng
+    const khacIndex = sorted.findIndex((item) => item.label === "Khác");
+    if (khacIndex !== -1) {
+      const khacItem = sorted.splice(khacIndex, 1)[0];
+      sorted.push(khacItem);
+    }
+
+    return sorted;
+  };
+
+  const sortedResultQuyDoi1 = sortResult(resultQuyDoi1, sortOrderQuyDoi1);
+  const sortedResultQuyDoi2 = sortResult(resultQuyDoi2, sortOrderQuyDoi2);
+
+  // Hàm hỗ trợ để đếm số NhanVien có và không có ChungChiHanhNghe
+  const countNhanVienChungChiHanhNghe = (nhanViens) => {
+    const coChungChi = nhanViens.filter(
+      (nv) =>
+       
+        nv.SoCCHN &&
+        nv.SoCCHN.trim() !== "" &&
+        !nv.isDeleted
+    ).length;
+    const khongChungChi = nhanViens.filter(
+      (nv) =>
+        (!nv.SoCCHN || nv.SoCCHN.trim() === "") &&
+        !nv.isDeleted
+    ).length;
+    return [
+      { label: "Có CCHN", value: coChungChi },
+      { label: "Không có CCHN", value: khongChungChi },
+    ];
+  };
+
+  const resultChungChiHanhNghe = countNhanVienChungChiHanhNghe(nhanViens);
+
   return sendResponse(
     res,
     200,
     true,
-    { nhomQuyDoi1: resultQuyDoi1, nhomQuyDoi2: resultQuyDoi2 },
+    {
+      resultQuyDoi1: sortedResultQuyDoi1,
+      resultQuyDoi2: sortedResultQuyDoi2,
+      resultChungChiHanhNghe,
+    },
     null,
-    "Lấy dữ liệu nhân viên theo QuyDoi thành công"
+    "Get CoCauNguonNhanLuc successful"
   );
 });
-
 
 nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
   async (req, res, next) => {
@@ -823,18 +938,47 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       const countDatTrue = nhanVienList.filter((nvData) =>
         KhuyenCao ? nvData.totalSoTinChiTichLuy >= Number(KhuyenCao) : false
       ).length;
-      const countDatFalse = totalNhanVien - countDatTrue;
+      
 
+       // Thêm logic kiểm tra SoCCHN không null hoặc không rỗng
+       const countSoCCHN = nhanVienList.filter(
+
+        (nvData) =>
+          nvData.nhanVien.SoCCHN && nvData.nhanVien.SoCCHN.trim() !== ""
+      ).length;
+      const countDatFalse = countSoCCHN - countDatTrue;
       result.push({
         KhoaID: khoaId,
         TenKhoa: khoa.TenKhoa,
         totalNhanVien,
         countDatTrue,
         countDatFalse,
+        countSoCCHN,
       });
     }
     result = result.filter((item) => item.totalNhanVien > 0);
     result.sort((a, b) => b.totalNhanVien - a.totalNhanVien);
+
+
+    // Tính tổng các giá trị
+  const totalSummary = result.reduce(
+    (acc, item) => {
+      acc.totalNhanVien += item.totalNhanVien;
+      acc.countDatTrue += item.countDatTrue;
+      acc.countDatFalse += item.countDatFalse;
+      acc.countSoCCHN += item.countSoCCHN;
+      return acc;
+    },
+    { totalNhanVien: 0, countDatTrue: 0, countDatFalse: 0, countSoCCHN: 0 }
+  );
+
+  // Thêm dòng tổng cộng vào đầu kết quả
+  result.unshift({
+    KhoaID: null,
+    TenKhoa: "Tổng cộng",
+    ...totalSummary,
+  });
+
 
     return sendResponse(
       res,
@@ -846,6 +990,5 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     );
   }
 );
-
 
 module.exports = nhanvienController;

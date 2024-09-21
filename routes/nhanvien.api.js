@@ -48,6 +48,12 @@ router.get(
   authentication.loginRequired,
   nhanvienController.getAllNhanVienWithTinChiTichLuy
 );
+router.get(
+  "/tichluytinchitheokhoa/",
+  authentication.loginRequired,
+ 
+  nhanvienController.getAllNhanVienWithTinChiTichLuy
+);
 
 router.get(
   "/soluongthuchien",
@@ -65,6 +71,15 @@ router.get(
   "/cocaunhanluc",
   authentication.loginRequired,
   nhanvienController.getCoCauNguonNhanLuc
+);
+
+router.get(
+  "/cocaunhanluctheokhoa/:khoaID",
+  authentication.loginRequired,
+  validators.validate([
+    param("khoaID").exists().isString().custom(validators.checkObjectId),
+      ]),
+  nhanvienController.getCoCauNguonNhanLucByKhoa
 );
 
 router.get(

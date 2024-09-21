@@ -395,6 +395,7 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
   }
 );
 
+//Tinh tin chi tich luy cho tung nhan vien
 nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
   async (req, res, next) => {
     const { FromDate, ToDate, KhuyenCao } = req.query;
@@ -526,6 +527,138 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
     );
   }
 );
+nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
+  async (req, res, next) => {
+    const { FromDate, ToDate, KhuyenCao, khoaID } = req.query;
+
+    // Kiểm tra sự hợp lệ của các tham số FromDate, ToDate và khoaID
+    if (!FromDate || !ToDate || !khoaID) {
+      throw new AppError(
+        400,
+        "FromDate, ToDate and khoaID are required",
+        "Get NhanVien Error"
+      );
+    }
+
+    const fromDate = new Date(FromDate);
+    const toDate = new Date(ToDate);
+    console.log("fromDate", fromDate);
+
+    // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
+    const lopDaoTaoNhanVienList = await LopDaoTaoNhanVien.find({
+      isDeleted: false,
+    })
+      .populate({
+        path: "LopDaoTaoID",
+        match: {
+          isDeleted: false,
+          TrangThai: true,
+          NgayKetThuc: {
+            $gte: fromDate,
+            $lte: toDate,
+          },
+          MaHinhThucCapNhat: { $not: { $regex: '^ĐT06' } },  // Điều kiện không bắt đầu bằng 'ĐT06'
+        },
+      })
+      .populate({
+        path: "NhanVienID",
+        match: { KhoaID: khoaID }, // Chỉ lấy những nhân viên thuộc khoaID
+        populate: { path: "KhoaID" },
+      });
+
+    console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
+    const nhanVienMap = new Map();
+
+    // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
+    for (const lopDaoTaoNhanVien of lopDaoTaoNhanVienList) {
+      const { NhanVienID, LopDaoTaoID, SoTinChiTichLuy } = lopDaoTaoNhanVien;
+      if (LopDaoTaoID && NhanVienID && !NhanVienID.isDeleted) {
+        // Chỉ tính những bản ghi hợp lệ
+        if (!nhanVienMap.has(NhanVienID._id.toString())) {
+          nhanVienMap.set(NhanVienID._id.toString(), {
+            nhanVien: NhanVienID,
+            totalSoTinChiTichLuy: 0,
+          });
+        }
+        const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+        nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+      }
+    }
+
+    // Lấy danh sách nhân viên từ bảng LopDaoTaoNhanVienDT06 với các điều kiện
+    const lopDaoTaoNhanVienDT06List = await LopDaoTaoNhanVienDT06.find({
+      isDeleted: false,
+      DenNgay: {
+        $gte: fromDate,
+        $lte: toDate,
+      },
+    })
+      .populate({
+        path: "LopDaoTaoID",
+        match: {
+          isDeleted: false,
+          MaHinhThucCapNhat: { $regex: '^ĐT06' },  // Điều kiện bắt đầu bằng 'ĐT06'
+        },
+      })
+      .populate({
+        path: "NhanVienID",
+        match: { KhoaID: khoaID }, // Chỉ lấy những nhân viên thuộc khoaID
+        populate: { path: "KhoaID" },
+      });
+
+    // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
+    for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
+      
+      const { NhanVienID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
+      if (NhanVienID && !NhanVienID.isDeleted) {
+        // Chỉ tính những bản ghi hợp lệ
+        if (!nhanVienMap.has(NhanVienID._id.toString())) {
+          nhanVienMap.set(NhanVienID._id.toString(), {
+            nhanVien: NhanVienID,
+            totalSoTinChiTichLuy: 0,
+          });
+        }
+        const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+        nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+      }
+    }
+
+    // Lấy tất cả các nhân viên không bị xóa và thuộc khoaID
+    const allNhanVien = await NhanVien.find({ isDeleted: false, KhoaID: khoaID }).populate(
+      "KhoaID"
+    );
+
+    // Thêm những nhân viên không có trong lopDaoTaoNhanVienList và lopDaoTaoNhanVienDT06List vào kết quả với totalSoTinChiTichLuy = 0
+    for (const nhanVien of allNhanVien) {
+      if (!nhanVienMap.has(nhanVien._id.toString())) {
+        nhanVienMap.set(nhanVien._id.toString(), {
+          nhanVien: nhanVien,
+          totalSoTinChiTichLuy: 0,
+        });
+      }
+    }
+
+    // Chuyển đổi Map thành mảng kết quả
+    const result = Array.from(nhanVienMap.values()).map((nhanVienData) => {
+      return {
+        ...nhanVienData,
+        Dat: KhuyenCao
+          ? nhanVienData.totalSoTinChiTichLuy >= Number(KhuyenCao)
+          : false, // Xử lý logic Dat
+      };
+    });
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      result,
+      null,
+      "Get NhanVien with TinChiTichLuy by Khoa successful"
+    );
+  }
+);
+
 
 nhanvienController.getTongHopSoLuongThucHien = catchAsync(
   async (req, res, next) => {
@@ -802,6 +935,148 @@ nhanvienController.getCoCauNguonNhanLuc = catchAsync(async (req, res, next) => {
   );
 });
 
+
+nhanvienController.getCoCauNguonNhanLucByKhoa = catchAsync(async (req, res, next) => {
+  const { khoaID } = req.params;
+
+  // Lấy thông tin các nhóm QuyDoi từ DaTaFix
+  const dataFix = await DaTaFix.findOne();
+  if (!dataFix) {
+    throw new AppError(404, "DataFix not found", "Get CoCauNguonNhanLuc error");
+  }
+
+  const nhomQuyDoi1 = [
+    ...new Set(
+      dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi1).filter(
+        (quyDoi) => quyDoi
+      )
+    ),
+  ];
+  const nhomQuyDoi2 = [
+    ...new Set(
+      dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi2).filter(
+        (quyDoi) => quyDoi
+      )
+    ),
+  ];
+
+  // Lấy danh sách NhanVien của khoa cụ thể
+  const nhanViens = await NhanVien.find({ isDeleted: false, KhoaID: khoaID });
+
+  // Hàm hỗ trợ để nhóm nhân viên theo QuyDoi
+  const groupByQuyDoi = (nhanViens, nhomQuyDoi, quyDoiType) => {
+    const result = nhomQuyDoi.map((quyDoi) => {
+      const soLuong = nhanViens.filter((nv) => {
+        const trinhDo = nv.TrinhDoChuyenMon;
+        return dataFix.TrinhDoChuyenMon.some(
+          (td) => td[quyDoiType] === quyDoi && td.TrinhDoChuyenMon === trinhDo
+        );
+      }).length;
+      return { label: quyDoi, value: soLuong };
+    });
+
+    // Xử lý nhóm 'Khác'
+    const soLuongKhac = nhanViens.filter((nv) => {
+      const trinhDo = nv.TrinhDoChuyenMon;
+      return !dataFix.TrinhDoChuyenMon.some(
+        (td) =>
+          td[quyDoiType] &&
+          nhomQuyDoi.includes(td[quyDoiType]) &&
+          td.TrinhDoChuyenMon === trinhDo
+      );
+    }).length;
+
+    const khacIndex = result.findIndex((item) => item.label === "Khác");
+    if (khacIndex !== -1) {
+      result[khacIndex].value += soLuongKhac;
+    } else {
+      result.push({ label: "Khác", value: soLuongKhac });
+    }
+
+    return result;
+  };
+
+  const resultQuyDoi1 = groupByQuyDoi(nhanViens, nhomQuyDoi1, "QuyDoi1");
+  const resultQuyDoi2 = groupByQuyDoi(nhanViens, nhomQuyDoi2, "QuyDoi2");
+
+  // Sắp xếp kết quả
+  const sortOrderQuyDoi1 = ["Bác sĩ", "Điều dưỡng", "Kỹ thuật viên", "Dược sĩ"];
+  const sortOrderQuyDoi2 = [
+    "PGS - Tiến sĩ y học",
+    "Tiến sĩ y học",
+    "Bác sĩ CKII",
+    "Bác sĩ CKI",
+    "Thạc sĩ bác sĩ",
+    "Bác sĩ nội trú",
+    "Bác sĩ",
+    "Điều dưỡng CKI",
+    "Điều dưỡng đại học",
+    "Điều dưỡng cao đẳng",
+    "Thạc sĩ khác",
+    "CKI khác",
+    "Kỹ sư",
+    "Cử nhân",
+  ];
+
+  const sortResult = (result, sortOrder) => {
+    const sorted = result.sort((a, b) => {
+      const indexA = sortOrder.indexOf(a.label);
+      const indexB = sortOrder.indexOf(b.label);
+
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+
+    // Đưa nhóm 'Khác' xuống cuối cùng
+    const khacIndex = sorted.findIndex((item) => item.label === "Khác");
+    if (khacIndex !== -1) {
+      const khacItem = sorted.splice(khacIndex, 1)[0];
+      sorted.push(khacItem);
+    }
+
+    return sorted;
+  };
+
+  const sortedResultQuyDoi1 = sortResult(resultQuyDoi1, sortOrderQuyDoi1);
+  const sortedResultQuyDoi2 = sortResult(resultQuyDoi2, sortOrderQuyDoi2);
+
+  // Hàm hỗ trợ để đếm số NhanVien có và không có ChungChiHanhNghe
+  const countNhanVienChungChiHanhNghe = (nhanViens) => {
+    const coChungChi = nhanViens.filter(
+      (nv) =>
+        nv.SoCCHN &&
+        nv.SoCCHN.trim() !== "" &&
+        !nv.isDeleted
+    ).length;
+    const khongChungChi = nhanViens.filter(
+      (nv) =>
+        (!nv.SoCCHN || nv.SoCCHN.trim() === "") &&
+        !nv.isDeleted
+    ).length;
+    return [
+      { label: "Có CCHN", value: coChungChi },
+      { label: "Không có CCHN", value: khongChungChi },
+    ];
+  };
+
+  const resultChungChiHanhNghe = countNhanVienChungChiHanhNghe(nhanViens);
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      resultQuyDoi1: sortedResultQuyDoi1,
+      resultQuyDoi2: sortedResultQuyDoi2,
+      resultChungChiHanhNghe,
+    },
+    null,
+    "Get CoCauNguonNhanLuc successful"
+  );
+});
+
 nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
   async (req, res, next) => {
     const { FromDate, ToDate, KhuyenCao } = req.query;
@@ -986,5 +1261,6 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     );
   }
 );
+
 
 module.exports = nhanvienController;

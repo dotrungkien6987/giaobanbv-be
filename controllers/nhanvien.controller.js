@@ -68,7 +68,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
     },
   });
 
-  console.log("daotaosDT06", daotaosDT06);
+  
   const daotaosFiltered = [];
   const nghiencuukhoahocsFiltered = [];
   const tinChiTichLuys = {};
@@ -77,11 +77,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
   // Tính tổng số tín chỉ tích lũy cho mỗi năm
   const calculateTinChiTichLuy = async (daotaosList) => {
     for (const daoTao of daotaosList) {
-      console.log("daoTao", daoTao);
-      console.log(
-        "dieu kien kiem tra",
-        daoTao.LopDaoTaoID && daoTao.LopDaoTaoID.MaHinhThucCapNhat
-      );
+     
       if (daoTao.LopDaoTaoID && daoTao.LopDaoTaoID.MaHinhThucCapNhat) {
         const loai = await getLoai(daoTao.LopDaoTaoID.MaHinhThucCapNhat);
         const lopDaoTaoInfo = {
@@ -100,7 +96,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
         }
         // Trường hợp lop dao tao là ĐT06
         if (daoTao.LopDaoTaoID.MaHinhThucCapNhat.startsWith('ĐT06')) {
-          console.log("daotao", daoTao);
+        
           const year = new Date(daoTao.DenNgay).getFullYear();
 
           if (!tinChiTichLuys[year]) {
@@ -110,7 +106,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
         }
         // Trường hợp không là ĐT06
         else if (daoTao.LopDaoTaoID.TrangThai) {
-          console.log("daotao", daoTao);
+         
           const year = new Date(daoTao.LopDaoTaoID.NgayKetThuc).getFullYear();
           if (!tinChiTichLuys[year]) {
             tinChiTichLuys[year] = 0;
@@ -145,7 +141,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
   await calculateTinChiTichLuy(daotaos);
   await calculateTinChiTichLuy(daotaosDT06);
 
-  console.log("tinchitichluy", tinChiTichLuys);
+ 
   // Sắp xếp daotaosFiltered và nghiencuukhoahocsFiltered theo NgayBatDau
   daotaosFiltered.sort(
     (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau)
@@ -180,7 +176,7 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
 nhanvienController.getNhanviensPhanTrang = catchAsync(
   async (req, res, next) => {
     // const curentUserId = req.userId;
-    console.log("getNhanViensPhanTrang");
+    
     let { page, limit, ...filter } = { ...req.query };
     page = parseInt(page) || 1;
     limit = parseInt(limit) || 2000;
@@ -362,7 +358,6 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
         populate: { path: "KhoaID" },
       });
 
-    console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
     const nhanVienMap = new Map();
 
     // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên
@@ -434,7 +429,6 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
         populate: { path: "KhoaID" },
       });
 
-    console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
     const nhanVienMap = new Map();
 
     // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
@@ -476,7 +470,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
 
     // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
     for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
-      console.log("lopDaoTaoNhanVienDT06", lopDaoTaoNhanVienDT06);
+      
       const { NhanVienID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
       if (NhanVienID && !NhanVienID.isDeleted) {
         // Chỉ tính những bản ghi hợp lệ
@@ -542,7 +536,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
 
     const fromDate = new Date(FromDate);
     const toDate = new Date(ToDate);
-    console.log("fromDate", fromDate);
+    console.log("khoaID", khoaID);
 
     // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
     const lopDaoTaoNhanVienList = await LopDaoTaoNhanVien.find({
@@ -566,7 +560,6 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
         populate: { path: "KhoaID" },
       });
 
-    console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
     const nhanVienMap = new Map();
 
     // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
@@ -675,9 +668,7 @@ nhanvienController.getTongHopSoLuongThucHien = catchAsync(
 
     const fromDate = new Date(FromDate);
     const toDate = new Date(ToDate);
-    console.log("fromDate", fromDate);
-    console.log("toDate", toDate);
-
+    
     // Lấy danh sách HinhThucCapNhat
     const hinhThucCapNhatList = await HinhThucCapNhat.find({});
 
@@ -1092,9 +1083,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
 
     const fromDate = new Date(FromDate);
     const toDate = new Date(ToDate);
-    console.log("fromDate", fromDate);
-    console.log("toDate", toDate);
-
+   
     // Lấy tất cả các khoa
     const khoaList = await Khoa.find({});
     let result = [];
@@ -1120,7 +1109,6 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
         populate: { path: "KhoaID" },
       });
 
-    console.log("lopDaoTaoNhanVienList", lopDaoTaoNhanVienList);
     const nhanVienMap = new Map();
 
     // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
@@ -1159,11 +1147,9 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
         populate: { path: "KhoaID" },
       });
 
-    console.log("lopDaoTaoNhanVienDT06List", lopDaoTaoNhanVienDT06List);
-
     // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
     for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
-      console.log("lopDaoTaoNhanVienDT06", lopDaoTaoNhanVienDT06);
+      
       const { NhanVienID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
       if (NhanVienID && !NhanVienID.isDeleted) {
         // Chỉ tính những bản ghi hợp lệ
@@ -1192,12 +1178,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
         });
       }
     }
-    console.log(
-      "nhanvienMap",
-      Array.from(nhanVienMap.values()).filter(
-        (item) => item.totalSoTinChiTichLuy > 0
-      )
-    );
+   
     // Tính tổng số nhân viên trong mỗi khoa, số nhân viên Dat=true và Dat=false
     for (const khoa of khoaList) {
       const khoaId = khoa._id;

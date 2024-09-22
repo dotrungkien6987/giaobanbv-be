@@ -52,7 +52,7 @@ router.get(
   "/tichluytinchitheokhoa/",
   authentication.loginRequired,
  
-  nhanvienController.getAllNhanVienWithTinChiTichLuy
+  nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa
 );
 
 router.get(

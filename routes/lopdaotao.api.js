@@ -38,6 +38,13 @@ router.put(
   lopdaotaoController.updateTrangThaiLopDaoTao
 );
 
+router.put(
+  "/updatehoidong",
+  authentication.loginRequired,
+
+  lopdaotaoController.updateHoiDongIDForLopDaoTao
+);
+
 /**
  * @route GET /lopdaotao
  * @description Get all lopdaotao

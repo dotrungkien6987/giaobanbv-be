@@ -59,7 +59,7 @@ router.get(
   "/soluongthuchien",
   authentication.loginRequired,
   nhanvienController.getTongHopSoLuongThucHien
-);
+); 
 
 router.get(
   "/soluongtheokhoa",

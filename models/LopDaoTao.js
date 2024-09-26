@@ -21,6 +21,7 @@ const lopdaotaoSchema = Schema(
     NgayKetThuc: { type: Date, require: false },
     isDeleted: { type: Boolean, default: false, select: false },
     UserIDCreated: {type: Schema.ObjectId,required:false,ref:"User"},
+    HoiDongID: {type: Schema.ObjectId,required:false,ref:"HoiDong"},
   },
   { timestamps: true }
 );

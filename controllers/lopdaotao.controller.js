@@ -8,6 +8,7 @@ const DaTaFix = require("../models/DaTaFix");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
 const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const NhanVien = require("../models/NhanVien");
+const HoiDong = require("../models/HoiDong");
 const lopdaotaoController = {};
 
 lopdaotaoController.insertOne = catchAsync(async (req, res, next) => {
@@ -344,6 +345,37 @@ lopdaotaoController.updateOneLopDaoTao = catchAsync(async (req, res, next) => {
     "Update Suco successful"
   );
 });
+lopdaotaoController.updateHoiDongIDForLopDaoTao = catchAsync(
+  async (req, res, next) => {
+    let { hoidongID, lopdaotaoID } = { ...req.body };
+   
+    let lopdaotaoUpdate = await LopDaoTao.findById(lopdaotaoID || 0);
+    if (!lopdaotaoUpdate)
+      throw new AppError(
+        400,
+        "lopdaotaoUpdate not found",
+        "Update lopdaotaoUpdate error"
+      );
+    if (lopdaotaoUpdate) {
+      lopdaotaoUpdate = await LopDaoTao.findByIdAndUpdate(
+        lopdaotaoID,
+        { HoiDongID: hoidongID },
+        {
+          new: true,
+        }
+      );
+    }
+    console.log("lopdaotaoupdate", lopdaotaoUpdate);
+    return sendResponse(
+      res,
+      200,
+      true,
+      lopdaotaoUpdate,
+      null,
+      "Update HoiDongID for LopDaoTao successful"
+    );
+  }
+);
 lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(
   async (req, res, next) => {
     let { TrangThai, lopdaotaoID } = { ...req.body };

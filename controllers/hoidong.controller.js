@@ -48,7 +48,6 @@ hoidongController.gethoidongsPhanTrang = catchAsync(async (req, res, next) => {
   const totalPages = Math.ceil(count / limit);
   const offset = limit * (page - 1);
 
-  console.log("filter", filterConditions);
   let hoidong = await HoiDong.find(filterCriteria)
     .sort({ createdAt: -1 })
     .skip(offset)
@@ -65,7 +64,7 @@ hoidongController.gethoidongsPhanTrang = catchAsync(async (req, res, next) => {
         return {
           ...item._doc,
           NhanVienID: {
-            ...item.NhanVienID._doc,
+            ...item.NhanVienID?._doc,
             KhoaID: item.NhanVienID.KhoaID
               ? item.NhanVienID.KhoaID
               : { TenKhoa: "" },

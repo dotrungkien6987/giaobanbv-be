@@ -9,6 +9,7 @@ const lopdaotaoSchema = Schema(
     MaHinhThucCapNhat: { type: String, required: true,},
     Ten: { type: String, required: true,},
     TrangThai: { type: Boolean, required: true, default: false },
+    Dat: { type: Boolean, required: false, default: null },
     QuyetDinh: { type: String, require: true, default: "" },
     NoiDaoTao: { type: String, default: "" },
     NguonKinhPhi: { type: String, default: "" },
@@ -22,6 +23,7 @@ const lopdaotaoSchema = Schema(
     isDeleted: { type: Boolean, default: false, select: false },
     UserIDCreated: {type: Schema.ObjectId,required:false,ref:"User"},
     HoiDongID: {type: Schema.ObjectId,required:false,ref:"HoiDong"},
+    KhoaID: {type: Schema.ObjectId,required:false,ref:"Khoa"},
   },
   { timestamps: true }
 );

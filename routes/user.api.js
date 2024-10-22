@@ -28,6 +28,8 @@ router.post(
 //thieeu authentication.loginRequired
 router.get("/",authentication.loginRequired,authentication.adminRequired, userController.getUsers);
 
+router.get("/all",authentication.loginRequired,authentication.adminRequired, userController.getAllUsers);
+
 
 /**
  *@route GET /users/me

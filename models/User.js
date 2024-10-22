@@ -8,7 +8,10 @@ const userSchema = Schema(
     PassWord: { type: String, require: true, select: false },
 
     KhoaID: {type: Schema.ObjectId, required: true, ref: "Khoa"  },
+    NhanVienID: {type: Schema.ObjectId, required: false, ref: "NhanVien"  },
     HoTen: { type: String, require: false, default: "" },
+    UserHis: { type: String, require: false, default: "" },
+    
     isDeleted: { type: Boolean, default: false, select: false },
     Email: { type: String, require: false, default: "" },
     PhanQuyen: {

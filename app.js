@@ -12,7 +12,7 @@ var whitelist = [
   `http://192.168.5.136:3000`,
   `http://localhost:3000`,
   `http://localhost:3001`,
-  `http://192.168.2.48:3000`,
+  `http://192.168.1.248:3000`,
 ];
 var corsOptionsDelegate = function (req, callback) {
   var corsOptions;

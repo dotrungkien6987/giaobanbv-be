@@ -14,6 +14,8 @@ var whitelist = [
   `http://localhost:3001`,
   `http://192.168.1.248:3000`,
   `http://27.72.116.110:777`,
+  `http://bvdkphutho.io.vn`,
+  `http://api.bvdkphutho.io.vn`,
 ];
 var corsOptionsDelegate = function (req, callback) {
   var corsOptions;

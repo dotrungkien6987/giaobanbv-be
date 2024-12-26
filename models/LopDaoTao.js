@@ -10,10 +10,13 @@ const lopdaotaoSchema = Schema(
     Ten: { type: String, required: true,},
     TrangThai: { type: Boolean, required: true, default: false },
     Dat: { type: Boolean, required: false, default: null },
+    XepLoai: { type: String, required: false, default: "" },
+   
     QuyetDinh: { type: String, require: true, default: "" },
     NoiDaoTao: { type: String, default: "" },
     NguonKinhPhi: { type: String, default: "" },
     HinhThucDaoTao: { type: String, default: "" },
+    TenTapChi: { type: String, default: "" },
     GhiChu: { type: String, default: "" },
     SoLuong: { type: Number, default: 1 },
     SoThanhVien: { type: Number, default: 0 },

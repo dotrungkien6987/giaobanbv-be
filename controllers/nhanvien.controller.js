@@ -1,4 +1,5 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
+const {convertToVietnamDate} = require("../helpers/helpfunction");
 const NhanVien = require("../models/NhanVien");
 const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
 const LopDaoTao = require("../models/LopDaoTao");
@@ -404,8 +405,8 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
       );
     }
 
-    const fromDate = new Date(FromDate);
-    const toDate = new Date(ToDate);
+    const fromDate = convertToVietnamDate(FromDate);
+    const toDate = convertToVietnamDate(ToDate, true);
     console.log("fromDate", fromDate);
 
     // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
@@ -534,8 +535,8 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
       );
     }
 
-    const fromDate = new Date(FromDate);
-    const toDate = new Date(ToDate);
+    const fromDate = convertToVietnamDate(FromDate);
+    const toDate = convertToVietnamDate(ToDate, true);
     console.log("khoaID", khoaID);
 
     // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện

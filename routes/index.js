@@ -60,4 +60,7 @@ router.use("/lopdaotaonhanvientam", lopdaotaonhanvientamApi);
 const lopdaotaonhanviendt06Api = require("./lopdaotaonhanviendt06.api");
 router.use("/lopdaotaonhanviendt06", lopdaotaonhanviendt06Api);
 
+const logeventApi = require("./his/logevent.api");
+router.use("/logevent", logeventApi);
+
 module.exports = router;

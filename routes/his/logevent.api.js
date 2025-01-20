@@ -31,4 +31,12 @@ router.get(
   logeventController.getLogEvents
 );
 
+router.put(
+  "/:logeventid",
+  authentication.loginRequired,
+  logeventController.updateLogEvent
+);
+
+
+
 module.exports = router;

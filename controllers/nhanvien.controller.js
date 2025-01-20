@@ -392,9 +392,9 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
 );
 
 //Tinh tin chi tich luy cho tung nhan vien
-nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
+nhanvienController.getAllNhanVienWithTinChiTichLuyCu = catchAsync(
   async (req, res, next) => {
-    const { FromDate, ToDate, KhuyenCao } = req.query;
+    const { FromDate, ToDate, KhuyenCao, MaHinhThucCapNhatList  } = req.query;
 
     // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
     if (!FromDate || !ToDate) {
@@ -1243,6 +1243,139 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     );
   }
 );
+nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
+  async (req, res, next) => {
+    const { FromDate, ToDate, KhuyenCao, MaHinhThucCapNhatList = [] } = req.query;
 
+    // Kiểm tra sự hợp lệ của các tham số FromDate và ToDate
+    if (!FromDate || !ToDate) {
+      throw new AppError(
+        400,
+        "FromDate and ToDate are required",
+        "Get NhanVien Error"
+      );
+    }
 
+    const fromDate = convertToVietnamDate(FromDate);
+    const toDate = convertToVietnamDate(ToDate, true);
+
+    // Lấy danh sách nhân viên từ LopDaoTaoNhanVien với các điều kiện
+    const lopDaoTaoNhanVienList = await LopDaoTaoNhanVien.find({
+      isDeleted: false,
+    })
+      .populate({
+        path: "LopDaoTaoID",
+        match: {
+          isDeleted: false,
+          TrangThai: true,
+          NgayKetThuc: {
+            $gte: fromDate,
+            $lte: toDate,
+          },
+          MaHinhThucCapNhat: { $not: { $regex: '^ĐT06' } },
+        },
+      })
+      .populate({
+        path: "NhanVienID",
+        populate: { path: "KhoaID" },
+      });
+
+    const nhanVienMap = new Map();
+
+    // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVien
+    for (const lopDaoTaoNhanVien of lopDaoTaoNhanVienList) {
+      const { NhanVienID, LopDaoTaoID, SoTinChiTichLuy } = lopDaoTaoNhanVien;
+      if (LopDaoTaoID && NhanVienID && !NhanVienID.isDeleted) {
+        if (!nhanVienMap.has(NhanVienID._id.toString())) {
+          nhanVienMap.set(NhanVienID._id.toString(), {
+            nhanVien: NhanVienID,
+            totalSoTinChiTichLuy: 0,
+            ...MaHinhThucCapNhatList.reduce((acc, ma) => ({ ...acc, [ma]: 0 }), {}),
+          });
+        }
+        const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+        nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+
+        // Cập nhật số lần tham gia cho các mã hình thức cập nhật
+        if (LopDaoTaoID.MaHinhThucCapNhat && MaHinhThucCapNhatList.includes(LopDaoTaoID.MaHinhThucCapNhat)) {
+          nhanVienData[LopDaoTaoID.MaHinhThucCapNhat] += 1;
+        }
+      }
+    }
+
+    // Lấy danh sách nhân viên từ bảng LopDaoTaoNhanVienDT06 với các điều kiện
+    const lopDaoTaoNhanVienDT06List = await LopDaoTaoNhanVienDT06.find({
+      isDeleted: false,
+      DenNgay: {
+        $gte: fromDate,
+        $lte: toDate,
+      },
+    })
+      .populate({
+        path: "LopDaoTaoID",
+        match: {
+          isDeleted: false,
+          MaHinhThucCapNhat: { $regex: '^ĐT06' },
+        },
+      })
+      .populate({
+        path: "NhanVienID",
+        populate: { path: "KhoaID" },
+      });
+
+    // Tính tổng số tín chỉ tích lũy cho mỗi nhân viên từ bảng LopDaoTaoNhanVienDT06
+    for (const lopDaoTaoNhanVienDT06 of lopDaoTaoNhanVienDT06List) {
+      const { NhanVienID, LopDaoTaoID, SoTinChiTichLuy } = lopDaoTaoNhanVienDT06;
+      if (NhanVienID && LopDaoTaoID && !NhanVienID.isDeleted) {
+        if (!nhanVienMap.has(NhanVienID._id.toString())) {
+          nhanVienMap.set(NhanVienID._id.toString(), {
+            nhanVien: NhanVienID,
+            totalSoTinChiTichLuy: 0,
+            ...MaHinhThucCapNhatList.reduce((acc, ma) => ({ ...acc, [ma]: 0 }), {}),
+          });
+        }
+        const nhanVienData = nhanVienMap.get(NhanVienID._id.toString());
+        nhanVienData.totalSoTinChiTichLuy += SoTinChiTichLuy;
+
+        // Cập nhật số lần tham gia cho các mã hình thức cập nhật
+        if (LopDaoTaoID.MaHinhThucCapNhat && MaHinhThucCapNhatList.includes(LopDaoTaoID.MaHinhThucCapNhat)) {
+          nhanVienData[LopDaoTaoID.MaHinhThucCapNhat] += 1;
+        }
+      }
+    }
+
+    // Lấy tất cả các nhân viên không bị xóa
+    const allNhanVien = await NhanVien.find({ isDeleted: false }).populate("KhoaID");
+
+    // Thêm những nhân viên không có trong danh sách vào kết quả với totalSoTinChiTichLuy = 0
+    for (const nhanVien of allNhanVien) {
+      if (!nhanVienMap.has(nhanVien._id.toString())) {
+        nhanVienMap.set(nhanVien._id.toString(), {
+          nhanVien: nhanVien,
+          totalSoTinChiTichLuy: 0,
+          ...MaHinhThucCapNhatList.reduce((acc, ma) => ({ ...acc, [ma]: 0 }), {}),
+        });
+      }
+    }
+
+    // Chuyển đổi Map thành mảng kết quả
+    const result = Array.from(nhanVienMap.values()).map((nhanVienData) => {
+      return {
+        ...nhanVienData,
+        Dat: KhuyenCao
+          ? nhanVienData.totalSoTinChiTichLuy >= Number(KhuyenCao)
+          : false, // Xử lý logic Dat
+      };
+    });
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      result,
+      null,
+      "Get NhanVien with TinChiTichLuy successful"
+    );
+  }
+);
 module.exports = nhanvienController;

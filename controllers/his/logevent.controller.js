@@ -20,4 +20,19 @@ logevent.insert = catchAsync(async (req, res, next) => {
   //Response
   sendResponse(res, 200, true,{newLogEvent}, null, "Created logEvent success");
 });
+
+
+logevent.updateLogEvent = catchAsync(async (req, res, next) => {
+  //get data from request
+  const logEventData = req.body;
+  const logeventid = req.params.logeventid;
+ const newLogEvent = await logEventModel.updateLogEvent(logeventid,logEventData);
+    res.status(201).json(newLogEvent);
+  //Business Logic Validation
+ 
+  //Response
+  sendResponse(res, 200, true,{newLogEvent}, null, "Created logEvent success");
+});
+
+
 module.exports = logevent;

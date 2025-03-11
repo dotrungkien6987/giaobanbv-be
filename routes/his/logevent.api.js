@@ -24,6 +24,8 @@ router.post(
  * @description Get all baocaosuco
  
  * @access  login require,
+
+
  */
 router.get(
   "/",
@@ -37,6 +39,10 @@ router.put(
   logeventController.updateLogEvent
 );
 
-
+router.patch(
+  "/:logeventid",
+  authentication.loginRequired,
+   logeventController.partialUpdateLogEvent
+);
 
 module.exports = router;

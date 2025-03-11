@@ -34,5 +34,12 @@ logevent.updateLogEvent = catchAsync(async (req, res, next) => {
   sendResponse(res, 200, true,{newLogEvent}, null, "Created logEvent success");
 });
 
+logevent.partialUpdateLogEvent = catchAsync(async (req, res, next) => {
+  const logeventid = req.params.logeventid;
+  const logEventData = req.body;
+
+  const updatedLogEvent = await logEventModel.partialUpdateLogEvent(logeventid, logEventData);
+  sendResponse(res, 200, true, { updatedLogEvent }, null, "Updated logEvent success");
+});
 
 module.exports = logevent;

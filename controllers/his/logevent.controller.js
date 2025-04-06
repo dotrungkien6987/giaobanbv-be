@@ -1,12 +1,26 @@
 const { catchAsync,sendResponse } = require("../../helpers/utils");
 const logEventModel  = require("../../models/his/logEventModel");
+const bnNgoaiTinhModel = require("../../models/his/bnNgoaiTinh");
+const { query } = require("express-validator");
 const logevent = {};
 
-logevent.getLogEvents  = catchAsync(async (req, res, next) => {
-  const logEvents = await logEventModel.getAllLogEvents();
+// logevent.getLogEvents  = catchAsync(async (req, res, next) => {
+//   const logEvents = await logEventModel.getAllLogEvents();
  
-  //Response
-  sendResponse(res, 200, true,{logEvents}, null, "Get Log Events success");
+//   //Response
+//   sendResponse(res, 200, true,{logEvents}, null, "Get Log Events success");
+// });
+
+logevent.getLogEvents = catchAsync(async (req, res, next) => {
+  // Lấy tham số từ query parameters
+  const { fromdate, todate } = req.query;
+  console.log('query',req.query);
+  console.log('getlogs',fromdate, todate);
+  // Gọi hàm với tham số từ query
+  const logEvents = await bnNgoaiTinhModel.getNgoaiTinhNgoaiTru(fromdate, todate);
+ 
+  // Response
+  sendResponse(res, 200, true,  logEvents, null, "Get Log Events success");
 });
 
 

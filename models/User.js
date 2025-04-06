@@ -16,7 +16,7 @@ const userSchema = Schema(
     Email: { type: String, require: false, default: "" },
     PhanQuyen: {
       type: String,
-      enum: ["admin","manager","nomal","daotao"],
+      enum: ["admin","manager","nomal","daotao","noibo"],
     },
     KhoaTaiChinh:{type:[String],require:false,default:[]}
   },

@@ -34,6 +34,10 @@ datafixController.getDataFix = catchAsync(async (req, res, next) => {
    item.HinhThucDaoTao = addIndexToItems(item.HinhThucDaoTao);
    item.DanToc = addIndexToItems(item.DanToc);
    item.PhamViHanhNghe = addIndexToItems(item.PhamViHanhNghe);
+   
+    item.Tinh = addIndexToItems(item.Tinh);
+    item.Huyen = addIndexToItems(item.Huyen);
+    item.Xa = addIndexToItems(item.Xa);
    return item; // Trả về document sau khi đã chỉnh sửa
  });
 
@@ -75,6 +79,9 @@ datafixController.insertOrUpdateDataFix = catchAsync(async (req, res, next) => {
   datafixUpdate.DanToc = addIndexToItems(datafixUpdate.DanToc);
   datafixUpdate.PhamViHanhNghe = addIndexToItems(datafixUpdate.PhamViHanhNghe);
 
+  datafixUpdate.Tinh = addIndexToItems(datafixUpdate.Tinh);
+  datafixUpdate.Huyen = addIndexToItems(datafixUpdate.Huyen);
+  datafixUpdate.Xa = addIndexToItems(datafixUpdate.Xa);
   console.log("datafixUpdate", datafixUpdate);
   //response
   sendResponse(

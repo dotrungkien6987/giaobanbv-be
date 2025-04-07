@@ -34,6 +34,39 @@ const datafixSchema = Schema({
   PhamViHanhNghe: [
     { PhamViHanhNghe: { type: String, required: true }, _id: false },
   ],
+  Tinh: [
+    {
+      TenTinh: { type: String, required: true },
+      MaTinh: { type: String, required: true},
+      DienTich: { type: Number, required: false },
+      DanSo: { type: Number, required: false },
+      KhoangCach: { type: Number, required: false },
+      _id: false,
+    },
+  ],
+  Huyen: [
+    {
+      TenHuyen: { type: String, required: true },
+      MaHuyen: { type: String, required: true},
+      MaTinh: { type: String, required: true},
+      DienTich: { type: Number, required: false },
+      DanSo: { type: Number, required: false },
+      KhoangCach: { type: Number, required: false },
+      _id: false,
+    },
+  ],
+  Xa: [
+    {
+      TenXa: { type: String, required: true },
+      MaXa: { type: String, required: true},
+      MaHuyen: { type: String, required: true},
+      MaTinh: { type: String, required: true},
+      DienTich: { type: Number, required: false },
+      DanSo: { type: Number, required: false },
+      KhoangCach: { type: Number, required: false },
+      _id: false,
+    },
+  ],
 });
 const DaTaFix = mongoose.model("DaTaFix", datafixSchema);
 module.exports = DaTaFix;

@@ -37,7 +37,7 @@ khoaController.getAll = catchAsync(async (req, res, next) => {
 khoaController.getKhoasPhanTrang = catchAsync(async (req, res, next) => {
   let { page, limit, TenKhoa, LoaiKhoa, ...filter } = { ...req.query };
   page = parseInt(page) || 1;
-  limit = parseInt(limit) || 100;
+  limit = parseInt(limit) || 300;
 
   const filterConditions = [];
   

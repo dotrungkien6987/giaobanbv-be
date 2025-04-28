@@ -32,4 +32,36 @@ soThuTuController.getStatsByTypeAndDepartments = catchAsync(async (req, res, nex
   );
 });
 
+/**
+ * Get all statistics for all types (2, 7, 38) by departments
+ */
+soThuTuController.getAllStatsByDepartments = catchAsync(async (req, res, next) => {
+  const { date, departmentIds } = req.body;
+  
+  // Validate input parameters
+  if (!date || !departmentIds || !Array.isArray(departmentIds)) {
+    throw new AppError(400, "Thiếu thông tin: date hoặc departmentIds (array)", "Get SoThuTu Error");
+  }
+
+  // Get data for all types
+  const [phongKhamStats, phongThucHienStats, phongLayMauStats] = await Promise.all([
+    soThuTuService.getStatsByTypeAndDepartments(date, departmentIds, '2'),
+    soThuTuService.getStatsByTypeAndDepartments(date, departmentIds, '7'),
+    soThuTuService.getStatsByTypeAndDepartments(date, departmentIds, '38')
+  ]);
+  
+  return sendResponse(
+    res, 
+    200, 
+    true, 
+    {
+      phongKham: phongKhamStats,
+      phongThucHien: phongThucHienStats,
+      phongLayMau: phongLayMauStats
+    }, 
+    null, 
+    `Lấy tất cả thông tin số thứ tự thành công`
+  );
+});
+
 module.exports = soThuTuController;

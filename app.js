@@ -6,10 +6,10 @@ const cookieParser = require("cookie-parser");
 const logger = require("morgan");
 const cors = require("cors");
 var whitelist = [
-  "http://192.168.5.136:3001",
+  "http://192.168.5.200:3001",
   `https://bvdktphutho.net`,
   `http://bvdktphutho.net`,
-  `http://192.168.5.136:3000`,
+  `http://192.168.5.200:3000`,
   `http://localhost:3000`,
   `http://localhost:3001`,
   `http://192.168.1.248:3000`,

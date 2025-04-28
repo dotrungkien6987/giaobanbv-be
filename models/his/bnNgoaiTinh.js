@@ -1,5 +1,5 @@
 const pool = require('../../config/dbConfig');
-const qBnNgoaitinh = require('../../controllers/SQL/qBnNgoaitinh');
+const qBnNgoaitinh = require('../../querySQL/qBnNgoaitinh');
 
 const getNgoaiTinhNgoaiTru = async (fromdate, todate) => {
   // Xử lý fromdate

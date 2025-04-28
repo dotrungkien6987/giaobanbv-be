@@ -13,6 +13,10 @@ router.use("/user", userApi);
 const khoaApi = require("./khoa.api");
 router.use("/khoa", khoaApi);
 
+// //nhomkhoasothutuApi
+const nhomKhoaSoThuTuApi = require("./nhomkhoasothutu.api");
+router.use("/nhomkhoasothutu", nhomKhoaSoThuTuApi);
+
 //bcgiaobanApi
 const bcgiaobanApi = require("./bcgiaoban.api");
 router.use("/bcgiaoban", bcgiaobanApi);
@@ -65,5 +69,13 @@ router.use("/logevent", logeventApi);
 
 const fileApi = require("./file.api");
 router.use("/file", fileApi);
+
+// API quản lý lịch trực
+const lichTrucApi = require("./lichtruc.api");
+router.use("/lichtruc", lichTrucApi);
+
+// API quản lý số thứ tự
+const soThuTuApi = require("./his/sothutu.api");
+router.use("/his/sothutu", soThuTuApi);
 
 module.exports = router;

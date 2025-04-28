@@ -9,6 +9,8 @@ const bcgiaobanSchema = Schema(
     TTHeNoi: { type: String, default: "" },
     TTHeNgoai: { type: String, default: "" },
     TrangThai: { type: Boolean, default: false},
+    DienNuoc: { type: String, default: "" },
+    LaiXe: { type: String, default: "" },
   },
   { timestamps: true }
 );

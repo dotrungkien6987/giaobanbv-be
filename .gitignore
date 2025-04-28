@@ -59,3 +59,6 @@ typings/
 
 # next.js build output
 .next
+
+# Database schema documentation
+controllers/SQL/schema_docs/

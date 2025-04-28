@@ -70,6 +70,8 @@ bcgiaobanController.getByNgay = catchAsync(async (req, res, next) => {
         TTHeNoi: existingRecord.TTHeNoi,
         TTHeNgoai: existingRecord.TTHeNgoai,
         TrangThai: existingRecord.TrangThai,
+        DienNuoc: existingRecord.DienNuoc || "",
+        LaiXe: existingRecord.LaiXe || "",
         Thu: dayOfWeek,
       };
     } else {
@@ -80,6 +82,8 @@ bcgiaobanController.getByNgay = catchAsync(async (req, res, next) => {
         TTHeNoi: "",
         TTHeNgoai: "",
         TrangThai: false,
+        DienNuoc: "",
+        LaiXe: "",
         Thu: dayOfWeek,
       };
     }
@@ -111,6 +115,8 @@ bcgiaobanController.updateOrInsert = catchAsync(async (req, res, next) => {
         TTHeNoi: record.TTHeNoi,
         TTHeNgoai: record.TTHeNgoai,
         TrangThai: record.TrangThai,
+        DienNuoc: record.DienNuoc || "",
+        LaiXe: record.LaiXe || "",
       });
     }
     // Nếu _id khác 0, cập nhật bản ghi

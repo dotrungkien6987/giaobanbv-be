@@ -1,5 +1,30 @@
+/**
+ * @fileoverview Các truy vấn SQL để thống kê và phân tích số thứ tự phòng khám, mẫu bệnh phẩm
+ * @module querySQL/qSoThuTu
+ * @description Các truy vấn SQL để lấy thông tin về số thứ tự bệnh nhân, mẫu bệnh phẩm theo từng phòng ban
+ * @requires module:postgres-pool
+ */
+
 const qSoThuTu = {}
-//$1: date, $2: array of departmentids
+
+/**
+ * Truy vấn thống kê mẫu bệnh phẩm theo phòng thực hiện (chẩn đoán hình ảnh, thăm dò chức năng)
+ * @param {Date} $1 - Ngày thống kê (format: 'YYYY-MM-DD')
+ * @param {Array<number>} $2 - Mảng ID phòng ban cần thống kê
+ * @returns {Array<Object>} Kết quả thống kê mẫu bệnh phẩm theo từng phòng ban
+ * 
+ * @property {string} departmentname - Tên phòng ban
+ * @property {number} departmentid - ID phòng ban
+ * @property {number} tong_mau_benh_pham - Tổng số mẫu bệnh phẩm
+ * @property {number} tong_benh_nhan - Tổng số bệnh nhân duy nhất
+ * @property {number} so_ca_chua_thuc_hien - Số mẫu bệnh phẩm chưa thực hiện
+ * @property {number} so_ca_da_thuc_hien_cho_ket_qua - Số mẫu đã thực hiện, đang chờ kết quả
+ * @property {number} so_ca_da_tra_ket_qua - Số mẫu đã trả kết quả
+ * @property {number} max_sothutunumber_da_thuc_hien - Số thứ tự lớn nhất đã thực hiện
+ * @property {number} max_sothutunumber - Số thứ tự lớn nhất (cả chưa thực hiện)
+ * @property {number} latest_sothutunumber_da_thuc_hien - Số thứ tự đã thực hiện gần đây nhất
+ * @property {number} sothutunumber_du_kien_tiep_theo - Số thứ tự dự kiến cần thực hiện tiếp theo
+ */
 qSoThuTu.getByDateAndDepartments_Type_7 = `
 WITH filtered_data AS (
     SELECT 
@@ -71,7 +96,28 @@ ORDER BY
     departmentname
 `
 
-//$1: date, $2: array of departmentids
+/**
+ * Truy vấn thống kê mẫu bệnh phẩm theo phòng lấy mẫu (xét nghiệm)
+ * @param {Date} $1 - Ngày thống kê (format: 'YYYY-MM-DD')
+ * @param {Array<number>} $2 - Mảng ID phòng ban cần thống kê
+ * @returns {Array<Object>} Kết quả thống kê mẫu bệnh phẩm theo từng phòng ban
+ * 
+ * @property {string} departmentname - Tên phòng ban
+ * @property {number} departmentid - ID phòng ban
+ * @property {number} tong_mau_benh_pham - Tổng số mẫu bệnh phẩm
+ * @property {number} tong_benh_nhan - Tổng số bệnh nhân duy nhất
+ * @property {number} so_ca_chua_lay_mau - Số ca chưa lấy mẫu
+ * @property {number} so_ca_da_lay_mau - Số ca đã lấy mẫu
+ * @property {number} so_benh_nhan_da_lay_mau - Số bệnh nhân đã lấy mẫu
+ * @property {number} so_benh_nhan_chua_lay_mau - Số bệnh nhân chưa lấy mẫu
+ * @property {number} so_ca_chua_thuc_hien - Số mẫu bệnh phẩm chưa thực hiện
+ * @property {number} so_ca_da_thuc_hien_cho_ket_qua - Số mẫu đã thực hiện, đang chờ kết quả
+ * @property {number} so_ca_da_tra_ket_qua - Số mẫu đã trả kết quả
+ * @property {number} max_sothutunumber_da_lay_mau - Số thứ tự lớn nhất đã lấy mẫu
+ * @property {number} max_sothutunumber - Số thứ tự lớn nhất (cả chưa lấy mẫu)
+ * @property {number} latest_sothutunumber_da_lay_mau - Số thứ tự lấy mẫu gần đây nhất
+ * @property {number} sothutunumber_du_kien_tiep_theo - Số thứ tự dự kiến cần lấy mẫu tiếp theo
+ */
 qSoThuTu.getByDateAndDepartments_Type_38 = `
 WITH filtered_data AS (
     SELECT 
@@ -157,7 +203,23 @@ ORDER BY
     departmentname
 `
 
-//$1: date, $2: array of departmentids
+/**
+ * Truy vấn thống kê số thứ tự phòng khám
+ * @param {Date} $1 - Ngày thống kê (format: 'YYYY-MM-DD')
+ * @param {Array<number>} $2 - Mảng ID phòng ban cần thống kê
+ * @returns {Array<Object>} Kết quả thống kê số thứ tự phòng khám theo từng phòng ban
+ * 
+ * @property {string} departmentname - Tên phòng ban
+ * @property {number} departmentid - ID phòng ban
+ * @property {number} tong_benh_nhan - Tổng số bệnh nhân
+ * @property {number} so_benh_nhan_chua_kham - Số bệnh nhân chưa khám
+ * @property {number} so_benh_nhan_da_kham - Số bệnh nhân đã khám
+ * @property {number} so_benh_nhan_kham_xong - Số bệnh nhân đã khám xong
+ * @property {number} max_sothutunumber - Số thứ tự lớn nhất (cả chưa khám)
+ * @property {number} max_sothutunumber_da_kham - Số thứ tự lớn nhất đã khám
+ * @property {number} latest_benh_nhan_da_kham - Số thứ tự bệnh nhân được khám gần đây nhất
+ * @property {number} sothutunumber_du_kien_tiep_theo - Số thứ tự dự kiến cần khám tiếp theo
+ */
 qSoThuTu.getByDateAndDepartments_Type_2 = `
 WITH filtered_data AS (
     SELECT 

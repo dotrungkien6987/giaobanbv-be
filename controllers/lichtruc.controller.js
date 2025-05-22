@@ -436,10 +436,10 @@ lichTrucController.getLichTrucByDate = catchAsync(async (req, res, next) => {
       $lte: endOfDay
     }
   })
-  .populate("KhoaID", "TenKhoa")
+  .populate("KhoaID", "TenKhoa HisDepartmentID")
   .populate("UserID", "username");
-  
-  sendResponse(res, 200, true, { lichTrucs }, null, "Lấy lịch trực theo ngày thành công");
+  console.log("lichTrucs", lichTrucs);
+  sendResponse(res, 200, true, lichTrucs , null, "Lấy lịch trực theo ngày thành công");
 });
 
 // API thêm lịch trực mới

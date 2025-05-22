@@ -27,4 +27,16 @@ router.post(
   soThuTuController.getAllStatsByDepartments
 );
 
+/**
+ * @route POST /api/his/sothutu/noi-tru
+ * @description Lấy thống kê bệnh nhân nội trú theo phòng ban (type=3)
+ * @body {date, departmentIds}
+ * @access Login required
+ */
+router.post(
+  "/noi-tru",
+  authentication.loginRequired,
+  soThuTuController.getNoiTruStatsByDepartments
+);
+
 module.exports = router;

@@ -166,4 +166,20 @@ Bảng `medicalrecord` lưu trữ thông tin về [mô tả mục đích của b
 
 ## Ghi chú
 
-[Các ghi chú bổ sung về bảng]
+Trong 1 lần điều trị, bệnh nhân có thế trải qua nhiều khoa, mỗi 1 bản ghi đại diện cho điều trị tại 1 khoa nào đó
+
+## Ghi chú cột
+medicalrecordstatus = 99 : kết thúc, =2: Đang điều trị, in (4,5,7) : Đang chuyển điều trị kết hợp, =0: Đợi nhập khoa
+
+hinhthucvaovienid: = 2 : Khoa khác chuyển khoa sang, = 3: Khoa khác chuyển điều trị kết hợp sang
+
+hinhthucravienid: = 0: nhập viện đối với ngoại trú
+                 =1: Ra viện
+                 =2: Xin về
+                 =3: Bỏ về
+                 =4: Đưa về
+                 =5: Chuyển viện
+                 =6: Tử vong
+                 =7: Hẹn
+                 =8: Chuyển khoa
+

@@ -288,5 +288,60 @@ FROM
 ORDER BY 
     departmentname
 `
-
+/**
+ * Truy vấn thống kê bệnh nhân nội trú theo phòng ban
+ * @param {Date} $1 - Ngày thống kê (format: 'YYYY-MM-DD')
+ * @param {Array<number>} $2 - Mảng ID phòng ban cần thống kê
+ * @returns {Array<Object>} Kết quả thống kê bệnh nhân theo từng phòng ban
+ * 
+ * @property {number} departmentid - ID phòng ban
+ * @property {string} departmentname - Tên phòng ban
+ * @property {number} departmentgroupid - ID nhóm phòng ban
+ * @property {string} departmentgroupname - Tên nhóm phòng ban
+ * @property {number} bhyt_count - Số bệnh nhân BHYT
+ * @property {number} vienphi_count - Số bệnh nhân viện phí
+ * @property {number} yeucau_count - Số bệnh nhân yêu cầu
+ * @property {number} total_count - Tổng số bệnh nhân
+ * @property {number} dang_dieu_tri - Số bệnh nhân đang điều trị
+ * @property {number} dieu_tri_ket_hop - Số bệnh nhân đang điều trị kết hợp
+ * @property {number} doi_nhap_khoa - Số bệnh nhân đang đợi nhập khoa * @property {number} chuyen_khoa_den - Số bệnh nhân từ khoa khác chuyển đến
+ * @property {number} chuyen_dieu_tri_ket_hop_den - Số bệnh nhân từ khoa khác chuyển điều trị kết hợp
+ * @property {number} benh_nhan_chuyen_khoa - Số bệnh nhân chuyển khoa đi (đã kết thúc)
+ * @property {number} benh_nhan_ra_vien - Số bệnh nhân đã ra viện
+ */
+qSoThuTu.getByDateAndDepartments_Type_3 = `
+SELECT 
+    d.departmentid,
+    d.departmentname,
+    d.departmentgroupid,
+    dg.departmentgroupname,
+    dg.departmentgroupname || ' : ' || d.departmentname AS TenKhoa, 
+    COUNT(CASE WHEN mr.doituongbenhnhanid = 1 THEN 1 END) AS bhyt_count,
+    COUNT(CASE WHEN mr.doituongbenhnhanid = 2 THEN 1 END) AS vienphi_count,
+    COUNT(CASE WHEN mr.doituongbenhnhanid = 3 THEN 1 END) AS yeucau_count,
+    COUNT(*) AS total_count,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 2 THEN 1 END) AS dang_dieu_tri,
+    COUNT(CASE WHEN mr.medicalrecordstatus in (4,5,7) THEN 1 END) AS dieu_tri_ket_hop_di,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 0 THEN 1 END) AS doi_nhap_khoa,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 2 AND mr.hinhthucvaovienid = 2 THEN 1 END) AS chuyen_khoa_den,
+    COUNT(CASE WHEN mr.medicalrecordstatus in (4,5,7) AND mr.hinhthucvaovienid = 3 THEN 1 END) AS chuyen_dieu_tri_ket_hop_den,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 99 AND mr.hinhthucravienid = 8 THEN 1 END) AS benh_nhan_chuyen_khoa,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 99 AND mr.hinhthucravienid in (1,2,3,4,5,6,7) THEN 1 END) AS benh_nhan_ra_vien
+FROM department d
+JOIN departmentgroup dg ON d.departmentgroupid = dg.departmentgroupid
+LEFT JOIN medicalrecord mr ON mr.departmentid = d.departmentid
+WHERE d.departmenttype = 3
+    AND d.departmentid = ANY($2::int[])
+    AND mr.thoigianvaovien::date <= $1
+    AND  ((mr.medicalrecordstatus <> 99 AND mr.thoigianvaovien::date > CURRENT_DATE - INTERVAL '60 days')
+          OR (mr.medicalrecordstatus = 99 AND mr.thoigianravien::date > CURRENT_DATE - INTERVAL '10 days'))
+    
+GROUP BY 
+    d.departmentid,
+    d.departmentname,
+    d.departmentgroupid,
+    dg.departmentgroupname
+ORDER BY 
+    d.departmentname
+`;
 module.exports = qSoThuTu;

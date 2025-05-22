@@ -133,5 +133,7 @@ Bảng `vienphi` lưu trữ thông tin về [mô tả mục đích của bảng]
 [Ví dụ về dữ liệu trong bảng]
 
 ## Ghi chú
+Mỗi 1 bệnh nhân vào viện trong 1 lần sẽ có 1 row vienphi tương ứng, vào nhiều lần sẽ có nhiều row
 
-[Các ghi chú bổ sung về bảng]
+## Ghi chú 1 số cột
+doituongbenhnhanid = 1 : BHYT, =2: Viện phí, =3: Yêu cầu

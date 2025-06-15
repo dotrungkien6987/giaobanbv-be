@@ -6,7 +6,7 @@ const khoaSchema = Schema(
     STT: { type: Number, required: true },
     LoaiKhoa: {
       type: String,
-      enum: ["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc", "khac"],
+      enum: ["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc","phong","khac"],
       required: true
     },
     MaKhoa: { type: String, required: true, unique: true },

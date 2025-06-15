@@ -18,7 +18,7 @@ router.post(
     body("TenKhoa", "Tên khoa không được để trống").exists().notEmpty(),
     body("LoaiKhoa", "Loại khoa không hợp lệ")
       .exists()
-      .isIn(["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc", "khac"]),
+      .isIn(["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc","phong", "khac"]),
     body("STT", "STT phải là số").exists().isNumeric(),
     body("MaKhoa", "Mã khoa không được để trống").exists().notEmpty(),
   ]),

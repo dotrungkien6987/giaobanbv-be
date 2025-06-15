@@ -9,6 +9,7 @@ const baocaongaySchema = Schema(
     DDTruc: { type: String, default: "" },
     GhiChu: { type: String, default: "" },
     CBThemGio: { type: String, default: "" },
+    IsForKhoa: { type: Boolean, default: false },
     // Embedded BCChiTietBenhNhan
     ChiTietBenhNhan: [
       {

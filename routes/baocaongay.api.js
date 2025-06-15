@@ -23,11 +23,35 @@ router.post(
   baocaongayController.insertOrUpdateOne
 );
 
+/**
+ * @route POST /baocaongay
+ * @description Insert or Update a new baocaongay
+ * @body { Ngay,KhoaID,BaoCaoNgay}
+ * @access  login require,
+ */
+router.post(
+  "/rieng",
+  authentication.loginRequired,
+  validators.validate([
+    body("Ngay", "Invalid Ngay").exists().notEmpty(),
+    body("KhoaID", "Invalid KhoaID").exists().notEmpty(),
+    
+       ]),
+  baocaongayController.insertOrUpdateOne_Rieng
+);
+
 router.get(
   "/",
   authentication.loginRequired,
   baocaongayController.getOneByNgayKhoaID
 );
+
+router.get(
+  "/rieng",
+  authentication.loginRequired,
+  baocaongayController.getOneByNgayKhoaID_Rieng
+);
+
 router.get(
   "/all",
   authentication.loginRequired,

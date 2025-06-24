@@ -20,6 +20,7 @@ const userSchema = Schema(
     },
     KhoaTaiChinh:{type:[String],require:false,default:[]},
     DashBoard:{type:[String],require:false,default:[]},
+    KhoaLichTruc:{type:[String],require:false,default:[]},
     
   },
   { timestamps: true }

@@ -316,25 +316,24 @@ SELECT
     d.departmentgroupid,
     dg.departmentgroupname,
     dg.departmentgroupname || ' : ' || d.departmentname AS TenKhoa, 
-    COUNT(CASE WHEN mr.doituongbenhnhanid = 1 THEN 1 END) AS bhyt_count,
-    COUNT(CASE WHEN mr.doituongbenhnhanid = 2 THEN 1 END) AS vienphi_count,
-    COUNT(CASE WHEN mr.doituongbenhnhanid = 3 THEN 1 END) AS yeucau_count,
-    COUNT(*) AS total_count,
+    COUNT(CASE WHEN mr.doituongbenhnhanid = 1 and mr.medicalrecordstatus <> 99 THEN 1 END) AS bhyt_count,
+    COUNT(CASE WHEN mr.doituongbenhnhanid = 2 and mr.medicalrecordstatus <> 99 THEN 1 END) AS vienphi_count,
+    COUNT(CASE WHEN mr.doituongbenhnhanid = 3 and mr.medicalrecordstatus <> 99 THEN 1 END) AS yeucau_count,
+    COUNT(Case when  mr.medicalrecordstatus <> 99 THEN 1 END) AS total_count,
     COUNT(CASE WHEN mr.medicalrecordstatus = 2 THEN 1 END) AS dang_dieu_tri,
     COUNT(CASE WHEN mr.medicalrecordstatus in (4,5,7) THEN 1 END) AS dieu_tri_ket_hop_di,
     COUNT(CASE WHEN mr.medicalrecordstatus = 0 THEN 1 END) AS doi_nhap_khoa,
     COUNT(CASE WHEN mr.medicalrecordstatus = 2 AND mr.hinhthucvaovienid = 2 THEN 1 END) AS chuyen_khoa_den,
-    COUNT(CASE WHEN mr.medicalrecordstatus in (4,5,7) AND mr.hinhthucvaovienid = 3 THEN 1 END) AS chuyen_dieu_tri_ket_hop_den,
-    COUNT(CASE WHEN mr.medicalrecordstatus = 99 AND mr.hinhthucravienid = 8 THEN 1 END) AS benh_nhan_chuyen_khoa,
-    COUNT(CASE WHEN mr.medicalrecordstatus = 99 AND mr.hinhthucravienid in (1,2,3,4,5,6,7) THEN 1 END) AS benh_nhan_ra_vien
+    COUNT(CASE WHEN mr.medicalrecordstatus in (2) AND mr.hinhthucvaovienid = 3 THEN 1 END) AS chuyen_dieu_tri_ket_hop_den,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 99 AND mr.hinhthucravienid = 8 AND mr.thoigianravien::date = $1 THEN 1 END) AS benh_nhan_chuyen_khoa,
+    COUNT(CASE WHEN mr.medicalrecordstatus = 99 AND mr.hinhthucravienid in (1,2,3,4,5,6,7) AND mr.thoigianravien::date = $1 THEN 1 END) AS benh_nhan_ra_vien
 FROM department d
 JOIN departmentgroup dg ON d.departmentgroupid = dg.departmentgroupid
 LEFT JOIN medicalrecord mr ON mr.departmentid = d.departmentid
 WHERE d.departmenttype = 3
     AND d.departmentid = ANY($2::int[])
-    AND mr.thoigianvaovien::date <= $1
-    AND  ((mr.medicalrecordstatus <> 99 AND mr.thoigianvaovien::date > CURRENT_DATE - INTERVAL '60 days')
-          OR (mr.medicalrecordstatus = 99 AND mr.thoigianravien::date > CURRENT_DATE - INTERVAL '10 days'))
+    AND ((mr.medicalrecordstatus <> 99 AND mr.thoigianvaovien::date > CURRENT_DATE - INTERVAL '60 days')
+         OR (mr.medicalrecordstatus = 99 AND mr.thoigianravien::date = $1))
     
 GROUP BY 
     d.departmentid,

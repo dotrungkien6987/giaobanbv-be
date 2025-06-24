@@ -19,6 +19,7 @@ userController.insertOne = catchAsync(async (req, res, next) => {
     KhoaTaiChinh,
     UserHis,
     DashBoard,
+    KhoaLichTruc,
   } = req.body;
 
   //Business Logic Validation
@@ -40,6 +41,7 @@ userController.insertOne = catchAsync(async (req, res, next) => {
     KhoaTaiChinh,
     UserHis,
     DashBoard,
+    KhoaLichTruc,
   });
 
   user = await User.findById(user._id).populate("KhoaID");
@@ -136,6 +138,7 @@ userController.updateUser = catchAsync(async (req, res, next) => {
     "KhoaTaiChinh",
     "UserHis",
     "DashBoard",
+    "KhoaLichTruc",
   ];
   // const salt = await bcrypt.genSalt(10);
   // let PassWord = req.body["PassWord"]

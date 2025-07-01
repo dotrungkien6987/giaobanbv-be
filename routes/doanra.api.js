@@ -1,0 +1,114 @@
+const express = require("express");
+const router = express.Router();
+const doanRaController = require("../controllers/doanra.controller");
+const authentication = require("../middlewares/authentication");
+const validators = require("../middlewares/validators");
+const { body } = require("express-validator");
+
+/**
+ * @route POST /api/doanra
+ * @description Tạo mới thông tin đoàn ra
+ * @body {NgayKyVanBan, NhanVienID, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
+ * @access Login required
+ */
+router.post(
+  "/",
+  authentication.loginRequired,
+  validators.validate([
+    body("NgayKyVanBan", "Ngày ký văn bản là bắt buộc")
+      .exists()
+      .notEmpty()
+      .isISO8601(),
+    body("NhanVienID", "Nhân viên ID là bắt buộc")
+      .exists()
+      .notEmpty()
+      .isMongoId(),
+    body("QuocGiaDen", "Quốc gia đến là bắt buộc").exists().notEmpty(),
+    body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")
+      .optional()
+      .isISO8601(),
+  ]),
+  doanRaController.createDoanRa
+);
+
+/**
+ * @route GET /api/doanra
+ * @description Lấy danh sách đoàn ra với phân trang và tìm kiếm
+ * @query {page, limit, search, fromDate, toDate, quocGia}
+ * @access Login required
+ */
+router.get("/", authentication.loginRequired, doanRaController.getDoanRas);
+
+/**
+ * @route GET /api/doanra/stats/country
+ * @description Lấy thống kê đoàn ra theo quốc gia
+ * @query {year}
+ * @access Login required
+ */
+router.get(
+  "/stats/country",
+  authentication.loginRequired,
+  doanRaController.getDoanRaStatsByCountry
+);
+
+/**
+ * @route GET /api/doanra/stats/month
+ * @description Lấy thống kê đoàn ra theo tháng
+ * @query {year}
+ * @access Login required
+ */
+router.get(
+  "/stats/month",
+  authentication.loginRequired,
+  doanRaController.getDoanRaStatsByMonth
+);
+
+/**
+ * @route GET /api/doanra/:id
+ * @description Lấy chi tiết đoàn ra theo ID
+ * @params {id}
+ * @access Login required
+ */
+router.get(
+  "/:id",
+  authentication.loginRequired,
+  doanRaController.getDoanRaById
+);
+
+/**
+ * @route PUT /api/doanra/:id
+ * @description Cập nhật thông tin đoàn ra
+ * @params {id}
+ * @body {NgayKyVanBan, NhanVienID, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
+ * @access Login required
+ */
+router.put(
+  "/:id",
+  authentication.loginRequired,
+  validators.validate([
+    body("NgayKyVanBan", "Ngày ký văn bản phải là ngày hợp lệ")
+      .optional()
+      .isISO8601(),
+    body("NhanVienID", "Nhân viên ID phải là MongoDB ID hợp lệ")
+      .optional()
+      .isMongoId(),
+    body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")
+      .optional()
+      .isISO8601(),
+  ]),
+  doanRaController.updateDoanRa
+);
+
+/**
+ * @route DELETE /api/doanra/:id
+ * @description Xóa đoàn ra (soft delete)
+ * @params {id}
+ * @access Login required
+ */
+router.delete(
+  "/:id",
+  authentication.loginRequired,
+  doanRaController.deleteDoanRa
+);
+
+module.exports = router;

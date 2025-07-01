@@ -78,4 +78,12 @@ router.use("/lichtruc", lichTrucApi);
 const soThuTuApi = require("./his/sothutu.api");
 router.use("/his/sothutu", soThuTuApi);
 
+// API quản lý đoàn vào
+const doanVaoApi = require("./doanvao.api");
+router.use("/doanvao", doanVaoApi);
+
+// API quản lý đoàn ra
+const doanRaApi = require("./doanra.api");
+router.use("/doanra", doanRaApi);
+
 module.exports = router;

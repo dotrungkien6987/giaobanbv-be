@@ -88,6 +88,22 @@ doanRaController.getDoanRas = catchAsync(async (req, res, next) => {
   );
 });
 
+// Lấy tất cả đoàn ra không phân trang, không filter
+doanRaController.getAllDoanRas = catchAsync(async (req, res, next) => {
+  const doanRas = await DoanRa.find({ isDeleted: false })
+    .populate("NhanVienID", "HoTen")
+    .sort({ NgayKyVanBan: -1 });
+
+  sendResponse(
+    res,
+    200,
+    true,
+    { doanRas, totalDocs: doanRas.length },
+    null,
+    "Lấy tất cả đoàn ra thành công"
+  );
+});
+
 // Lấy chi tiết đoàn ra
 doanRaController.getDoanRaById = catchAsync(async (req, res, next) => {
   const { id } = req.params;

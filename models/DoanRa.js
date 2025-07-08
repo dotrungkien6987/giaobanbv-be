@@ -3,7 +3,7 @@ const Schema = mongosee.Schema;
 const doanraSchema = Schema(
   {
     NgayKyVanBan: { type: Date, required: true },
-    NhanVienID: { type: Schema.ObjectId, required: true, ref: "NhanVien" },
+    ThanhVien: [{ type: Schema.ObjectId, ref: "NhanVien", required: true }],
     SoVanBanChoPhep: { type: String, default: "" },
     MucDichXuatCanh: { type: String, default: "" },
     ThoiGianXuatCanh: { type: Date },
@@ -19,7 +19,7 @@ const doanraSchema = Schema(
 
 // Thêm index cho tìm kiếm
 doanraSchema.index({ NgayKyVanBan: -1 });
-doanraSchema.index({ NhanVienID: 1 });
+doanraSchema.index({ ThanhVien: 1 });
 
 const DoanRa = mongosee.model("DoanRa", doanraSchema);
 module.exports = DoanRa;

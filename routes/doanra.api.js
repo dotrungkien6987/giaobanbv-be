@@ -8,7 +8,7 @@ const { body } = require("express-validator");
 /**
  * @route POST /api/doanra
  * @description Tạo mới thông tin đoàn ra
- * @body {NgayKyVanBan, NhanVienID, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
+ * @body {NgayKyVanBan, ThanhVien, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
  * @access Login required
  */
 router.post(
@@ -19,10 +19,10 @@ router.post(
       .exists()
       .notEmpty()
       .isISO8601(),
-    body("NhanVienID", "Nhân viên ID là bắt buộc")
+    body("ThanhVien", "Danh sách thành viên là bắt buộc và phải là mảng")
       .exists()
-      .notEmpty()
-      .isMongoId(),
+      .isArray({ min: 1 }),
+    body("ThanhVien.*", "Mỗi thành viên phải là MongoDB ID hợp lệ").isMongoId(),
     body("QuocGiaDen", "Quốc gia đến là bắt buộc").exists().notEmpty(),
     body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")
       .optional()
@@ -79,7 +79,7 @@ router.get(
  * @route PUT /api/doanra/:id
  * @description Cập nhật thông tin đoàn ra
  * @params {id}
- * @body {NgayKyVanBan, NhanVienID, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
+ * @body {NgayKyVanBan, ThanhVien, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
  * @access Login required
  */
 router.put(
@@ -89,7 +89,10 @@ router.put(
     body("NgayKyVanBan", "Ngày ký văn bản phải là ngày hợp lệ")
       .optional()
       .isISO8601(),
-    body("NhanVienID", "Nhân viên ID phải là MongoDB ID hợp lệ")
+    body("ThanhVien", "Danh sách thành viên phải là mảng")
+      .optional()
+      .isArray({ min: 1 }),
+    body("ThanhVien.*", "Mỗi thành viên phải là MongoDB ID hợp lệ")
       .optional()
       .isMongoId(),
     body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")

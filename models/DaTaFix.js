@@ -67,6 +67,15 @@ const datafixSchema = Schema({
       _id: false,
     },
   ],
+  QuocGia: [
+    {
+      code: { type: String, required: true },
+      label: { type: String, required: true},
+      phone: { type: String, required: false, default: "" },
+    
+      _id: false,
+    },
+  ],
 });
 const DaTaFix = mongoose.model("DaTaFix", datafixSchema);
 module.exports = DaTaFix;

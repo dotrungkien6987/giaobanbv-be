@@ -19,10 +19,10 @@ router.post(
       .exists()
       .notEmpty()
       .isISO8601(),
-    body("ThanhVien", "Danh sách thành viên là bắt buộc và phải là mảng")
-      .exists()
-      .isArray({ min: 1 }),
-    body("ThanhVien.*", "Mỗi thành viên phải là MongoDB ID hợp lệ").isMongoId(),
+    // body("ThanhVien", "Danh sách thành viên là bắt buộc và phải là mảng")
+    //   .exists()
+    //   .isArray({ min: 1 }),
+    // body("ThanhVien.*", "Mỗi thành viên phải là MongoDB ID hợp lệ").isMongoId(),
     body("QuocGiaDen", "Quốc gia đến là bắt buộc").exists().notEmpty(),
     body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")
       .optional()
@@ -37,7 +37,7 @@ router.post(
  * @query {page, limit, search, fromDate, toDate, quocGia}
  * @access Login required
  */
-router.get("/", authentication.loginRequired, doanRaController.getDoanRas);
+router.get("/", authentication.loginRequired, doanRaController.getAllDoanRas);
 
 /**
  * @route GET /api/doanra/stats/country
@@ -45,23 +45,6 @@ router.get("/", authentication.loginRequired, doanRaController.getDoanRas);
  * @query {year}
  * @access Login required
  */
-router.get(
-  "/stats/country",
-  authentication.loginRequired,
-  doanRaController.getDoanRaStatsByCountry
-);
-
-/**
- * @route GET /api/doanra/stats/month
- * @description Lấy thống kê đoàn ra theo tháng
- * @query {year}
- * @access Login required
- */
-router.get(
-  "/stats/month",
-  authentication.loginRequired,
-  doanRaController.getDoanRaStatsByMonth
-);
 
 /**
  * @route GET /api/doanra/:id

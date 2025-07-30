@@ -1,0 +1,436 @@
+-- =============================================
+-- 1. CƠ CẤU TỔ CHỨC VÀ NHÂN SỰ
+-- =============================================
+
+-- Bảng Phòng ban
+CREATE TABLE departments (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL COMMENT 'Tên phòng ban',
+    code VARCHAR(50) UNIQUE NOT NULL COMMENT 'Mã phòng ban',
+    description TEXT COMMENT 'Mô tả chức năng phòng ban',
+    parent_id BIGINT NULL COMMENT 'Phòng ban cha (nếu có)',
+    manager_id BIGINT NULL COMMENT 'Trưởng phòng hiện tại',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_id) REFERENCES departments(id),
+    INDEX idx_parent_id (parent_id),
+    INDEX idx_manager_id (manager_id)
+);
+
+-- Bảng Vị trí công việc
+CREATE TABLE job_positions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL COMMENT 'Tên vị trí',
+    code VARCHAR(50) UNIQUE NOT NULL COMMENT 'Mã vị trí',
+    department_id BIGINT NOT NULL COMMENT 'Thuộc phòng ban',
+    description TEXT COMMENT 'Mô tả công việc',
+    level ENUM('STAFF', 'SUPERVISOR', 'MANAGER', 'DIRECTOR') DEFAULT 'STAFF',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    INDEX idx_department_id (department_id)
+);
+
+-- Bảng Nhân viên
+CREATE TABLE employees (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    employee_code VARCHAR(50) UNIQUE NOT NULL COMMENT 'Mã nhân viên',
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    phone VARCHAR(20),
+    current_position_id BIGINT COMMENT 'Vị trí hiện tại',
+    direct_manager_id BIGINT COMMENT 'Quản lý trực tiếp',
+    hire_date DATE,
+    status ENUM('ACTIVE', 'INACTIVE', 'TERMINATED') DEFAULT 'ACTIVE',
+    avatar_url VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (current_position_id) REFERENCES job_positions(id),
+    FOREIGN KEY (direct_manager_id) REFERENCES employees(id),
+    INDEX idx_position_id (current_position_id),
+    INDEX idx_manager_id (direct_manager_id)
+);
+
+-- Lịch sử thay đổi vị trí
+CREATE TABLE employee_position_history (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    employee_id BIGINT NOT NULL,
+    position_id BIGINT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NULL,
+    change_reason VARCHAR(500),
+    created_by BIGINT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id),
+    FOREIGN KEY (position_id) REFERENCES job_positions(id),
+    FOREIGN KEY (created_by) REFERENCES employees(id),
+    INDEX idx_employee_id (employee_id),
+    INDEX idx_position_id (position_id)
+);
+
+-- =============================================
+-- 2. NHIỆM VỤ THƯỜNG QUY VÀ TIÊU CHÍ ĐÁNH GIÁ
+-- =============================================
+
+-- Bảng Nhiệm vụ thường quy
+CREATE TABLE routine_duties (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL COMMENT 'Tên nhiệm vụ',
+    description TEXT COMMENT 'Mô tả chi tiết',
+    department_id BIGINT NOT NULL COMMENT 'Thuộc phòng ban',
+    difficulty_level INT DEFAULT 5 COMMENT 'Độ khó từ 1-10',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by BIGINT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    FOREIGN KEY (created_by) REFERENCES employees(id),
+    INDEX idx_department_id (department_id)
+);
+
+-- Gán nhiệm vụ thường quy cho vị trí
+CREATE TABLE position_routine_duties (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    position_id BIGINT NOT NULL,
+    routine_duty_id BIGINT NOT NULL,
+    weight_percentage DECIMAL(5,2) DEFAULT 100.00 COMMENT 'Tỷ trọng % của nhiệm vụ này',
+    is_active BOOLEAN DEFAULT TRUE,
+    assigned_date DATE DEFAULT (CURRENT_DATE),
+    FOREIGN KEY (position_id) REFERENCES job_positions(id),
+    FOREIGN KEY (routine_duty_id) REFERENCES routine_duties(id),
+    UNIQUE KEY unique_position_duty (position_id, routine_duty_id),
+    INDEX idx_position_id (position_id),
+    INDEX idx_routine_duty_id (routine_duty_id)
+);
+
+-- Bảng Tiêu chí đánh giá
+CREATE TABLE evaluation_criteria (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL COMMENT 'Tên tiêu chí',
+    description TEXT,
+    criteria_type ENUM('INCREASE', 'DECREASE') DEFAULT 'INCREASE' COMMENT 'Loại: Tăng/Giảm điểm',
+    min_value DECIMAL(5,2) DEFAULT 0 COMMENT 'Điểm tối thiểu',
+    max_value DECIMAL(5,2) DEFAULT 10 COMMENT 'Điểm tối đa',
+    default_weight DECIMAL(5,2) DEFAULT 1.0 COMMENT 'Trọng số mặc định',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Tiêu chí áp dụng cho từng vị trí (có thể tùy chỉnh trọng số)
+CREATE TABLE position_evaluation_criteria (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    position_id BIGINT NOT NULL,
+    criteria_id BIGINT NOT NULL,
+    weight DECIMAL(5,2) DEFAULT 1.0 COMMENT 'Trọng số cho vị trí này',
+    is_active BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (position_id) REFERENCES job_positions(id),
+    FOREIGN KEY (criteria_id) REFERENCES evaluation_criteria(id),
+    UNIQUE KEY unique_position_criteria (position_id, criteria_id),
+    INDEX idx_position_id (position_id),
+    INDEX idx_criteria_id (criteria_id)
+);
+
+-- =============================================
+-- 3. CHU KỲ ĐÁNH GIÁ KPI
+-- =============================================
+
+CREATE TABLE evaluation_cycles (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL COMMENT 'Tên chu kỳ: Tháng 1/2025, Quý 1/2025',
+    cycle_type ENUM('MONTHLY', 'QUARTERLY', 'YEARLY', 'CUSTOM') DEFAULT 'MONTHLY',
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    status ENUM('PLANNING', 'ACTIVE', 'EVALUATION', 'COMPLETED') DEFAULT 'PLANNING',
+    description TEXT,
+    created_by BIGINT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES employees(id),
+    INDEX idx_cycle_dates (start_date, end_date),
+    INDEX idx_status (status)
+);
+
+-- =============================================
+-- 4. CÔNG VIỆC ĐƯỢC GIAO
+-- =============================================
+
+CREATE TABLE assigned_tasks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    routine_duty_id BIGINT NOT NULL COMMENT 'Gắn với nhiệm vụ thường quy nào',
+    assigned_by BIGINT NOT NULL COMMENT 'Người giao việc',
+    task_type ENUM('INDIVIDUAL', 'GROUP') DEFAULT 'INDIVIDUAL',
+    priority ENUM('LOW', 'MEDIUM', 'HIGH', 'URGENT') DEFAULT 'MEDIUM',
+    status ENUM('CREATED', 'ASSIGNED', 'ACCEPTED', 'REJECTED', 'IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED', 'OVERDUE') DEFAULT 'CREATED',
+    start_date DATETIME,
+    due_date DATETIME,
+    estimated_hours DECIMAL(8,2),
+    actual_hours DECIMAL(8,2),
+    progress_percentage INT DEFAULT 0,
+    completion_note TEXT,
+    evaluation_score DECIMAL(5,2) COMMENT 'Điểm đánh giá từ người giao việc',
+    evaluation_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (routine_duty_id) REFERENCES routine_duties(id),
+    FOREIGN KEY (assigned_by) REFERENCES employees(id),
+    INDEX idx_routine_duty_id (routine_duty_id),
+    INDEX idx_assigned_by (assigned_by),
+    INDEX idx_status (status),
+    INDEX idx_due_date (due_date)
+);
+
+-- Người thực hiện công việc (hỗ trợ cả cá nhân và nhóm)
+CREATE TABLE task_assignees (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id BIGINT NOT NULL,
+    employee_id BIGINT NOT NULL,
+    role ENUM('ASSIGNEE', 'COLLABORATOR') DEFAULT 'ASSIGNEE',
+    status ENUM('PENDING', 'ACCEPTED', 'REJECTED') DEFAULT 'PENDING',
+    reject_reason TEXT,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    responded_at TIMESTAMP NULL,
+    FOREIGN KEY (task_id) REFERENCES assigned_tasks(id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id),
+    UNIQUE KEY unique_task_employee (task_id, employee_id),
+    INDEX idx_task_id (task_id),
+    INDEX idx_employee_id (employee_id)
+);
+
+-- =============================================
+-- 5. HỆ THỐNG TICKET/YÊU CẦU HỖ TRỢ
+-- =============================================
+
+-- Loại yêu cầu hỗ trợ
+CREATE TABLE ticket_categories (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL COMMENT 'IT Support, Maintenance, HR, Finance...',
+    description TEXT,
+    handling_department_id BIGINT NOT NULL COMMENT 'Phòng ban chịu trách nhiệm xử lý',
+    default_sla_hours INT DEFAULT 24 COMMENT 'SLA mặc định (giờ)',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (handling_department_id) REFERENCES departments(id),
+    INDEX idx_handling_department (handling_department_id)
+);
+
+-- Bảng Tickets
+CREATE TABLE tickets (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    ticket_number VARCHAR(50) UNIQUE NOT NULL COMMENT 'Mã ticket tự động: TK2025001',
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    category_id BIGINT NOT NULL,
+    routine_duty_id BIGINT COMMENT 'Gắn với nhiệm vụ thường quy (cho người xử lý)',
+    requester_id BIGINT NOT NULL COMMENT 'Người yêu cầu',
+    handler_id BIGINT COMMENT 'Người được giao xử lý',
+    priority ENUM('LOW', 'MEDIUM', 'HIGH', 'URGENT') DEFAULT 'MEDIUM',
+    status ENUM('NEW', 'ASSIGNED', 'ACCEPTED', 'REJECTED', 'IN_PROGRESS', 'WAITING_FEEDBACK', 'RESOLVED', 'CLOSED', 'REOPENED') DEFAULT 'NEW',
+    location VARCHAR(255) COMMENT 'Địa điểm xử lý',
+    expected_resolve_time DATETIME,
+    actual_resolve_time DATETIME,
+    sla_hours INT COMMENT 'SLA cho ticket này',
+    is_overdue BOOLEAN DEFAULT FALSE,
+    satisfaction_rating INT COMMENT 'Đánh giá từ 1-5 của người yêu cầu',
+    satisfaction_comment TEXT,
+    resolution_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES ticket_categories(id),
+    FOREIGN KEY (routine_duty_id) REFERENCES routine_duties(id),
+    FOREIGN KEY (requester_id) REFERENCES employees(id),
+    FOREIGN KEY (handler_id) REFERENCES employees(id),
+    INDEX idx_ticket_number (ticket_number),
+    INDEX idx_category_id (category_id),
+    INDEX idx_routine_duty_id (routine_duty_id),
+    INDEX idx_requester_id (requester_id),
+    INDEX idx_handler_id (handler_id),
+    INDEX idx_status (status)
+);
+
+-- =============================================
+-- 6. ĐÁNH GIÁ KPI
+-- =============================================
+
+-- Đánh giá KPI chính (theo chu kỳ và nhân viên)
+CREATE TABLE kpi_evaluations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    cycle_id BIGINT NOT NULL,
+    employee_id BIGINT NOT NULL,
+    evaluator_id BIGINT NOT NULL COMMENT 'Người đánh giá (thường là trưởng phòng)',
+    total_score DECIMAL(8,2) DEFAULT 0 COMMENT 'Tổng điểm KPI',
+    normalized_score DECIMAL(5,2) DEFAULT 0 COMMENT 'Điểm chuẩn hóa /10',
+    status ENUM('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED') DEFAULT 'DRAFT',
+    evaluator_comment TEXT,
+    employee_feedback TEXT COMMENT 'Phản hồi từ nhân viên',
+    approved_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (cycle_id) REFERENCES evaluation_cycles(id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id),
+    FOREIGN KEY (evaluator_id) REFERENCES employees(id),
+    UNIQUE KEY unique_cycle_employee (cycle_id, employee_id),
+    INDEX idx_cycle_id (cycle_id),
+    INDEX idx_employee_id (employee_id),
+    INDEX idx_evaluator_id (evaluator_id)
+);
+
+-- Đánh giá chi tiết cho từng nhiệm vụ thường quy
+CREATE TABLE routine_duty_evaluations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    kpi_evaluation_id BIGINT NOT NULL,
+    routine_duty_id BIGINT NOT NULL,
+    difficulty_score DECIMAL(5,2) COMMENT 'Điểm độ khó của nhiệm vụ',
+    final_score DECIMAL(8,2) DEFAULT 0 COMMENT 'Điểm cuối = độ khó × tổng điểm tiêu chí',
+    evaluator_note TEXT,
+    tasks_count INT DEFAULT 0 COMMENT 'Số công việc đã giao liên quan',
+    tickets_count INT DEFAULT 0 COMMENT 'Số ticket đã xử lý liên quan',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (kpi_evaluation_id) REFERENCES kpi_evaluations(id),
+    FOREIGN KEY (routine_duty_id) REFERENCES routine_duties(id),
+    UNIQUE KEY unique_kpi_routine_duty (kpi_evaluation_id, routine_duty_id),
+    INDEX idx_kpi_evaluation_id (kpi_evaluation_id),
+    INDEX idx_routine_duty_id (routine_duty_id)
+);
+
+-- Điểm chi tiết theo từng tiêu chí
+CREATE TABLE criteria_scores (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    routine_duty_evaluation_id BIGINT NOT NULL,
+    criteria_id BIGINT NOT NULL,
+    score DECIMAL(5,2) NOT NULL COMMENT 'Điểm thực tế đạt được',
+    weight DECIMAL(5,2) NOT NULL COMMENT 'Trọng số',
+    weighted_score DECIMAL(8,2) GENERATED ALWAYS AS (score * weight) STORED,
+    note TEXT,
+    FOREIGN KEY (routine_duty_evaluation_id) REFERENCES routine_duty_evaluations(id),
+    FOREIGN KEY (criteria_id) REFERENCES evaluation_criteria(id),
+    UNIQUE KEY unique_routine_criteria (routine_duty_evaluation_id, criteria_id),
+    INDEX idx_routine_duty_evaluation_id (routine_duty_evaluation_id),
+    INDEX idx_criteria_id (criteria_id)
+);
+
+-- =============================================
+-- 7. HỆ THỐNG FILES VÀ COMMENTS
+-- =============================================
+
+-- Bảng Files (dùng chung cho tasks, tickets, comments)
+CREATE TABLE files (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NOT NULL,
+    mime_type VARCHAR(100),
+    file_extension VARCHAR(10),
+    uploaded_by BIGINT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (uploaded_by) REFERENCES employees(id),
+    INDEX idx_uploaded_by (uploaded_by)
+);
+
+-- Liên kết files với các đối tượng
+CREATE TABLE file_attachments (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    file_id BIGINT NOT NULL,
+    attachable_type ENUM('TASK', 'TICKET', 'COMMENT', 'EVALUATION') NOT NULL,
+    attachable_id BIGINT NOT NULL,
+    attached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (file_id) REFERENCES files(id),
+    INDEX idx_file_id (file_id),
+    INDEX idx_attachable (attachable_type, attachable_id)
+);
+
+-- Bảng Comments (dùng chung cho tasks và tickets)
+CREATE TABLE comments (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    commentable_type ENUM('TASK', 'TICKET') NOT NULL,
+    commentable_id BIGINT NOT NULL,
+    author_id BIGINT NOT NULL,
+    content TEXT NOT NULL,
+    parent_id BIGINT NULL COMMENT 'Reply to comment',
+    is_internal BOOLEAN DEFAULT FALSE COMMENT 'Comment nội bộ hay công khai',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (author_id) REFERENCES employees(id),
+    FOREIGN KEY (parent_id) REFERENCES comments(id),
+    INDEX idx_commentable (commentable_type, commentable_id),
+    INDEX idx_author_id (author_id),
+    INDEX idx_parent_id (parent_id)
+);
+
+-- =============================================
+-- 8. HỆ THỐNG THÔNG BÁO
+-- =============================================
+
+CREATE TABLE notifications (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    recipient_id BIGINT NOT NULL,
+    sender_id BIGINT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT,
+    notification_type ENUM('TASK_ASSIGNED', 'TASK_UPDATED', 'TICKET_CREATED', 'TICKET_ASSIGNED', 'KPI_EVALUATION', 'DEADLINE_REMINDER', 'GENERAL') DEFAULT 'GENERAL',
+    related_type ENUM('TASK', 'TICKET', 'EVALUATION') NULL,
+    related_id BIGINT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recipient_id) REFERENCES employees(id),
+    FOREIGN KEY (sender_id) REFERENCES employees(id),
+    INDEX idx_recipient_id (recipient_id),
+    INDEX idx_sender_id (sender_id),
+    INDEX idx_is_read (is_read),
+    INDEX idx_related (related_type, related_id)
+);
+
+-- =============================================
+-- 9. HỆ THỐNG AUDIT LOG
+-- =============================================
+
+CREATE TABLE audit_logs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    table_name VARCHAR(100) NOT NULL,
+    record_id BIGINT NOT NULL,
+    action ENUM('CREATE', 'UPDATE', 'DELETE') NOT NULL,
+    old_values JSON NULL,
+    new_values JSON NULL,
+    changed_by BIGINT NOT NULL,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    FOREIGN KEY (changed_by) REFERENCES employees(id),
+    INDEX idx_table_record (table_name, record_id),
+    INDEX idx_changed_by (changed_by),
+    INDEX idx_changed_at (changed_at)
+);
+
+-- =============================================
+-- 10. DỮ LIỆU MẪU KHỞI TẠO
+-- =============================================
+
+-- Thêm phòng ban mẫu
+INSERT INTO departments (name, code, description) VALUES 
+('Ban Giám đốc', 'BGD', 'Ban điều hành bệnh viện'),
+('Phòng Công nghệ thông tin', 'IT', 'Quản lý hệ thống thông tin'),
+('Phòng Kỹ thuật', 'KT', 'Bảo trì thiết bị y tế'),
+('Phòng Tài chính', 'TC', 'Quản lý tài chính'),
+('Phòng Nhân sự', 'NS', 'Quản lý nhân sự');
+
+-- Thêm tiêu chí đánh giá mẫu
+INSERT INTO evaluation_criteria (name, description, criteria_type, min_value, max_value, default_weight) VALUES 
+('Mức độ hoàn thành', 'Tỷ lệ hoàn thành công việc được giao', 'INCREASE', 0, 100, 0.4),
+('Chất lượng công việc', 'Đánh giá chất lượng kết quả', 'INCREASE', 0, 10, 0.3),
+('Tinh thần trách nhiệm', 'Thái độ làm việc và tinh thần trách nhiệm', 'INCREASE', 0, 10, 0.2),
+('Khả năng hợp tác', 'Khả năng làm việc nhóm và hỗ trợ đồng nghiệp', 'INCREASE', 0, 10, 0.1),
+('Điểm trừ vi phạm', 'Các lỗi vi phạm quy định', 'DECREASE', 0, 10, 1.0);
+
+-- Thêm loại ticket mẫu
+INSERT INTO ticket_categories (name, description, handling_department_id, default_sla_hours) VALUES 
+('Hỗ trợ IT', 'Sự cố máy tính, mạng, phần mềm', 2, 4),
+('Bảo trì thiết bị', 'Sửa chữa thiết bị y tế, cơ sở hạ tầng', 3, 8),
+('Hỗ trợ Tài chính', 'Thanh toán, quyết toán, báo cáo', 4, 24),
+('Hỗ trợ Nhân sự', 'Thủ tục nhân sự, đào tạo', 5, 48);

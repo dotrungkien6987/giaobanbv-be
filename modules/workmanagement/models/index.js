@@ -1,70 +1,86 @@
-// Work Management Module - Models Index (Vietnamese Naming)
+// Work Management Module - Models Index (Updated Structure với tên tiếng Việt)
 // Import all models for the work management system
 
-// Core Organization Models
+// Core Organization Models (Tên tiếng Việt)
 const PhongBan = require("./PhongBan");
-const ViTriCongViec = require("./ViTriCongViec");
 const NhanVienQuanLy = require("./NhanVienQuanLy");
-const LichSuViTriNhanVien = require("./LichSuViTriNhanVien");
 
-// Routine Duties and Evaluation Criteria
+// Routine Duties and Employee Assignment (Tên tiếng Việt)
 const NhiemVuThuongQuy = require("./NhiemVuThuongQuy");
-const ViTriNhiemVuThuongQuy = require("./ViTriNhiemVuThuongQuy");
-const TieuChiDanhGia = require("./TieuChiDanhGia");
-const TieuChiTheoViTri = require("./TieuChiTheoViTri");
+const NhanVienNhiemVu = require("./NhanVienNhiemVu");
+
+// Assignment History and State Management
+const LichSuGanNhiemVu = require("./LichSuGanNhiemVu");
+const {
+  QuanLyTrangThaiCongViec,
+  TRANG_THAI_CONG_VIEC,
+} = require("./QuanLyTrangThaiCongViec");
+
+// Notification System
+const QuyTacThongBao = require("./QuyTacThongBao");
+
+// Evaluation Criteria
+const EvaluationCriteria = require("./EvaluationCriteria");
 
 // Evaluation Cycles and KPI
-const ChuKyDanhGia = require("./ChuKyDanhGia");
-const DanhGiaKPI = require("./DanhGiaKPI");
-const DanhGiaNhiemVuThuongQuy = require("./DanhGiaNhiemVuThuongQuy");
-const DiemTieuChi = require("./DiemTieuChi");
+const EvaluationCycle = require("./EvaluationCycle");
+const KpiEvaluation = require("./KpiEvaluation");
+const RoutineDutyEvaluation = require("./RoutineDutyEvaluation");
+const CriteriaScore = require("./CriteriaScore");
 
 // Tasks and Assignments
-const CongViecDuocGiao = require("./CongViecDuocGiao");
-const NguoiThucHienCongViec = require("./NguoiThucHienCongViec");
+const AssignedTask = require("./AssignedTask");
+const TaskAssignee = require("./TaskAssignee");
+const NhomViecUser = require("./NhomViecUser");
 
 // Tickets System
-const LoaiYeuCauHoTro = require("./LoaiYeuCauHoTro");
-const YeuCauHoTro = require("./YeuCauHoTro");
+const TicketCategory = require("./TicketCategory");
+const Ticket = require("./Ticket");
 
 // Files and Comments
-const TepTin = require("./TepTin");
-const BinhLuan = require("./BinhLuan");
+const File = require("./File");
+const Comment = require("./Comment");
 
 // Notifications
-const ThongBao = require("./ThongBao");
+const Notification = require("./Notification");
 
 module.exports = {
-  // Core Organization
+  // Core Organization (Tên tiếng Việt)
   PhongBan,
-  ViTriCongViec,
   NhanVienQuanLy,
-  LichSuViTriNhanVien,
 
-  // Routine Duties
+  // Routine Duties (Tên tiếng Việt)
   NhiemVuThuongQuy,
-  ViTriNhiemVuThuongQuy,
+  NhanVienNhiemVu,
+
+  // History and State Management
+  LichSuGanNhiemVu,
+  QuanLyTrangThaiCongViec,
+  TRANG_THAI_CONG_VIEC,
+
+  // Notification System
+  QuyTacThongBao,
 
   // Evaluation
-  TieuChiDanhGia,
-  TieuChiTheoViTri,
-  ChuKyDanhGia,
-  DanhGiaKPI,
-  DanhGiaNhiemVuThuongQuy,
-  DiemTieuChi,
+  EvaluationCriteria,
+  EvaluationCycle,
+  KpiEvaluation,
+  RoutineDutyEvaluation,
+  CriteriaScore,
 
   // Tasks
-  CongViecDuocGiao,
-  NguoiThucHienCongViec,
+  AssignedTask,
+  TaskAssignee,
+  NhomViecUser,
 
   // Tickets
-  LoaiYeuCauHoTro,
-  YeuCauHoTro,
+  TicketCategory,
+  Ticket,
 
   // Files & Comments
-  TepTin,
-  BinhLuan,
+  File,
+  Comment,
 
   // Notifications
-  ThongBao,
+  Notification,
 };

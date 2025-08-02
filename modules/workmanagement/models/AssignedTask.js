@@ -23,6 +23,12 @@ const congViecDuocGiaoSchema = Schema(
       required: true,
       ref: "NhanVienQuanLy",
     },
+    NhomViecID: {
+      type: Schema.ObjectId,
+      ref: "NhomViecUser",
+      description:
+        "ID của nhóm việc do người dùng tự định nghĩa để phân loại công việc",
+    },
     LoaiCongViec: {
       type: String,
       enum: ["CANHAN", "NHOM"],
@@ -81,6 +87,10 @@ const congViecDuocGiaoSchema = Schema(
       type: String,
       maxlength: 2000,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -92,10 +102,14 @@ const congViecDuocGiaoSchema = Schema(
 congViecDuocGiaoSchema.index({ TieuDe: 1 });
 congViecDuocGiaoSchema.index({ NhiemVuThuongQuyID: 1 });
 congViecDuocGiaoSchema.index({ NguoiGiaoViecID: 1 });
+congViecDuocGiaoSchema.index({ NhomViecID: 1 });
 congViecDuocGiaoSchema.index({ TrangThai: 1 });
 congViecDuocGiaoSchema.index({ NgayHetHan: 1 });
 congViecDuocGiaoSchema.index({ MucDoUuTien: 1 });
+congViecDuocGiaoSchema.index({ isDeleted: 1 });
 congViecDuocGiaoSchema.index({ TrangThai: 1, NgayHetHan: 1 });
+congViecDuocGiaoSchema.index({ NhomViecID: 1, TrangThai: 1 });
+congViecDuocGiaoSchema.index({ TrangThai: 1, isDeleted: 1 });
 
 // Virtual for assignees
 congViecDuocGiaoSchema.virtual("NguoiThucHien", {
@@ -140,25 +154,34 @@ congViecDuocGiaoSchema.methods.coTheSua = function () {
 };
 
 congViecDuocGiaoSchema.methods.coTheHoanThanh = function () {
+  return ["CHO_DUYET", "DANG_THUC_HIEN"].includes(this.TrangThai);
+};
+
+congViecDuocGiaoSchema.methods.coTheHoanThanh = function () {
   return ["DANG_THUC_HIEN", "CHO_DUYET"].includes(this.TrangThai);
+};
+
+congViecDuocGiaoSchema.methods.softDelete = function () {
+  this.isDeleted = true;
+  return this.save();
 };
 
 // Static methods
 congViecDuocGiaoSchema.statics.timTheoNhiemVu = function (nhiemVuId) {
-  return this.find({ NhiemVuThuongQuyID: nhiemVuId })
+  return this.find({ NhiemVuThuongQuyID: nhiemVuId, isDeleted: false })
     .populate("NguoiGiaoViecID", "HoTen MaNhanVien")
     .populate("NhiemVuThuongQuyID", "TenNhiemVu PhongBanID")
     .sort({ createdAt: -1 });
 };
 
 congViecDuocGiaoSchema.statics.timTheoNguoiGiao = function (nguoiGiaoId) {
-  return this.find({ NguoiGiaoViecID: nguoiGiaoId })
+  return this.find({ NguoiGiaoViecID: nguoiGiaoId, isDeleted: false })
     .populate("NhiemVuThuongQuyID", "TenNhiemVu PhongBanID")
     .sort({ createdAt: -1 });
 };
 
 congViecDuocGiaoSchema.statics.timTheoTrangThai = function (trangThai) {
-  return this.find({ TrangThai: trangThai })
+  return this.find({ TrangThai: trangThai, isDeleted: false })
     .populate("NguoiGiaoViecID", "HoTen MaNhanVien")
     .populate("NhiemVuThuongQuyID", "TenNhiemVu PhongBanID")
     .sort({ NgayHetHan: 1 });
@@ -168,6 +191,7 @@ congViecDuocGiaoSchema.statics.timQuaHan = function () {
   return this.find({
     NgayHetHan: { $lt: new Date() },
     TrangThai: { $nin: ["HOAN_THANH", "TU_CHOI"] },
+    isDeleted: false,
   })
     .populate("NguoiGiaoViecID", "HoTen MaNhanVien")
     .populate("NhiemVuThuongQuyID", "TenNhiemVu PhongBanID")
@@ -180,10 +204,18 @@ congViecDuocGiaoSchema.statics.timTheoKhoangThoiGian = function (
 ) {
   return this.find({
     createdAt: { $gte: tuNgay, $lte: denNgay },
+    isDeleted: false,
   })
     .populate("NguoiGiaoViecID", "HoTen MaNhanVien")
     .populate("NhiemVuThuongQuyID", "TenNhiemVu PhongBanID")
     .sort({ createdAt: -1 });
+};
+
+congViecDuocGiaoSchema.statics.timDaXoa = function () {
+  return this.find({ isDeleted: true })
+    .populate("NguoiGiaoViecID", "HoTen MaNhanVien")
+    .populate("NhiemVuThuongQuyID", "TenNhiemVu PhongBanID")
+    .sort({ updatedAt: -1 });
 };
 
 // Pre-save middleware để cập nhật status overdue

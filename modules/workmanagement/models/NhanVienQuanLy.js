@@ -30,15 +30,24 @@ const nhanVienQuanLySchema = Schema(
       trim: true,
       maxlength: 20,
     },
-    ViTriHienTaiID: {
+    PhongBanID: {
       type: Schema.ObjectId,
-      ref: "ViTriCongViec",
-      default: null,
+      ref: "Department",
+      required: true,
     },
     QuanLyTrucTiepID: {
       type: Schema.ObjectId,
       ref: "NhanVienQuanLy",
       default: null,
+    },
+    CapBac: {
+      type: String,
+      enum: ["NHANVIEN", "GIAMSAT", "QUANLY", "GIAMDOC"],
+      default: "NHANVIEN",
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
     },
     NgayVaoLam: {
       type: Date,
@@ -75,17 +84,19 @@ const nhanVienQuanLySchema = Schema(
 nhanVienQuanLySchema.index({ MaNhanVien: 1 }, { unique: true });
 nhanVienQuanLySchema.index({ Email: 1 }, { unique: true });
 nhanVienQuanLySchema.index({ HoTen: 1 });
-nhanVienQuanLySchema.index({ ViTriHienTaiID: 1 });
+nhanVienQuanLySchema.index({ PhongBanID: 1 });
 nhanVienQuanLySchema.index({ QuanLyTrucTiepID: 1 });
 nhanVienQuanLySchema.index({ TrangThai: 1 });
-nhanVienQuanLySchema.index({ TrangThai: 1, ViTriHienTaiID: 1 });
+nhanVienQuanLySchema.index({ CapBac: 1 });
+nhanVienQuanLySchema.index({ isDeleted: 1 });
+nhanVienQuanLySchema.index({ TrangThai: 1, isDeleted: 1 });
+nhanVienQuanLySchema.index({ PhongBanID: 1, isDeleted: 1 });
 
-// Virtual for position history
-nhanVienQuanLySchema.virtual("LichSuViTri", {
-  ref: "LichSuViTriNhanVien",
+// Virtual for routine duties
+nhanVienQuanLySchema.virtual("DanhSachNhiemVu", {
+  ref: "NhanVienNhiemVu",
   localField: "_id",
   foreignField: "NhanVienID",
-  options: { sort: { NgayBatDau: -1 } },
 });
 
 // Virtual for subordinates
@@ -95,15 +106,12 @@ nhanVienQuanLySchema.virtual("NhanVienDuoi", {
   foreignField: "QuanLyTrucTiepID",
 });
 
-// Virtual for current department
-nhanVienQuanLySchema.virtual("PhongBan", {
+// Virtual for department
+nhanVienQuanLySchema.virtual("ThongTinPhongBan", {
   ref: "PhongBan",
-  localField: "ViTriHienTaiID",
+  localField: "PhongBanID",
   foreignField: "_id",
   justOne: true,
-  populate: {
-    path: "PhongBanID",
-  },
 });
 
 // Methods
@@ -114,10 +122,13 @@ nhanVienQuanLySchema.methods.toJSON = function () {
 };
 
 nhanVienQuanLySchema.methods.laQuanLy = function () {
-  return (
-    this.ViTriHienTaiID &&
-    ["GIAMSAT", "QUANLY", "GIAMDOC"].includes(this.ViTriHienTaiID.CapBac)
-  );
+  return ["GIAMSAT", "QUANLY", "GIAMDOC"].includes(this.CapBac);
+};
+
+nhanVienQuanLySchema.methods.softDelete = function () {
+  this.isDeleted = true;
+  this.TrangThai = "THOIVIEC";
+  return this.save();
 };
 
 // Static methods
@@ -125,27 +136,40 @@ nhanVienQuanLySchema.statics.timTheoMa = function (maNhanVien) {
   return this.findOne({
     MaNhanVien: maNhanVien.toUpperCase(),
     TrangThai: "HOATDONG",
+    isDeleted: false,
   });
 };
 
 nhanVienQuanLySchema.statics.timTheoEmail = function (email) {
-  return this.findOne({ Email: email.toLowerCase(), TrangThai: "HOATDONG" });
+  return this.findOne({
+    Email: email.toLowerCase(),
+    TrangThai: "HOATDONG",
+    isDeleted: false,
+  });
 };
 
 nhanVienQuanLySchema.statics.layDanhSachHoatDong = function () {
-  return this.find({ TrangThai: "HOATDONG" })
-    .populate("ViTriHienTaiID")
+  return this.find({ TrangThai: "HOATDONG", isDeleted: false })
+    .populate("PhongBanID")
     .populate("QuanLyTrucTiepID", "HoTen MaNhanVien")
     .sort({ HoTen: 1 });
 };
 
 nhanVienQuanLySchema.statics.timTheoPhongBan = function (phongBanId) {
-  return this.find({ TrangThai: "HOATDONG" })
-    .populate({
-      path: "ViTriHienTaiID",
-      match: { PhongBanID: phongBanId },
-    })
-    .then((nhanViens) => nhanViens.filter((nv) => nv.ViTriHienTaiID));
+  return this.find({
+    PhongBanID: phongBanId,
+    TrangThai: "HOATDONG",
+    isDeleted: false,
+  })
+    .populate("PhongBanID")
+    .sort({ HoTen: 1 });
+};
+
+nhanVienQuanLySchema.statics.layDanhSachDaXoa = function () {
+  return this.find({ isDeleted: true })
+    .populate("PhongBanID")
+    .populate("QuanLyTrucTiepID", "HoTen MaNhanVien")
+    .sort({ updatedAt: -1 });
 };
 
 const NhanVienQuanLy = mongoose.model("NhanVienQuanLy", nhanVienQuanLySchema);

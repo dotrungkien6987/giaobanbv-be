@@ -86,4 +86,12 @@ router.use("/doanvao", doanVaoApi);
 const doanRaApi = require("./doanra.api");
 router.use("/doanra", doanRaApi);
 
+// API quản lý nhóm việc user
+const nhomViecUserApi = require("./nhomViecUser");
+router.use("/nhomviec-user", nhomViecUserApi);
+
+// API quản lý nhiệm vụ thường quy
+const nhiemvuThuongQuyApi = require("./nhiemvuThuongQuy");
+router.use("/nhiemvu-thuongquy", nhiemvuThuongQuyApi);
+
 module.exports = router;

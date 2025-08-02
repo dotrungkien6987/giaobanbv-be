@@ -31,6 +31,10 @@ const commentSchema = Schema(
       type: Boolean,
       default: false,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -43,7 +47,9 @@ commentSchema.index({ commentableType: 1, commentableId: 1 });
 commentSchema.index({ authorId: 1 });
 commentSchema.index({ parentId: 1 });
 commentSchema.index({ createdAt: -1 });
+commentSchema.index({ isDeleted: 1 });
 commentSchema.index({ commentableType: 1, commentableId: 1, createdAt: -1 });
+commentSchema.index({ commentableType: 1, commentableId: 1, isDeleted: 1 });
 
 // Virtual for replies
 commentSchema.virtual("replies", {
@@ -80,6 +86,11 @@ commentSchema.methods.canDelete = function (userId) {
   return this.authorId.toString() === userId.toString();
 };
 
+commentSchema.methods.softDelete = function () {
+  this.isDeleted = true;
+  return this.save();
+};
+
 // Static methods
 commentSchema.statics.findByCommentable = function (
   commentableType,
@@ -89,10 +100,12 @@ commentSchema.statics.findByCommentable = function (
     commentableType,
     commentableId,
     parentId: null, // Only root comments
+    isDeleted: false,
   })
     .populate("authorId", "fullName employeeCode avatarUrl")
     .populate({
       path: "replies",
+      match: { isDeleted: false },
       populate: {
         path: "authorId",
         select: "fullName employeeCode avatarUrl",
@@ -102,13 +115,13 @@ commentSchema.statics.findByCommentable = function (
 };
 
 commentSchema.statics.findByAuthor = function (authorId) {
-  return this.find({ authorId })
+  return this.find({ authorId, isDeleted: false })
     .populate("authorId", "fullName employeeCode")
     .sort({ createdAt: -1 });
 };
 
 commentSchema.statics.findReplies = function (parentId) {
-  return this.find({ parentId })
+  return this.find({ parentId, isDeleted: false })
     .populate("authorId", "fullName employeeCode avatarUrl")
     .sort({ createdAt: 1 });
 };
@@ -122,6 +135,7 @@ commentSchema.statics.getCommentStats = function (
       $match: {
         commentableType,
         commentableId: new mongoose.Types.ObjectId(commentableId),
+        isDeleted: false,
       },
     },
     {
@@ -137,6 +151,12 @@ commentSchema.statics.getCommentStats = function (
       },
     },
   ]);
+};
+
+commentSchema.statics.findDeleted = function () {
+  return this.find({ isDeleted: true })
+    .populate("authorId", "fullName employeeCode")
+    .sort({ updatedAt: -1 });
 };
 
 // Validation

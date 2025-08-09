@@ -21,7 +21,7 @@ const congViecDuocGiaoSchema = Schema(
     NguoiGiaoViecID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
     NhomViecID: {
       type: Schema.ObjectId,

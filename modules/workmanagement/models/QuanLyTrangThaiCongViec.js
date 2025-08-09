@@ -59,7 +59,7 @@ const lichSuTrangThaiSchema = new Schema(
     },
     NguoiThayDoiID: {
       type: Schema.ObjectId,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
       required: true,
       description: "Người thực hiện thay đổi trạng thái",
     },

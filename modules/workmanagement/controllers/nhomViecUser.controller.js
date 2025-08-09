@@ -24,7 +24,6 @@ nhomViecUserController.getAll = catchAsync(async (req, res, next) => {
 
   let nhomViecUsers = await NhomViecUser.find(filterCriteria)
     .populate("NguoiTaoID", "HoTen Email")
-    .populate("KhoaID", "TenKhoa MaKhoa")
     .sort({ createdAt: -1 })
     .skip(offset)
     .limit(limit);
@@ -47,10 +46,10 @@ nhomViecUserController.insertOne = catchAsync(async (req, res, next) => {
   };
 
   const created = await NhomViecUser.create(nhomViecUser);
-  const populated = await NhomViecUser.findById(created._id)
-    .populate("NguoiTaoID", "HoTen Email")
-    .populate("KhoaID", "TenKhoa MaKhoa");
-
+  const populated = await NhomViecUser.findById(created._id).populate(
+    "NguoiTaoID",
+    "HoTen Email"
+  );
   return sendResponse(res, 200, true, populated, null, "Tạo thành công");
 });
 
@@ -76,10 +75,7 @@ nhomViecUserController.updateOne = catchAsync(async (req, res, next) => {
     nhomViecUser._id,
     updateData,
     { new: true }
-  )
-    .populate("NguoiTaoID", "HoTen Email")
-    .populate("KhoaID", "TenKhoa MaKhoa");
-
+  ).populate("NguoiTaoID", "HoTen Email");
   return sendResponse(res, 200, true, updated, null, "Cập nhật thành công");
 });
 
@@ -125,19 +121,6 @@ nhomViecUserController.deleteOne = catchAsync(async (req, res, next) => {
   return sendResponse(res, 200, true, nhomViecUserID, null, "Xóa thành công");
 });
 
-// GET /api/nhomviec-user/khoa/:khoaId - Lấy nhóm việc theo KhoaID
-nhomViecUserController.getByKhoaId = catchAsync(async (req, res, next) => {
-  const { khoaId } = req.params;
-
-  const nhomViecUsers = await NhomViecUser.find({
-    KhoaID: khoaId,
-    TrangThaiHoatDong: true,
-    isDeleted: false,
-  })
-    .select("_id TenNhom MoTa")
-    .sort({ TenNhom: 1 });
-
-  return sendResponse(res, 200, true, nhomViecUsers, null, "");
-});
+// Đã loại bỏ API lấy theo KhoaID vì schema không còn KhoaID
 
 module.exports = nhomViecUserController;

@@ -94,4 +94,8 @@ router.use("/nhomviec-user", nhomViecUserApi);
 const nhiemvuThuongQuyApi = require("./nhiemvuThuongQuy");
 router.use("/nhiemvu-thuongquy", nhiemvuThuongQuyApi);
 
+// API workmanagement module
+const workManagementApi = require("../modules/workmanagement/routes");
+router.use("/workmanagement", workManagementApi);
+
 module.exports = router;

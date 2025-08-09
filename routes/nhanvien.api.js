@@ -15,7 +15,7 @@ const authentication = require("../middlewares/authentication");
 router.post(
   "/",
   authentication.loginRequired,
-  
+
   nhanvienController.insertOne
 );
 /**
@@ -27,7 +27,7 @@ router.post(
 router.put(
   "/",
   authentication.loginRequired,
-  
+
   nhanvienController.updateOneNhanVien
 );
 
@@ -51,7 +51,7 @@ router.get(
 router.get(
   "/tichluytinchitheokhoa/",
   authentication.loginRequired,
- 
+
   nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa
 );
 
@@ -59,7 +59,7 @@ router.get(
   "/soluongthuchien",
   authentication.loginRequired,
   nhanvienController.getTongHopSoLuongThucHien
-); 
+);
 
 router.get(
   "/soluongtheokhoa",
@@ -78,7 +78,7 @@ router.get(
   authentication.loginRequired,
   validators.validate([
     param("khoaID").exists().isString().custom(validators.checkObjectId),
-      ]),
+  ]),
   nhanvienController.getCoCauNguonNhanLucByKhoa
 );
 
@@ -87,8 +87,23 @@ router.get(
   authentication.loginRequired,
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
-      ]),
+  ]),
   nhanvienController.getById
+);
+
+/**
+ * @route GET /nhanvien/simple/:nhanvienID
+ * @description Get one nhanvien with basic info only (for QuanLyNhanVien)
+ * @params {nhanvienID}
+ * @access  login require,
+ */
+router.get(
+  "/simple/:nhanvienID",
+  authentication.loginRequired,
+  validators.validate([
+    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
+  ]),
+  nhanvienController.getOneByNhanVienID
 );
 
 /**
@@ -98,14 +113,13 @@ router.get(
  * @access  login require,
  */
 
-
 router.delete(
   "/:nhanvienID",
   authentication.loginRequired,
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
-      ]),
-      nhanvienController.deleteOneNhanVien
+  ]),
+  nhanvienController.deleteOneNhanVien
 );
 
 module.exports = router;
@@ -113,6 +127,6 @@ module.exports = router;
 router.post(
   "/import",
   authentication.loginRequired,
-  
+
   nhanvienController.importNhanVien
 );

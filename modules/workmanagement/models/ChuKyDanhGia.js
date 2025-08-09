@@ -33,7 +33,7 @@ const chuKyDanhGiaSchema = Schema(
     },
     NguoiTaoID: {
       type: Schema.ObjectId,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
   },
   {

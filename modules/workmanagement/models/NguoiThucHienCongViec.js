@@ -11,7 +11,7 @@ const nguoiThucHienCongViecSchema = Schema(
     NhanVienID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
     VaiTro: {
       type: String,

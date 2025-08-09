@@ -31,11 +31,11 @@ const yeuCauHoTroSchema = Schema(
     NguoiYeuCauID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
     NguoiXuLyID: {
       type: Schema.ObjectId,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
     MucDoUuTien: {
       type: String,

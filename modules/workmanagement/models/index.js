@@ -4,6 +4,7 @@
 // Core Organization Models (Tên tiếng Việt)
 const PhongBan = require("./PhongBan");
 const NhanVienQuanLy = require("./NhanVienQuanLy");
+const QuanLyNhanVien = require("./QuanLyNhanVien");
 
 // Routine Duties and Employee Assignment (Tên tiếng Việt)
 const NhiemVuThuongQuy = require("./NhiemVuThuongQuy");
@@ -48,6 +49,7 @@ module.exports = {
   // Core Organization (Tên tiếng Việt)
   PhongBan,
   NhanVienQuanLy,
+  QuanLyNhanVien,
 
   // Routine Duties (Tên tiếng Việt)
   NhiemVuThuongQuy,

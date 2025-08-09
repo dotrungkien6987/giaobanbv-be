@@ -6,11 +6,32 @@
 const mongoose = require("mongoose");
 const { NhomViecUser } = require("../models");
 
+async function dropObsoleteIndexes() {
+  try {
+    const indexes = await NhomViecUser.collection.getIndexes();
+    const indexNames = Object.keys(indexes);
+    for (const name of indexNames) {
+      // Drop any index that includes KhoaID (field removed from schema)
+      if (name.includes("KhoaID")) {
+        try {
+          await NhomViecUser.collection.dropIndex(name);
+          console.log(`🗑️  Dropped obsolete index: ${name}`);
+        } catch (e) {
+          console.warn(`⚠️  Could not drop index ${name}:`, e.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("❌ Lỗi khi kiểm tra/xóa indexes cũ:", error);
+  }
+}
+
 async function createIndexes() {
   try {
     console.log("Bắt đầu tạo indexes cho NhomViecUser...");
 
     // Tạo indexes
+    await dropObsoleteIndexes();
     await NhomViecUser.createIndexes();
 
     console.log("✅ Tạo indexes thành công cho NhomViecUser");
@@ -47,7 +68,6 @@ async function createDefaultGroups() {
           TenNhom: "Công việc chung",
           MoTa: "Nhóm mặc định cho các công việc chưa được phân loại cụ thể",
           NguoiTaoID: quanLy._id,
-          KhoaID: quanLy.KhoaID,
           MauSac: "#95a5a6",
           BieuTuong: "fas fa-tasks",
           ThuTu: 0,

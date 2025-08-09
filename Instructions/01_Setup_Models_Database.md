@@ -73,7 +73,39 @@ QuanLyTrucTiep: { type: Schema.ObjectId, ref: "User", required: false }, // Ngư
 
 ### 2. Tạo Models mới cần thiết
 
-#### 2.1 ViTriCongViec Model
+#### 2.1 QuanLyNhanVien Model (Mới)
+
+**File mới**: `modules/workmanagement/models/QuanLyNhanVien.js`
+
+```javascript
+const quanLyNhanVienSchema = Schema(
+  {
+    NhanVienQuanLy: {
+      type: Schema.ObjectId,
+      required: true,
+      ref: "NhanVien",
+    },
+    NhanVienDuocQuanLy: {
+      type: Schema.ObjectId,
+      required: true,
+      ref: "NhanVien",
+    },
+    LoaiQuanLy: {
+      type: String,
+      enum: ["KPI"], // Nhân viên chấm KPI cũng là người giao việc
+      required: true,
+      default: "KPI",
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { timestamps: true }
+);
+```
+
+#### 2.2 ViTriCongViec Model
 
 **File mới**: `modules/workmanagement/models/ViTriCongViec.js`
 

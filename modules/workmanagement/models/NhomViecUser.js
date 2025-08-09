@@ -21,12 +21,6 @@ const nhomViecUserSchema = Schema(
       ref: "User",
       description: "ID của quản lý tạo nhóm việc này",
     },
-    KhoaID: {
-      type: Schema.ObjectId,
-      required: true,
-      ref: "Khoa",
-      description: "Khoa/Phòng ban mà nhóm việc này thuộc về",
-    },
 
     TrangThaiHoatDong: {
       type: Boolean,
@@ -55,8 +49,6 @@ const nhomViecUserSchema = Schema(
 
 // Indexes for performance
 nhomViecUserSchema.index({ NguoiTaoID: 1, TrangThaiHoatDong: 1 });
-nhomViecUserSchema.index({ KhoaID: 1, TrangThaiHoatDong: 1 });
-nhomViecUserSchema.index({ NguoiTaoID: 1, KhoaID: 1 });
 nhomViecUserSchema.index({ isDeleted: 1 });
 nhomViecUserSchema.index({ isDeleted: 1, TrangThaiHoatDong: 1 });
 

@@ -11,12 +11,12 @@ const danhGiaKPISchema = Schema(
     NhanVienID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
     NguoiDanhGiaID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
     },
     TongDiem: {
       type: Number,

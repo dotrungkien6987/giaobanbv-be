@@ -6,7 +6,7 @@ const nhanVienNhiemVuSchema = Schema(
     NhanVienID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
       description: "ID của nhân viên được gán nhiệm vụ",
     },
     NhiemVuThuongQuyID: {
@@ -15,13 +15,7 @@ const nhanVienNhiemVuSchema = Schema(
       ref: "NhiemVuThuongQuy",
       description: "ID của nhiệm vụ thường quy được gán",
     },
-    TyTrongPhanTram: {
-      type: Number,
-      min: 0,
-      default: 100,
-      description:
-        "Tỷ trọng nhiệm vụ này trong tổng công việc của nhân viên (có thể > 100%)",
-    },
+    
     TrangThaiHoatDong: {
       type: Boolean,
       default: true,
@@ -39,19 +33,10 @@ const nhanVienNhiemVuSchema = Schema(
     },
     NguoiGanID: {
       type: Schema.ObjectId,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
       description: "ID của người thực hiện việc gán nhiệm vụ",
     },
-    NgayKetThuc: {
-      type: Date,
-      default: null,
-      description: "Ngày kết thúc assignment (null = vô thời hạn)",
-    },
-    LyDoGan: {
-      type: String,
-      maxlength: 500,
-      description: "Lý do gán nhiệm vụ này cho nhân viên",
-    },
+  
   },
   {
     timestamps: true,
@@ -95,14 +80,7 @@ nhanVienNhiemVuSchema.methods.toJSON = function () {
 nhanVienNhiemVuSchema.methods.xoaMem = function () {
   this.isDeleted = true;
   this.TrangThaiHoatDong = false;
-  this.NgayKetThuc = new Date();
-  return this.save();
-};
-
-nhanVienNhiemVuSchema.methods.ketThucGan = function (lyDo = "") {
-  this.NgayKetThuc = new Date();
-  this.TrangThaiHoatDong = false;
-  this.LyDoKetThuc = lyDo;
+  
   return this.save();
 };
 
@@ -145,71 +123,7 @@ nhanVienNhiemVuSchema.statics.layDanhSachDaXoa = function () {
     .sort({ updatedAt: -1 });
 };
 
-// Lấy capacity của nhân viên (tổng tỷ trọng hiện tại)
-nhanVienNhiemVuSchema.statics.layThongTinTaiTrong = function (nhanVienId) {
-  return this.aggregate([
-    {
-      $match: {
-        NhanVienID: new mongoose.Types.ObjectId(nhanVienId),
-        TrangThaiHoatDong: true,
-        isDeleted: false,
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        tongTyTrong: { $sum: "$TyTrongPhanTram" },
-        soLuongNhiemVu: { $sum: 1 },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        tongTyTrong: 1,
-        soLuongNhiemVu: 1,
-        tinhTrangTaiTrong: {
-          $cond: {
-            if: { $gt: ["$tongTyTrong", 100] },
-            then: "QUA_TAI",
-            else: {
-              $cond: {
-                if: { $gt: ["$tongTyTrong", 80] },
-                then: "GAN_FULL",
-                else: "BINH_THUONG",
-              },
-            },
-          },
-        },
-      },
-    },
-  ]);
-};
-
 // Validation
-nhanVienNhiemVuSchema.pre("save", async function (next) {
-  // Validate rằng nhân viên và nhiệm vụ tồn tại và active
-  if (this.isNew) {
-    const NhanVienQuanLy = mongoose.model("NhanVienQuanLy");
-    const NhiemVuThuongQuy = mongoose.model("NhiemVuThuongQuy");
-
-    const nhanVien = await NhanVienQuanLy.findById(this.NhanVienID);
-    if (!nhanVien || nhanVien.isDeleted || nhanVien.TrangThai !== "HOATDONG") {
-      const error = new Error("Nhân viên không tồn tại hoặc không hoạt động");
-      error.name = "ValidationError";
-      return next(error);
-    }
-
-    const nhiemVu = await NhiemVuThuongQuy.findById(this.NhiemVuThuongQuyID);
-    if (!nhiemVu || nhiemVu.isDeleted || !nhiemVu.TrangThaiHoatDong) {
-      const error = new Error(
-        "Nhiệm vụ thường quy không tồn tại hoặc không hoạt động"
-      );
-      error.name = "ValidationError";
-      return next(error);
-    }
-  }
-  next();
-});
 
 const NhanVienNhiemVu = mongoose.model(
   "NhanVienNhiemVu",

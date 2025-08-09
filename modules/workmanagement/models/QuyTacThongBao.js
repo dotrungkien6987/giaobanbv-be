@@ -140,7 +140,7 @@ const quyTacThongBaoSchema = new Schema(
     },
     NguoiTaoID: {
       type: Schema.ObjectId,
-      ref: "NhanVienQuanLy",
+      ref: "NhanVien",
       required: true,
       description: "Người tạo quy tắc",
     },

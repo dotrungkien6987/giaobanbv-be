@@ -15,7 +15,7 @@ const quanLyNhanVienSchema = Schema(
     },
     LoaiQuanLy: {
       type: String,
-      enum: ["KPI","Giao_Viec"], // Nhân viên chấm KPI cũng là người giao việc
+      enum: ["KPI", "Giao_Viec"], // Nhân viên chấm KPI cũng là người giao việc
       required: true,
       default: "KPI",
     },
@@ -24,10 +24,10 @@ const quanLyNhanVienSchema = Schema(
       default: false,
     },
   },
-  { 
+  {
     timestamps: true,
     toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+    toObject: { virtuals: true },
   }
 );
 

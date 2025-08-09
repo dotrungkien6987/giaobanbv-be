@@ -147,7 +147,7 @@ service.assignOne = async (req, employeeId, dutyId) => {
       existingAssignment.TrangThaiHoatDong = true;
       existingAssignment.NgayGan = new Date(); // Cập nhật thời gian gán mới
       existingAssignment.NguoiGanID = user.NhanVienID || null; // Cập nhật người gán
-      
+
       await existingAssignment.save();
       result = existingAssignment;
     }
@@ -226,8 +226,8 @@ service.bulkAssign = async (req, employeeIds, dutyIds) => {
               NhanVienID: toObjectId(eid),
               NhiemVuThuongQuyID: toObjectId(did),
             },
-            $set: { 
-              TrangThaiHoatDong: true, 
+            $set: {
+              TrangThaiHoatDong: true,
               isDeleted: false,
               NgayGan: now, // Cập nhật thời gian gán (cho cả tạo mới và khôi phục)
               NguoiGanID: user.NhanVienID || null, // Cập nhật người gán
@@ -239,20 +239,25 @@ service.bulkAssign = async (req, employeeIds, dutyIds) => {
     }
   }
   if (ops.length === 0)
-    return { created: 0, restored: 0, skipped: 0, count: { created: 0, restored: 0, skipped: 0 } };
+    return {
+      created: 0,
+      restored: 0,
+      skipped: 0,
+      count: { created: 0, restored: 0, skipped: 0 },
+    };
 
   const result = await NhanVienNhiemVu.bulkWrite(ops, { ordered: false });
   const created = result.upsertedCount || 0;
   const modified = result.modifiedCount || 0;
   const restored = modified; // Assignments được khôi phục (đã tồn tại nhưng bị update)
   const skipped = ops.length - created - restored;
-  
-  return { 
-    created, 
-    restored, 
-    skipped, 
+
+  return {
+    created,
+    restored,
+    skipped,
     count: { created, restored, skipped },
-    message: `Tạo mới: ${created}, Khôi phục: ${restored}, Bỏ qua: ${skipped}`
+    message: `Tạo mới: ${created}, Khôi phục: ${restored}, Bỏ qua: ${skipped}`,
   };
 };
 

@@ -22,7 +22,6 @@ nhiemvuThuongQuyController.getAll = catchAsync(async (req, res, next) => {
   let nhiemVuThuongQuys = await NhiemVuThuongQuy.find(filterCriteria)
     .populate("KhoaID", "TenKhoa MaKhoa")
     .populate("NguoiTaoID", "HoTen UserName")
-    .populate("NhomViecUserID", "TenNhom MoTa")
     .sort({ createdAt: -1 })
     .skip(offset)
     .limit(limit);
@@ -43,9 +42,7 @@ nhiemvuThuongQuyController.insertOne = catchAsync(async (req, res, next) => {
   const created = await NhiemVuThuongQuy.create(nhiemvuThuongQuy);
   const populated = await NhiemVuThuongQuy.findById(created._id)
     .populate("KhoaID", "TenKhoa MaKhoa")
-    .populate("NguoiTaoID", "HoTen UserName")
-    .populate("NhomViecUserID", "TenNhom MoTa");
-
+    .populate("NguoiTaoID", "HoTen UserName");
   return sendResponse(res, 200, true, populated, null, "Tạo thành công");
 });
 
@@ -70,9 +67,7 @@ nhiemvuThuongQuyController.updateOne = catchAsync(async (req, res, next) => {
     { new: true }
   )
     .populate("KhoaID", "TenKhoa MaKhoa")
-    .populate("NguoiTaoID", "HoTen UserName")
-    .populate("NhomViecUserID", "TenNhom MoTa");
-
+    .populate("NguoiTaoID", "HoTen UserName");
   return sendResponse(res, 200, true, updated, null, "Cập nhật thành công");
 });
 

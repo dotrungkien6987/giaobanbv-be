@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const NhomViecUser = require("./NhomViecUser");
 const Schema = mongoose.Schema;
 
 const nhiemVuThuongQuySchema = Schema(
@@ -44,11 +43,6 @@ const nhiemVuThuongQuySchema = Schema(
       type: Schema.ObjectId,
       ref: "User",
       description: "Người tạo nhiệm vụ này",
-    },
-    NhomViecUserID: {
-      type: Schema.ObjectId,
-      ref: "NhomViecUser",
-      description: "Nhóm việc của nhiệm vụ này",
     },
   },
   {

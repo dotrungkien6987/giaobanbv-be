@@ -130,9 +130,12 @@ service.assignOne = async (req, employeeId, dutyId) => {
   await ensureSameKhoa(employeeId, dutyId);
 
   // Kiểm tra xem đã có assignment bị xóa (soft delete) hay chưa
+  // Lưu ý: model có pre(/^find/) tự loại bỏ isDeleted=true nếu không chỉ định
+  // Để hỗ trợ khôi phục (restore), cần bao gồm cả bản ghi đã xóa mềm
   const existingAssignment = await NhanVienNhiemVu.findOne({
     NhanVienID: toObjectId(employeeId),
     NhiemVuThuongQuyID: toObjectId(dutyId),
+    isDeleted: { $in: [true, false] },
   });
 
   let result;
@@ -171,13 +174,15 @@ service.assignOne = async (req, employeeId, dutyId) => {
     }
   }
 
-  // Populate dữ liệu trước khi trả về
-  return await result
-    .populate({
+  // Populate dữ liệu trước khi trả về (không chain populate trên Document ở Mongoose v6+)
+  await result.populate([
+    {
       path: "NhiemVuThuongQuyID",
       populate: { path: "KhoaID", select: "_id TenKhoa" },
-    })
-    .populate({ path: "NguoiGanID", select: "_id Ten MaNhanVien" });
+    },
+    { path: "NguoiGanID", select: "_id Ten MaNhanVien" },
+  ]);
+  return result;
 };
 
 service.bulkAssign = async (req, employeeIds, dutyIds) => {

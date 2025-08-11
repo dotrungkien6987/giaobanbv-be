@@ -15,6 +15,9 @@ router.get("/nhan-vien/:employeeId/nhiem-vu", ctrl.getDutiesByEmployee);
 // Danh sách assignment của một nhân viên
 router.get("/assignments", ctrl.getAssignmentsByEmployee);
 
+// Tổng Mức độ khó và số lượng nhiệm vụ theo từng nhân viên
+router.get("/assignments/totals", ctrl.getAssignmentTotals);
+
 // Gán 1 nhiệm vụ
 router.post("/assignments", ctrl.assignOne);
 

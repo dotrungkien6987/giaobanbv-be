@@ -43,6 +43,24 @@ ctrl.getAssignmentsByEmployee = catchAsync(async (req, res) => {
   );
 });
 
+ctrl.getAssignmentTotals = catchAsync(async (req, res) => {
+  const { NhanVienIDs } = req.query; // comma-separated or array
+  const selectedOnly = req.query.selectedOnly === "true";
+  const data = await service.getAssignmentTotals(
+    req,
+    NhanVienIDs,
+    selectedOnly
+  );
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Tổng hợp mức độ khó theo nhân viên thành công"
+  );
+});
+
 ctrl.assignOne = catchAsync(async (req, res) => {
   const { NhanVienID, NhiemVuThuongQuyID } = req.body;
   const data = await service.assignOne(req, NhanVienID, NhiemVuThuongQuyID);

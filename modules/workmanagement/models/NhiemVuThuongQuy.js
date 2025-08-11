@@ -23,9 +23,9 @@ const nhiemVuThuongQuySchema = Schema(
     },
     MucDoKho: {
       type: Number,
-      min: 1.0,
+      min: 0.0,
       max: 10.0,
-      default: 5.0,
+      default: 1.0,
       description:
         "Mức độ khó của nhiệm vụ (1.0-10.0), cho phép 1 chữ số thập phân",
     },

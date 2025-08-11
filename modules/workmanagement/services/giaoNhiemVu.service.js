@@ -294,3 +294,100 @@ service.unassignByPair = async (req, employeeId, dutyId) => {
 };
 
 module.exports = service;
+service.getAssignmentTotals = async (req, nhanVienIds, selectedOnly) => {
+  const user = await getCurrentUser(req);
+
+  // Parse nhanVienIds: can be array or comma-separated string
+  let ids = [];
+  if (Array.isArray(nhanVienIds)) ids = nhanVienIds;
+  else if (typeof nhanVienIds === "string" && nhanVienIds.trim().length > 0)
+    ids = nhanVienIds.split(",").map((s) => s.trim());
+
+  // If not provided or selectedOnly=true, fallback to single selected employee from query NhanVienID
+  if ((!ids || ids.length === 0) && selectedOnly) {
+    const eid = req.query.NhanVienID || req.params.employeeId;
+    if (eid) ids = [eid];
+  }
+
+  // If not admin, ensure all target employees are managed by current user
+  if (!isAdminUser(user) && ids.length > 0) {
+    const relations = await QuanLyNhanVien.find({
+      NhanVienQuanLy: toObjectId(user.NhanVienID),
+      NhanVienDuocQuanLy: { $in: ids.map(toObjectId) },
+      isDeleted: false,
+    }).select("NhanVienDuocQuanLy");
+    const managedIds = new Set(
+      relations.map((r) => r.NhanVienDuocQuanLy.toString())
+    );
+    for (const id of ids) {
+      if (!managedIds.has(id.toString()))
+        throw new AppError(403, "Bạn không có quyền với nhân viên: " + id);
+    }
+  }
+
+  // If ids not provided, scope to all employees managed by current user (or all if admin)
+  if (!ids || ids.length === 0) {
+    if (!isAdminUser(user)) {
+      const relations = await QuanLyNhanVien.find({
+        NhanVienQuanLy: toObjectId(user.NhanVienID),
+        isDeleted: false,
+      }).select("NhanVienDuocQuanLy");
+      ids = relations.map((r) => r.NhanVienDuocQuanLy.toString());
+    }
+  }
+
+  const matchStage = { TrangThaiHoatDong: true, isDeleted: false };
+  if (ids && ids.length > 0)
+    matchStage.NhanVienID = { $in: ids.map(toObjectId) };
+
+  const agg = await NhanVienNhiemVu.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: "nhiemvuthuongquy",
+        localField: "NhiemVuThuongQuyID",
+        foreignField: "_id",
+        as: "duty",
+      },
+    },
+    { $unwind: "$duty" },
+    {
+      $match: {
+        "duty.isDeleted": { $ne: true },
+        "duty.TrangThaiHoatDong": true,
+      },
+    },
+    {
+      $group: {
+        _id: "$NhanVienID",
+        totalMucDoKho: { $sum: { $ifNull: ["$duty.MucDoKho", 0] } },
+        assignments: { $sum: 1 },
+      },
+    },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "_id",
+        foreignField: "_id",
+        as: "nhanvien",
+      },
+    },
+    { $unwind: { path: "$nhanvien", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        NhanVienID: "$_id",
+        _id: 0,
+        totalMucDoKho: 1,
+        assignments: 1,
+        nhanvien: {
+          _id: "$nhanvien._id",
+          Ten: "$nhanvien.Ten",
+          MaNhanVien: "$nhanvien.MaNhanVien",
+        },
+      },
+    },
+    { $sort: { totalMucDoKho: -1 } },
+  ]);
+
+  return agg;
+};

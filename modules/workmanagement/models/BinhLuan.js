@@ -10,7 +10,7 @@ const binhLuanSchema = Schema(
     },
     CongViecID: {
       type: Schema.ObjectId,
-      ref: "CongViecDuocGiao",
+      ref: "CongViec",
     },
     YeuCauHoTroID: {
       type: Schema.ObjectId,
@@ -108,6 +108,19 @@ binhLuanSchema.methods.layTraLoi = function () {
 };
 
 // Static methods
+// Xóa mềm bình luận kèm file đính kèm (thay thế logic cũ ở BinhLuanCongViec)
+binhLuanSchema.statics.softDeleteWithFiles = async function (binhLuanId) {
+  const TepTin = mongoose.model("TepTin");
+  await this.updateOne(
+    { _id: binhLuanId },
+    { $set: { TrangThai: "DELETED", NgayCapNhat: new Date() } }
+  );
+  await TepTin.updateMany(
+    { BinhLuanID: binhLuanId },
+    { $set: { TrangThai: "DELETED" } }
+  );
+};
+
 binhLuanSchema.statics.timTheoCongViec = function (congViecId) {
   return this.find({
     CongViecID: congViecId,
@@ -207,11 +220,11 @@ binhLuanSchema.post("save", async function () {
     let nguoiNhanThongBao = [];
 
     if (this.CongViecID) {
-      const CongViecDuocGiao = mongoose.model("CongViecDuocGiao");
-      const congViec = await CongViecDuocGiao.findById(this.CongViecID);
+      const CongViec = mongoose.model("CongViec");
+      const congViec = await CongViec.findById(this.CongViecID);
       if (congViec) {
-        // Thông báo cho người giao và người nhận
-        nguoiNhanThongBao = [congViec.NguoiGiaoID, congViec.NguoiNhanID];
+        // Thông báo cho người giao và người chính
+        nguoiNhanThongBao = [congViec.NguoiGiaoViecID, congViec.NguoiChinhID];
       }
     }
 

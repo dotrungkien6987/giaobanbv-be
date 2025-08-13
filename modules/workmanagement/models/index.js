@@ -1,9 +1,18 @@
 // Work Management Module - Models Index (Updated Structure với tên tiếng Việt)
 // Import all models for the work management system
 
+// Helper: safe require để tránh lỗi khi file chưa tồn tại (giữ tương thích khi refactor dần)
+const safeRequire = (p) => {
+  try {
+    return require(p);
+  } catch (e) {
+    return undefined;
+  }
+};
+
 // Core Organization Models (Tên tiếng Việt)
-const PhongBan = require("./PhongBan");
-const NhanVienQuanLy = require("./NhanVienQuanLy");
+const PhongBan = safeRequire("./PhongBan");
+const NhanVienQuanLy = safeRequire("./NhanVienQuanLy");
 const QuanLyNhanVien = require("./QuanLyNhanVien");
 
 // Routine Duties and Employee Assignment (Tên tiếng Việt)
@@ -11,7 +20,7 @@ const NhiemVuThuongQuy = require("./NhiemVuThuongQuy");
 const NhanVienNhiemVu = require("./NhanVienNhiemVu");
 
 // Assignment History and State Management
-const LichSuGanNhiemVu = require("./LichSuGanNhiemVu");
+const LichSuGanNhiemVu = safeRequire("./LichSuGanNhiemVu");
 const {
   QuanLyTrangThaiCongViec,
   TRANG_THAI_CONG_VIEC,
@@ -29,18 +38,21 @@ const KpiEvaluation = require("./KpiEvaluation");
 const RoutineDutyEvaluation = require("./RoutineDutyEvaluation");
 const CriteriaScore = require("./CriteriaScore");
 
-// Tasks and Assignments
-const AssignedTask = require("./AssignedTask");
-const TaskAssignee = require("./TaskAssignee");
+// Tasks and Assignments (legacy AssignedTask đã gỡ bỏ)
 const NhomViecUser = require("./NhomViecUser");
 
 // Tickets System
 const TicketCategory = require("./TicketCategory");
 const Ticket = require("./Ticket");
 
-// Files and Comments
-const File = require("./File");
-const Comment = require("./Comment");
+// Files and Comments (legacy) — đã thay thế bằng TepTin/TepTinCongViec và BinhLuan/BinhLuanCongViec
+// const File = require("./File");
+// const Comment = require("./Comment");
+
+// New Work Items (CongViec)
+const CongViec = require("./CongViec");
+const BinhLuan = require("./BinhLuan");
+const TepTin = require("./TepTin");
 
 // Notifications
 const Notification = require("./Notification");
@@ -71,17 +83,18 @@ module.exports = {
   CriteriaScore,
 
   // Tasks
-  AssignedTask,
-  TaskAssignee,
   NhomViecUser,
 
   // Tickets
   TicketCategory,
   Ticket,
 
-  // Files & Comments
-  File,
-  Comment,
+  // Files & Comments — sử dụng TepTin/TepTinCongViec và BinhLuan/BinhLuanCongViec
+
+  // New Work Items
+  CongViec,
+  BinhLuan,
+  TepTin,
 
   // Notifications
   Notification,

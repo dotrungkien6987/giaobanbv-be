@@ -26,16 +26,16 @@ const ticketSchema = Schema(
     },
     routineDutyId: {
       type: Schema.ObjectId,
-      ref: "RoutineDuty",
+      ref: "NhiemVuThuongQuy", // refactor: dùng model hiện có
     },
     requesterId: {
       type: Schema.ObjectId,
       required: true,
-      ref: "Employee",
+      ref: "NhanVien", // refactor: dùng model hiện có
     },
     handlerId: {
       type: Schema.ObjectId,
-      ref: "Employee",
+      ref: "NhanVien", // refactor: dùng model hiện có
     },
     priority: {
       type: String,
@@ -108,21 +108,7 @@ ticketSchema.index({ isOverdue: 1 });
 ticketSchema.index({ status: 1, priority: 1 });
 ticketSchema.index({ handlerId: 1, status: 1 });
 
-// Virtual for comments
-ticketSchema.virtual("comments", {
-  ref: "Comment",
-  localField: "_id",
-  foreignField: "commentableId",
-  match: { commentableType: "TICKET" },
-});
-
-// Virtual for files
-ticketSchema.virtual("files", {
-  ref: "FileAttachment",
-  localField: "_id",
-  foreignField: "attachableId",
-  match: { attachableType: "TICKET" },
-});
+// Legacy virtuals (comments/files) đã được gỡ bỏ để tránh phụ thuộc model cũ (Comment/FileAttachment)
 
 // Methods
 ticketSchema.methods.toJSON = function () {

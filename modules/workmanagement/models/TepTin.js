@@ -30,11 +30,16 @@ const tepTinSchema = Schema(
     },
     CongViecID: {
       type: Schema.ObjectId,
-      ref: "CongViecDuocGiao",
+      ref: "CongViec",
     },
     YeuCauHoTroID: {
       type: Schema.ObjectId,
       ref: "YeuCauHoTro",
+    },
+    // Liên kết (tuỳ chọn) tới bình luận để quản lý file đính kèm comment
+    BinhLuanID: {
+      type: Schema.ObjectId,
+      ref: "BinhLuan",
     },
     NguoiTaiLenID: {
       type: Schema.ObjectId,
@@ -67,6 +72,7 @@ tepTinSchema.index({ YeuCauHoTroID: 1 });
 tepTinSchema.index({ NguoiTaiLenID: 1 });
 tepTinSchema.index({ NgayTaiLen: -1 });
 tepTinSchema.index({ TrangThai: 1 });
+tepTinSchema.index({ BinhLuanID: 1 });
 
 // Virtual for formatted file size
 tepTinSchema.virtual("KichThuocFormat").get(function () {
@@ -135,6 +141,16 @@ tepTinSchema.statics.timTheoNguoiDung = function (nguoiDungId, limit = 20) {
     .populate("YeuCauHoTroID", "TieuDe")
     .sort({ NgayTaiLen: -1 })
     .limit(limit);
+};
+
+// Lấy file theo bình luận
+tepTinSchema.statics.timTheoBinhLuan = function (binhLuanId) {
+  return this.find({
+    BinhLuanID: binhLuanId,
+    TrangThai: "ACTIVE",
+  })
+    .populate("NguoiTaiLenID", "HoTen MaNhanVien")
+    .sort({ NgayTaiLen: -1 });
 };
 
 tepTinSchema.statics.thongKeTheoLoaiFile = function (tuNgay, denNgay) {

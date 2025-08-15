@@ -1,0 +1,77 @@
+const express = require("express");
+const router = express.Router();
+
+const authentication = require("../../../middlewares/authentication");
+const congViecController = require("../controllers/congViec.controller");
+
+// Middleware authentication cho tất cả routes
+router.use(authentication.loginRequired);
+
+/**
+ * @route   GET /api/workmanagement/nhanvien/:nhanvienid
+ * @desc    Lấy thông tin nhân viên theo ID
+ * @access  Private
+ */
+router.get("/nhanvien/:nhanvienid", congViecController.getNhanVien);
+
+/**
+ * @route   GET /api/workmanagement/congviec/:nhanvienid/received
+ * @desc    Lấy công việc mà nhân viên là người xử lý chính
+ * @access  Private
+ * @query   page, limit, search, TrangThai, MucDoUuTien, NgayBatDau, NgayHetHan
+ */
+router.get(
+  "/congviec/:nhanvienid/received",
+  congViecController.getReceivedCongViecs
+);
+
+/**
+ * @route   GET /api/workmanagement/congviec/:nhanvienid/assigned
+ * @desc    Lấy công việc mà nhân viên là người giao việc
+ * @access  Private
+ * @query   page, limit, search, TrangThai, MucDoUuTien, NgayBatDau, NgayHetHan
+ */
+router.get(
+  "/congviec/:nhanvienid/assigned",
+  congViecController.getAssignedCongViecs
+);
+
+/**
+ * @route   DELETE /api/workmanagement/congviec/:id
+ * @desc    Xóa công việc (soft delete)
+ * @access  Private
+ */
+router.delete("/congviec/:id", congViecController.deleteCongViec);
+
+/**
+ * @route   GET /api/workmanagement/congviec/detail/:id
+ * @desc    Lấy chi tiết công việc theo ID
+ * @access  Private
+ */
+router.get("/congviec/detail/:id", congViecController.getCongViecDetail);
+
+/**
+ * @route   POST /api/workmanagement/congviec
+ * @desc    Tạo công việc mới
+ * @access  Private
+ * @body    TieuDe, MoTa, NgayBatDau, NgayHetHan, MucDoUuTien, NguoiChinh, Tags
+ */
+router.post("/congviec", congViecController.createCongViec);
+
+/**
+ * @route   PUT /api/workmanagement/congviec/:id
+ * @desc    Cập nhật công việc
+ * @access  Private
+ * @body    TieuDe, MoTa, NgayBatDau, NgayHetHan, MucDoUuTien, TrangThai, TienDo, Tags
+ */
+router.put("/congviec/:id", congViecController.updateCongViec);
+
+/**
+ * @route   POST /api/workmanagement/congviec/:id/comment
+ * @desc    Thêm bình luận vào công việc
+ * @access  Private
+ * @body    NoiDung
+ */
+router.post("/congviec/:id/comment", congViecController.addComment);
+
+module.exports = router;

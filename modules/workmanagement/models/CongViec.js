@@ -93,13 +93,26 @@ const congViecSchema = new Schema(
       index: true,
     },
 
+    NhomViecUserID: {
+      type: Schema.ObjectId,
+      ref: "NhomViecUser",
+      default: null,
+      index: true,
+      description:
+        "Nhóm việc do người quản lý tự định nghĩa để phân loại công việc",
+    },
+
     LichSuTrangThai: { type: [LichSuTrangThaiSchema], default: [] },
+    // Danh sách bình luận (tham chiếu) – thêm để tránh StrictPopulateError khi populate
+    BinhLuans: [{ type: Schema.ObjectId, ref: "BinhLuan", default: [] }],
 
     isDeleted: { type: Boolean, default: false, index: true },
   },
   {
     timestamps: true,
     collection: "congviec",
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
@@ -107,6 +120,21 @@ const congViecSchema = new Schema(
 congViecSchema.index({ TrangThai: 1, NgayHetHan: 1 });
 congViecSchema.index({ "NguoiThamGia.NhanVienID": 1 });
 congViecSchema.index({ isDeleted: 1 });
+
+// Virtuals để populate thuận tiện (giữ tương thích code cũ dùng NguoiGiaoViec / NguoiChinh)
+congViecSchema.virtual("NguoiGiaoViec", {
+  ref: "NhanVien",
+  localField: "NguoiGiaoViecID",
+  foreignField: "_id",
+  justOne: true,
+});
+
+congViecSchema.virtual("NguoiChinh", {
+  ref: "NhanVien",
+  localField: "NguoiChinhID",
+  foreignField: "_id",
+  justOne: true,
+});
 
 // Validate nghiệp vụ cơ bản
 congViecSchema.pre("validate", function (next) {

@@ -1,7 +1,48 @@
 const NhomViecUser = require("../models/NhomViecUser");
-const { sendResponse, catchAsync } = require("../../../helpers/utils");
+const nhomViecUserService = require("../services/nhomViecUser.service");
+const {
+  sendResponse,
+  catchAsync,
+  AppError,
+} = require("../../../helpers/utils");
 
 const nhomViecUserController = {};
+
+/**
+ * Lấy danh sách nhóm việc của người dùng hiện tại
+ */
+nhomViecUserController.getMyNhomViecs = catchAsync(async (req, res, next) => {
+  // authentication.loginRequired chỉ set req.userId, cần lấy user đầy đủ
+  const userId = req.user?._id || req.userId;
+  if (!userId)
+    return next(new AppError(401, "Không tìm thấy thông tin người dùng"));
+
+  // Lấy user đầy đủ nếu chưa có
+  let user = req.user;
+  if (!user) {
+    const User = require("../../../models/User");
+    user = await User.findById(userId).select("_id PhanQuyen");
+    if (!user) return next(new AppError(401, "User không tồn tại"));
+    req.user = user; // cache lại
+  }
+
+  const includeAll = req.query.includeAll === "true";
+  const isAdmin = user.PhanQuyen === "admin";
+
+  const nhomViecs =
+    isAdmin || includeAll
+      ? await nhomViecUserService.getAllActive()
+      : await nhomViecUserService.getNhomViecByNguoiTao(user._id);
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    nhomViecs,
+    null,
+    "Lấy danh sách nhóm việc thành công"
+  );
+});
 
 // GET /api/nhomviec-user - Lấy tất cả nhóm việc
 nhomViecUserController.getAll = catchAsync(async (req, res, next) => {

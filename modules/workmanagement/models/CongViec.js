@@ -46,6 +46,14 @@ const LichSuTrangThaiSchema = new Schema(
 
 const congViecSchema = new Schema(
   {
+    MaCongViec: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+      description: "Mã công việc dạng CV00001",
+    },
+    SoThuTu: { type: Number, index: true, description: "Sequence for sorting" },
     TieuDe: {
       type: String,
       required: true,
@@ -120,6 +128,8 @@ const congViecSchema = new Schema(
 congViecSchema.index({ TrangThai: 1, NgayHetHan: 1 });
 congViecSchema.index({ "NguoiThamGia.NhanVienID": 1 });
 congViecSchema.index({ isDeleted: 1 });
+congViecSchema.index({ SoThuTu: -1 });
+congViecSchema.index({ MaCongViec: 1 }, { unique: true, sparse: true });
 
 // Virtuals để populate thuận tiện (giữ tương thích code cũ dùng NguoiGiaoViec / NguoiChinh)
 congViecSchema.virtual("NguoiGiaoViec", {

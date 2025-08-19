@@ -36,6 +36,8 @@ controller.getReceivedCongViecs = catchAsync(async (req, res, next) => {
     MucDoUuTien,
     NgayBatDau,
     NgayHetHan,
+    MaCongViec,
+    NguoiChinhID,
   } = req.query;
 
   // Validate pagination with proper NaN handling
@@ -57,6 +59,8 @@ controller.getReceivedCongViecs = catchAsync(async (req, res, next) => {
     MucDoUuTien,
     NgayBatDau,
     NgayHetHan,
+    MaCongViec,
+    NguoiChinhID,
   };
 
   // Remove undefined/empty filters
@@ -97,6 +101,8 @@ controller.getAssignedCongViecs = catchAsync(async (req, res, next) => {
     MucDoUuTien,
     NgayBatDau,
     NgayHetHan,
+    MaCongViec,
+    NguoiChinhID,
   } = req.query;
 
   // Validate pagination with proper NaN handling
@@ -118,6 +124,8 @@ controller.getAssignedCongViecs = catchAsync(async (req, res, next) => {
     MucDoUuTien,
     NgayBatDau,
     NgayHetHan,
+    MaCongViec,
+    NguoiChinhID,
   };
 
   // Remove undefined/empty filters
@@ -153,7 +161,14 @@ controller.deleteCongViec = catchAsync(async (req, res, next) => {
 
   const result = await congViecService.deleteCongViec(id, req);
 
-  return sendResponse(res, 200, true, null, null, result.message);
+  return sendResponse(
+    res,
+    200,
+    true,
+    result.meta || null,
+    null,
+    result.message
+  );
 });
 
 /**

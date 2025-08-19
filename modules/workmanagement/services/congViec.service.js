@@ -4,6 +4,7 @@ const { AppError } = require("../../../helpers/utils");
 const User = require("../../../models/User");
 const NhanVien = require("../../../models/NhanVien");
 const CongViec = require("../models/CongViec");
+const Counter = require("../models/Counter");
 const BinhLuan = require("../models/BinhLuan");
 
 function toObjectId(id) {
@@ -11,6 +12,80 @@ function toObjectId(id) {
 }
 
 const service = {};
+
+// Helper: map nhan vien + khoa to a compact Profile
+function toProfileFromAgg(nvArr, khoaArr) {
+  const nv = Array.isArray(nvArr) ? nvArr[0] : null;
+  const khoa = Array.isArray(khoaArr) ? khoaArr[0] : null;
+  if (!nv) return null;
+  return {
+    _id: String(nv._id),
+    Ten: nv.Ten || null,
+    Email: nv.Email || null,
+    Khoa: khoa
+      ? {
+          _id: String(khoa._id),
+          TenKhoa: khoa.TenKhoa || null,
+          MaKhoa: khoa.MaKhoa || null,
+        }
+      : null,
+  };
+}
+
+function toProfileFromPop(nv) {
+  if (!nv) return null;
+  const khoa = nv.KhoaID && typeof nv.KhoaID === "object" ? nv.KhoaID : null;
+  return {
+    _id: String(nv._id),
+    Ten: nv.Ten || null,
+    Email: nv.Email || null,
+    Khoa: khoa
+      ? {
+          _id: String(khoa._id),
+          TenKhoa: khoa.TenKhoa || null,
+          MaKhoa: khoa.MaKhoa || null,
+        }
+      : null,
+  };
+}
+
+function mapCongViecDTO(doc) {
+  // Works for both aggregate results (with *Info arrays) and populated docs
+  const hasAgg =
+    doc &&
+    (doc.NguoiGiaoViecInfo || doc.NguoiChinhInfo || doc.NguoiGiaoKhoaInfo);
+  const NguoiGiaoProfile = hasAgg
+    ? toProfileFromAgg(doc.NguoiGiaoViecInfo, doc.NguoiGiaoKhoaInfo)
+    : toProfileFromPop(doc.NguoiGiaoViec || doc.NguoiGiaoViecID);
+  const NguoiChinhProfile = hasAgg
+    ? toProfileFromAgg(doc.NguoiChinhInfo, doc.NguoiChinhKhoaInfo)
+    : toProfileFromPop(doc.NguoiChinh || doc.NguoiChinhID);
+
+  // Strip internal lookup arrays to keep payload clean
+  const {
+    NguoiGiaoViecInfo,
+    NguoiGiaoKhoaInfo,
+    NguoiChinhInfo,
+    NguoiChinhKhoaInfo,
+    ...rest
+  } = doc || {};
+  // Clone then prune heavy/internal fields
+  const cleanDoc = { ...rest };
+  delete cleanDoc.NguoiGiaoViecInfo;
+  delete cleanDoc.NguoiChinhInfo;
+  delete cleanDoc.NguoiGiaoKhoaInfo;
+  delete cleanDoc.NguoiChinhKhoaInfo;
+  delete cleanDoc.NguoiGiaoViec; // populated doc if any
+  delete cleanDoc.NguoiChinh; // populated doc if any
+
+  return {
+    ...cleanDoc,
+    NguoiGiaoViecID: doc.NguoiGiaoViecID ? String(doc.NguoiGiaoViecID) : "",
+    NguoiChinhID: doc.NguoiChinhID ? String(doc.NguoiChinhID) : "",
+    NguoiGiaoProfile,
+    NguoiChinhProfile,
+  };
+}
 
 /**
  * Lấy thông tin nhân viên theo ID
@@ -61,6 +136,20 @@ service.buildCongViecFilter = (filters = {}) => {
   // Filter theo NgayHetHan
   if (filters.NgayHetHan) {
     query.NgayHetHan = { $lte: new Date(filters.NgayHetHan) };
+  }
+
+  // Filter theo MaCongViec (ưu tiên khớp tiền tố, không phân biệt hoa thường)
+  if (filters.MaCongViec) {
+    const code = String(filters.MaCongViec).trim();
+    query.MaCongViec = { $regex: `^${code}`, $options: "i" };
+  }
+
+  // Filter theo Người xử lý chính (NguoiChinhID)
+  if (
+    filters.NguoiChinhID &&
+    mongoose.Types.ObjectId.isValid(filters.NguoiChinhID)
+  ) {
+    query.NguoiChinhID = new mongoose.Types.ObjectId(filters.NguoiChinhID);
   }
 
   return query;
@@ -192,7 +281,7 @@ service.getReceivedCongViecs = async (
     // Populate NguoiGiaoViecID
     {
       $lookup: {
-        from: "nhanvien",
+        from: "nhanviens",
         localField: "NguoiGiaoViecID",
         foreignField: "_id",
         as: "NguoiGiaoViecInfo",
@@ -201,54 +290,46 @@ service.getReceivedCongViecs = async (
     // Populate NguoiChinhID
     {
       $lookup: {
-        from: "nhanvien",
+        from: "nhanviens",
         localField: "NguoiChinhID",
         foreignField: "_id",
         as: "NguoiChinhInfo",
       },
     },
-    // Thêm virtual fields
+    // Populate KhoaID cho NguoiGiaoViecInfo
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "NguoiGiaoViecInfo.KhoaID",
+        foreignField: "_id",
+        as: "NguoiGiaoKhoaInfo",
+      },
+    },
+    // Populate KhoaID cho NguoiChinhInfo
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "NguoiChinhInfo.KhoaID",
+        foreignField: "_id",
+        as: "NguoiChinhKhoaInfo",
+      },
+    },
+    // Thêm các trường tính toán gọn nhẹ, KHÔNG ghi đè ID
     {
       $addFields: {
-        NguoiGiaoViecID: {
-          $mergeObjects: [
-            { $arrayElemAt: ["$NguoiGiaoViecInfo", 0] },
-            {
-              _id: "$NguoiGiaoViecID",
-              Ten: { $arrayElemAt: ["$NguoiGiaoViecInfo.Ten", 0] },
-              Email: { $arrayElemAt: ["$NguoiGiaoViecInfo.Email", 0] },
-            },
-          ],
-        },
-        NguoiChinhID: {
-          $mergeObjects: [
-            { $arrayElemAt: ["$NguoiChinhInfo", 0] },
-            {
-              _id: "$NguoiChinhID",
-              Ten: { $arrayElemAt: ["$NguoiChinhInfo.Ten", 0] },
-              Email: { $arrayElemAt: ["$NguoiChinhInfo.Email", 0] },
-            },
-          ],
-        },
         SoLuongNguoiThamGia: { $size: "$NguoiThamGia" },
         PhanTramTienDoTong: { $ifNull: ["$PhanTramTienDoTong", 0] },
       },
     },
-    // Project chỉ lấy fields cần thiết
-    {
-      $project: {
-        NguoiGiaoViecInfo: 0,
-        NguoiChinhInfo: 0,
-        NguoiThamGia: 0,
-        LichSuTrangThai: 0,
-      },
-    },
+    // Ẩn bớt các mảng lớn, giữ lại *Info để mapper tạo Profile
+    { $project: { NguoiThamGia: 0, LichSuTrangThai: 0 } },
     { $sort: { updatedAt: -1 } },
     { $skip: skip },
-    { $limit: limit },
+    { $limit: safeLimit },
   ];
 
-  const congViecs = await CongViec.aggregate(pipeline);
+  const congViecsRaw = await CongViec.aggregate(pipeline);
+  const congViecs = congViecsRaw.map(mapCongViecDTO);
   console.log(
     "[getReceivedCongViecs] Aggregation returned",
     congViecs.length,
@@ -370,74 +451,55 @@ service.getAssignedCongViecs = async (
   //   safeLimit
   // );
 
-  // Aggregation pipeline tương tự như getReceivedCongViecs
+  // Aggregation pipeline tương tự như getReceivedCongViecs nhưng không ghi đè ID
   const pipeline = [
     { $match: query },
-    // Populate NguoiGiaoViecID
     {
       $lookup: {
-        from: "nhanvien",
+        from: "nhanviens",
         localField: "NguoiGiaoViecID",
         foreignField: "_id",
         as: "NguoiGiaoViecInfo",
       },
     },
-    // Populate NguoiChinhID
     {
       $lookup: {
-        from: "nhanvien",
+        from: "nhanviens",
         localField: "NguoiChinhID",
         foreignField: "_id",
         as: "NguoiChinhInfo",
       },
     },
-    // Thêm virtual fields
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "NguoiGiaoViecInfo.KhoaID",
+        foreignField: "_id",
+        as: "NguoiGiaoKhoaInfo",
+      },
+    },
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "NguoiChinhInfo.KhoaID",
+        foreignField: "_id",
+        as: "NguoiChinhKhoaInfo",
+      },
+    },
     {
       $addFields: {
-        NguoiGiaoViecID: {
-          $mergeObjects: [
-            { $arrayElemAt: ["$NguoiGiaoViecInfo", 0] },
-            {
-              _id: "$NguoiGiaoViecID",
-              Ten: { $arrayElemAt: ["$NguoiGiaoViecInfo.Ten", 0] },
-              Email: { $arrayElemAt: ["$NguoiGiaoViecInfo.Email", 0] },
-            },
-          ],
-        },
-        NguoiChinhID: {
-          $mergeObjects: [
-            { $arrayElemAt: ["$NguoiChinhInfo", 0] },
-            {
-              _id: "$NguoiChinhID",
-              Ten: { $arrayElemAt: ["$NguoiChinhInfo.Ten", 0] },
-              Email: { $arrayElemAt: ["$NguoiChinhInfo.Email", 0] },
-            },
-          ],
-        },
         SoLuongNguoiThamGia: { $size: "$NguoiThamGia" },
         PhanTramTienDoTong: { $ifNull: ["$PhanTramTienDoTong", 0] },
       },
     },
-    // Project chỉ lấy fields cần thiết
-    {
-      $project: {
-        NguoiGiaoViecInfo: 0,
-        NguoiChinhInfo: 0,
-        NguoiThamGia: 0,
-        LichSuTrangThai: 0,
-      },
-    },
+    { $project: { NguoiThamGia: 0, LichSuTrangThai: 0 } },
     { $sort: { updatedAt: -1 } },
     { $skip: skip },
-    { $limit: limit },
+    { $limit: safeLimit },
   ];
 
-  const congViecs = await CongViec.aggregate(pipeline);
-  console.log(
-    "[getAssignedCongViecs] Aggregation returned",
-    congViecs.length,
-    "items"
-  );
+  const congViecsRaw = await CongViec.aggregate(pipeline);
+  const congViecs = congViecsRaw.map(mapCongViecDTO);
 
   // Lấy số lượng bình luận cho mỗi công việc
   const congViecIds = congViecs.map((cv) => cv._id);
@@ -448,12 +510,7 @@ service.getAssignedCongViecs = async (
         TrangThai: { $ne: "DELETED" },
       },
     },
-    {
-      $group: {
-        _id: "$CongViecID",
-        count: { $sum: 1 },
-      },
-    },
+    { $group: { _id: "$CongViecID", count: { $sum: 1 } } },
   ]);
 
   // Map số lượng bình luận vào từng công việc
@@ -461,7 +518,6 @@ service.getAssignedCongViecs = async (
   binhLuanCounts.forEach((item) => {
     binhLuanMap[item._id] = item.count;
   });
-
   congViecs.forEach((cv) => {
     cv.SoLuongBinhLuan = binhLuanMap[cv._id] || 0;
   });
@@ -493,11 +549,70 @@ service.deleteCongViec = async (congviecid, req) => {
     throw new AppError(400, "Công việc đã bị xóa");
   }
 
+  // Authorization: chỉ người giao việc hoặc admin/manager được xóa
+  // Lưu ý: Công việc HOAN_THANH chỉ admin được xóa
+  let currentUser = null;
+  if (req?.userId) {
+    currentUser = await User.findById(req.userId).select(
+      "PhanQuyen NhanVienID"
+    );
+  }
+  if (!currentUser) {
+    throw new AppError(401, "Không xác thực được người dùng");
+  }
+
+  const isAdmin = currentUser.PhanQuyen === "admin";
+  const isManager = currentUser.PhanQuyen === "manager";
+  const isOwner =
+    currentUser.NhanVienID &&
+    String(currentUser.NhanVienID) === String(congviec.NguoiGiaoViecID);
+
+  // Completed tasks: only admin can delete
+  if (congviec.TrangThai === "HOAN_THANH" && !isAdmin) {
+    throw new AppError(
+      403,
+      "Chỉ quản trị viên (admin) mới được xóa công việc đã hoàn thành"
+    );
+  }
+
+  if (!(isAdmin || isManager || isOwner)) {
+    throw new AppError(
+      403,
+      "Bạn không có quyền xóa công việc này (chỉ người giao việc hoặc admin/manager)"
+    );
+  }
+
+  // Không cho xóa nếu còn công việc con (chưa bị xóa)
+  const childCount = await CongViec.countDocuments({
+    CongViecChaID: congviecid,
+    isDeleted: { $ne: true },
+  });
+  if (childCount > 0) {
+    throw new AppError(400, "Vui lòng xóa công việc con trước");
+  }
+
   // Soft delete
   congviec.isDeleted = true;
   await congviec.save();
 
-  return { message: "Xóa công việc thành công" };
+  // Cascade mềm bình luận (đánh dấu DELETED)
+  const commentUpdate = await BinhLuan.updateMany(
+    { CongViecID: congviecid, TrangThai: { $ne: "DELETED" } },
+    { $set: { TrangThai: "DELETED", NgayCapNhat: new Date() } }
+  );
+  const commentCount = commentUpdate?.modifiedCount || 0;
+
+  // TODO: Cascade mềm tệp đính kèm nếu có model TepTin
+  const fileCount = 0;
+
+  return {
+    message: "Xóa công việc thành công",
+    meta: {
+      childCount,
+      commentCount,
+      fileCount,
+    },
+  };
 };
 
 /**
@@ -513,8 +628,13 @@ service.getCongViecDetail = async (congviecid) => {
     isDeleted: { $ne: true },
   })
     .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
       path: "NguoiChinh",
-      select: "Ten KhoaID",
+      select: "Ten Email KhoaID",
       populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
     })
     .populate("NhomViecUserID", "TenNhom MoTa")
@@ -524,7 +644,7 @@ service.getCongViecDetail = async (congviecid) => {
       populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
     })
     .select(
-      "TieuDe MoTa NgayBatDau NgayHetHan MucDoUuTien TrangThai PhanTramTienDoTong NguoiChinhID NguoiThamGia NhomViecUserID"
+      "TieuDe MoTa NgayBatDau NgayHetHan MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID"
     )
     .lean();
 
@@ -532,7 +652,8 @@ service.getCongViecDetail = async (congviecid) => {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
-  return congviec;
+  // Map to unified DTO
+  return mapCongViecDTO(congviec);
 };
 
 /**
@@ -625,6 +746,17 @@ service.createCongViec = async (congViecData, req) => {
     }
   }
 
+  // Generate MaCongViec and SoThuTu using atomic counter
+  const counter = await Counter.findOneAndUpdate(
+    { _id: "congviec" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  const seqNum = counter.seq || 1;
+  const pad = (n) => (n < 100000 ? String(n).padStart(5, "0") : String(n));
+  newCongViecData.SoThuTu = seqNum;
+  newCongViecData.MaCongViec = `CV${pad(seqNum)}`;
+
   const congviec = new CongViec(newCongViecData);
   await congviec.save();
 
@@ -648,7 +780,7 @@ service.createCongViec = async (congViecData, req) => {
     })
     .lean();
 
-  return populatedCongViec;
+  return mapCongViecDTO(populatedCongViec);
 };
 
 /**
@@ -793,7 +925,7 @@ service.updateCongViec = async (congviecid, updateData, req) => {
     })
     .lean();
 
-  return populatedCongViec;
+  return mapCongViecDTO(populatedCongViec);
 };
 
 /**

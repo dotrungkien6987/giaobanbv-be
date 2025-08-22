@@ -6,14 +6,11 @@ const VAI_TRO = ["CHINH", "PHOI_HOP"];
 const TRANG_THAI = [
   "TAO_MOI",
   "DA_GIAO",
-  "CHAP_NHAN",
-  "TU_CHOI",
   "DANG_THUC_HIEN",
   "CHO_DUYET",
   "HOAN_THANH",
-  "QUA_HAN",
-  "HUY",
 ];
+
 const MUC_DO_UU_TIEN = ["THAP", "BINH_THUONG", "CAO", "KHAN_CAP"];
 
 const NguoiThamGiaSchema = new Schema(
@@ -85,6 +82,27 @@ const congViecSchema = new Schema(
     },
     NgayBatDau: { type: Date },
     NgayHetHan: { type: Date, index: true },
+    // Mốc thời gian theo flow mới
+    NgayGiaoViec: { type: Date, index: true },
+    NgayCanhBao: { type: Date, index: true },
+    NgayHoanThanh: { type: Date },
+    // Các mốc & cờ bổ sung theo flow mới
+    NgayTiepNhanThucTe: { type: Date },
+    NgayHoanThanhTam: { type: Date }, // thời điểm người thực hiện bấm hoàn thành (khi cần duyệt)
+    CoDuyetHoanThanh: { type: Boolean, default: false, index: true },
+    SoGioTre: { type: Number, min: 0 },
+    HoanThanhTreHan: { type: Boolean },
+    FirstSapQuaHanAt: { type: Date },
+    FirstQuaHanAt: { type: Date },
+
+    // Cấu hình cảnh báo hết hạn
+    CanhBaoMode: { type: String, enum: ["FIXED", "PERCENT"], default: null },
+    CanhBaoSapHetHanPercent: {
+      type: Number,
+      min: 0.5,
+      max: 1.0,
+      default: null,
+    },
 
     TrangThai: {
       type: String,
@@ -126,10 +144,14 @@ const congViecSchema = new Schema(
 
 // Indexes gợi ý cho truy vấn phổ biến
 congViecSchema.index({ TrangThai: 1, NgayHetHan: 1 });
+congViecSchema.index({ NgayGiaoViec: 1 });
+congViecSchema.index({ NgayCanhBao: 1 });
+congViecSchema.index({ TrangThai: 1, NgayCanhBao: 1 });
 congViecSchema.index({ "NguoiThamGia.NhanVienID": 1 });
 congViecSchema.index({ isDeleted: 1 });
 congViecSchema.index({ SoThuTu: -1 });
 congViecSchema.index({ MaCongViec: 1 }, { unique: true, sparse: true });
+congViecSchema.index({ CoDuyetHoanThanh: 1, TrangThai: 1 });
 
 // Virtuals để populate thuận tiện (giữ tương thích code cũ dùng NguoiGiaoViec / NguoiChinh)
 congViecSchema.virtual("NguoiGiaoViec", {
@@ -158,6 +180,30 @@ congViecSchema.pre("validate", function (next) {
   ) {
     return next(new Error("NgayHetHan phải sau NgayBatDau"));
   }
+  // Validate CanhBao theo mode FIXED
+  if (this.CanhBaoMode === "FIXED") {
+    const base = this.NgayBatDau || this.createdAt;
+    if (this.NgayCanhBao && this.NgayHetHan && base) {
+      if (!(this.NgayCanhBao >= base && this.NgayCanhBao < this.NgayHetHan)) {
+        return next(
+          new Error(
+            "NgayCanhBao (FIXED) phải nằm trong [NgayBatDau..NgayHetHan) "
+          )
+        );
+      }
+    }
+  }
+  // Validate percent khi chọn PERCENT
+  if (this.CanhBaoMode === "PERCENT") {
+    if (
+      this.CanhBaoSapHetHanPercent != null &&
+      (this.CanhBaoSapHetHanPercent < 0.5 || this.CanhBaoSapHetHanPercent > 1.0)
+    ) {
+      return next(
+        new Error("CanhBaoSapHetHanPercent phải trong khoảng [0.5..1.0]")
+      );
+    }
+  }
   const nhom = this.NguoiThamGia || [];
   if (nhom.length === 0)
     return next(new Error("Phải có ít nhất 1 người tham gia"));
@@ -185,5 +231,29 @@ congViecSchema.methods.capNhatTienDoTongTheoNguoiChinh = function () {
   this.PhanTramTienDoTong = main ? main.TienDo || 0 : 0;
   return this.PhanTramTienDoTong;
 };
+
+// Virtual tình trạng theo thời hạn: SAP_QUA_HAN | QUA_HAN | null
+congViecSchema.virtual("TinhTrangThoiHan").get(function () {
+  try {
+    if (!this) return null;
+    const now = new Date();
+    const hetHan = this.NgayHetHan ? new Date(this.NgayHetHan) : null;
+    const canhBao = this.NgayCanhBao ? new Date(this.NgayCanhBao) : null;
+    if (!hetHan) return null;
+    if (this.TrangThai === "HOAN_THANH") {
+      if (this.NgayHoanThanh && hetHan) {
+        return this.NgayHoanThanh > hetHan
+          ? "HOAN_THANH_TRE_HAN"
+          : "HOAN_THANH_DUNG_HAN";
+      }
+      return "HOAN_THANH_DUNG_HAN";
+    }
+    if (now > hetHan) return "QUA_HAN";
+    if (canhBao && now >= canhBao && now < hetHan) return "SAP_QUA_HAN";
+    return "DUNG_HAN";
+  } catch (_) {
+    return null;
+  }
+});
 
 module.exports = mongoose.model("CongViec", congViecSchema);

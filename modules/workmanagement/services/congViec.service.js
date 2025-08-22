@@ -6,12 +6,20 @@ const NhanVien = require("../../../models/NhanVien");
 const CongViec = require("../models/CongViec");
 const Counter = require("../models/Counter");
 const BinhLuan = require("../models/BinhLuan");
+const TepTin = require("../models/TepTin");
 
 function toObjectId(id) {
   return typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
 }
 
 const service = {};
+const { default: mongooseLeanVirtuals } = (() => {
+  try {
+    return require("mongoose-lean-virtuals");
+  } catch (e) {
+    return { default: null };
+  }
+})();
 
 // Helper: map nhan vien + khoa to a compact Profile
 function toProfileFromAgg(nvArr, khoaArr) {
@@ -78,13 +86,71 @@ function mapCongViecDTO(doc) {
   delete cleanDoc.NguoiGiaoViec; // populated doc if any
   delete cleanDoc.NguoiChinh; // populated doc if any
 
-  return {
+  const SoThuTu = doc.SoThuTu != null ? Number(doc.SoThuTu) : undefined;
+  const MaCongViec =
+    doc.MaCongViec ||
+    (SoThuTu != null ? `CV${String(SoThuTu).padStart(5, "0")}` : undefined);
+
+  const dto = {
     ...cleanDoc,
+    MaCongViec,
+    SoThuTu,
     NguoiGiaoViecID: doc.NguoiGiaoViecID ? String(doc.NguoiGiaoViecID) : "",
     NguoiChinhID: doc.NguoiChinhID ? String(doc.NguoiChinhID) : "",
     NguoiGiaoProfile,
     NguoiChinhProfile,
   };
+  // Chuẩn hóa kiểu Date thành JS Date (giữ nguyên nếu đã là string/Date)
+  if (doc.NgayGiaoViec) dto.NgayGiaoViec = new Date(doc.NgayGiaoViec);
+  if (doc.NgayCanhBao) dto.NgayCanhBao = new Date(doc.NgayCanhBao);
+  if (doc.NgayBatDau) dto.NgayBatDau = new Date(doc.NgayBatDau);
+  if (doc.NgayHetHan) dto.NgayHetHan = new Date(doc.NgayHetHan);
+  if (doc.NgayHoanThanh) dto.NgayHoanThanh = new Date(doc.NgayHoanThanh);
+  // Virtual có thể đã được lean virtuals; nếu không, tự tính đơn giản
+  dto.TinhTrangThoiHan =
+    doc.TinhTrangThoiHan ||
+    (function () {
+      try {
+        const now = new Date();
+        const isDone = doc.TrangThai === "HOAN_THANH";
+        const hetHan = doc.NgayHetHan ? new Date(doc.NgayHetHan) : null;
+        const canhBao = doc.NgayCanhBao ? new Date(doc.NgayCanhBao) : null;
+        if (isDone) return null;
+        if (hetHan && now > hetHan) return "QUA_HAN";
+        if (canhBao && hetHan && now >= canhBao && now < hetHan)
+          return "SAP_QUA_HAN";
+        return null;
+      } catch (_) {
+        return null;
+      }
+    })();
+  return dto;
+}
+
+// Tính NgayCanhBao dựa theo mode
+function computeNgayCanhBao({
+  mode,
+  ngayBatDau,
+  ngayHetHan,
+  fixedNgayCanhBao,
+  percent,
+}) {
+  const DEFAULT_PERCENT = 0.8;
+  const start = ngayBatDau ? new Date(ngayBatDau) : null;
+  const end = ngayHetHan ? new Date(ngayHetHan) : null;
+  if (!end) return null;
+  if (mode === "FIXED") {
+    if (!fixedNgayCanhBao) return null;
+    const fixed = new Date(fixedNgayCanhBao);
+    if (start && !(fixed >= start && fixed < end)) return null;
+    return fixed;
+  }
+  const p = typeof percent === "number" ? percent : DEFAULT_PERCENT;
+  if (!start) return null; // cần NgayBatDau để tính
+  const ms = end.getTime() - start.getTime();
+  if (ms <= 0) return null;
+  const t = start.getTime() + Math.floor(ms * p);
+  return new Date(t);
 }
 
 /**
@@ -132,8 +198,6 @@ service.buildCongViecFilter = (filters = {}) => {
   if (filters.NgayBatDau) {
     query.NgayBatDau = { $gte: new Date(filters.NgayBatDau) };
   }
-
-  // Filter theo NgayHetHan
   if (filters.NgayHetHan) {
     query.NgayHetHan = { $lte: new Date(filters.NgayHetHan) };
   }
@@ -602,8 +666,12 @@ service.deleteCongViec = async (congviecid, req) => {
   );
   const commentCount = commentUpdate?.modifiedCount || 0;
 
-  // TODO: Cascade mềm tệp đính kèm nếu có model TepTin
-  const fileCount = 0;
+  // Cascade mềm tệp đính kèm
+  const fileUpdate = await TepTin.updateMany(
+    { CongViecID: congviecid, TrangThai: { $ne: "DELETED" } },
+    { $set: { TrangThai: "DELETED" } }
+  );
+  const fileCount = fileUpdate?.modifiedCount || 0;
 
   return {
     message: "Xóa công việc thành công",
@@ -644,7 +712,7 @@ service.getCongViecDetail = async (congviecid) => {
       populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
     })
     .select(
-      "TieuDe MoTa NgayBatDau NgayHetHan MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID"
+      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID createdAt"
     )
     .lean();
 
@@ -653,7 +721,362 @@ service.getCongViecDetail = async (congviecid) => {
   }
 
   // Map to unified DTO
-  return mapCongViecDTO(congviec);
+  const dto = mapCongViecDTO(congviec);
+  // Preserve createdAt for UI as NgayTao
+  if (congviec.createdAt) dto.NgayTao = congviec.createdAt;
+
+  // Enrich with comments: display NhanVien name and timestamp
+  const comments = await BinhLuan.aggregate([
+    {
+      $match: {
+        CongViecID: new mongoose.Types.ObjectId(congviecid),
+        BinhLuanChaID: null,
+      },
+    },
+    { $sort: { NgayBinhLuan: -1, createdAt: -1 } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "NguoiBinhLuanID",
+        foreignField: "_id",
+        as: "User",
+      },
+    },
+    { $unwind: { path: "$User", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "User.NhanVienID",
+        foreignField: "_id",
+        as: "NhanVien",
+      },
+    },
+    { $unwind: { path: "$NhanVien", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 1,
+        CongViecID: 1,
+        NguoiBinhLuanID: 1,
+        NoiDung: 1,
+        NgayBinhLuan: 1,
+        createdAt: 1,
+        NguoiBinhLuan: {
+          Ten: {
+            $ifNull: [
+              "$NhanVien.Ten",
+              { $ifNull: ["$User.HoTen", "$User.UserName"] },
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  // Lưu ý: không gán BinhLuans tại đây; sẽ gán sau khi lookup Files để đảm bảo lần tải đầu có kèm tệp đính kèm
+
+  // Lookup attached files for each comment
+  const commentsWithFiles = await BinhLuan.aggregate([
+    {
+      $match: {
+        CongViecID: new mongoose.Types.ObjectId(congviecid),
+        TrangThai: "ACTIVE",
+        BinhLuanChaID: null,
+      },
+    },
+    { $sort: { NgayBinhLuan: -1, createdAt: -1 } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "NguoiBinhLuanID",
+        foreignField: "_id",
+        as: "User",
+      },
+    },
+    { $unwind: { path: "$User", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "User.NhanVienID",
+        foreignField: "_id",
+        as: "NhanVien",
+      },
+    },
+    { $unwind: { path: "$NhanVien", preserveNullAndEmptyArrays: true } },
+    // Count replies for each comment
+    {
+      $lookup: {
+        from: "binhluan",
+        let: { parentId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$BinhLuanChaID", "$$parentId"] },
+              TrangThai: "ACTIVE",
+            },
+          },
+          { $count: "total" },
+        ],
+        as: "repliesCount",
+      },
+    },
+    {
+      $lookup: {
+        from: "teptin",
+        let: { binhLuanId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$BinhLuanID", "$$binhLuanId"] },
+            },
+          },
+          // lấy cả ACTIVE và DELETED để hiển thị "file đã thu hồi"
+          { $sort: { NgayTaiLen: -1 } },
+          {
+            $project: {
+              _id: 1,
+              TenGoc: 1,
+              TenFile: 1,
+              LoaiFile: 1,
+              KichThuoc: 1,
+              CongViecID: 1,
+              BinhLuanID: 1,
+              NguoiTaiLenID: 1,
+              NgayTaiLen: 1,
+              TrangThai: 1,
+            },
+          },
+        ],
+        as: "Files",
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        CongViecID: 1,
+        NguoiBinhLuanID: 1,
+        NoiDung: 1,
+        NgayBinhLuan: 1,
+        createdAt: 1,
+        TrangThai: 1,
+        NguoiBinhLuan: {
+          Ten: {
+            $ifNull: [
+              "$NhanVien.Ten",
+              { $ifNull: ["$User.HoTen", "$User.UserName"] },
+            ],
+          },
+        },
+        Files: 1,
+        repliesCount: 1,
+      },
+    },
+  ]);
+  // Ánh xạ bình luận kèm danh sách tệp đính kèm (đảm bảo lần tải đầu đã có đủ dữ liệu)
+  dto.BinhLuans = commentsWithFiles.map((c) => ({
+    _id: String(c._id),
+    CongViecID: String(c.CongViecID),
+    NguoiBinhLuanID: c.NguoiBinhLuanID ? String(c.NguoiBinhLuanID) : null,
+    NoiDung: c.NoiDung,
+    NguoiBinhLuan: { Ten: c.NguoiBinhLuan?.Ten || "Người dùng" },
+    NgayBinhLuan: c.NgayBinhLuan || c.createdAt,
+    TrangThai: c.TrangThai || "ACTIVE",
+    RepliesCount: c.repliesCount?.[0]?.total || 0,
+    Files: Array.isArray(c.Files)
+      ? c.Files.map((f) => ({
+          _id: String(f._id),
+          TenGoc: f.TenGoc,
+          TenFile: f.TenFile,
+          LoaiFile: f.LoaiFile,
+          KichThuoc: f.KichThuoc,
+          CongViecID: f.CongViecID ? String(f.CongViecID) : null,
+          BinhLuanID: f.BinhLuanID ? String(f.BinhLuanID) : null,
+          NguoiTaiLenID: f.NguoiTaiLenID ? String(f.NguoiTaiLenID) : null,
+          NgayTaiLen: f.NgayTaiLen,
+          TrangThai: f.TrangThai || "ACTIVE",
+          inlineUrl: `/api/workmanagement/files/${String(f._id)}/inline`,
+          downloadUrl: `/api/workmanagement/files/${String(f._id)}/download`,
+        }))
+      : [],
+  }));
+  return dto;
+};
+
+// Các tác vụ theo flow
+service.giaoViec = async (id, payload = {}, req) => {
+  const congviec = await CongViec.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+  });
+  if (!congviec) throw new AppError(404, "Không tìm thấy công việc");
+  if (!congviec.NgayHetHan)
+    throw new AppError(400, "Thiếu NgayHetHan để giao việc");
+  congviec.TrangThai = "DA_GIAO";
+  if (!congviec.NgayGiaoViec) congviec.NgayGiaoViec = new Date();
+  const mode =
+    payload?.mode === "FIXED"
+      ? "FIXED"
+      : payload?.mode === "PERCENT"
+      ? "PERCENT"
+      : null;
+  if (mode) congviec.CanhBaoMode = mode;
+  if (mode === "PERCENT") {
+    const percent =
+      typeof payload?.percent === "number"
+        ? payload.percent
+        : congviec.CanhBaoSapHetHanPercent || null;
+    if (percent != null) congviec.CanhBaoSapHetHanPercent = percent;
+    const ngay = computeNgayCanhBao({
+      mode: "PERCENT",
+      ngayBatDau: congviec.NgayBatDau,
+      ngayHetHan: congviec.NgayHetHan,
+      percent: congviec.CanhBaoSapHetHanPercent,
+    });
+    congviec.NgayCanhBao = ngay;
+  } else if (mode === "FIXED") {
+    const ngay = computeNgayCanhBao({
+      mode: "FIXED",
+      ngayBatDau: congviec.NgayBatDau,
+      ngayHetHan: congviec.NgayHetHan,
+      fixedNgayCanhBao: payload?.ngayCanhBao,
+    });
+    if (!ngay) throw new AppError(400, "NgayCanhBao (FIXED) không hợp lệ");
+    congviec.NgayCanhBao = ngay;
+  }
+  await congviec.save();
+  const populated = await CongViec.findById(congviec._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate("NhomViecUserID", "TenNhom MoTa")
+    .populate({
+      path: "NguoiThamGia.NhanVienID",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .lean();
+  return mapCongViecDTO(populated);
+};
+
+service.tiepNhan = async (id, req) => {
+  const congviec = await CongViec.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+  });
+  if (!congviec) throw new AppError(404, "Không tìm thấy công việc");
+  congviec.TrangThai = "DANG_THUC_HIEN";
+  const now = new Date();
+  if (!congviec.NgayBatDau) congviec.NgayBatDau = now; // planned start nếu chưa có
+  if (!congviec.NgayTiepNhanThucTe) congviec.NgayTiepNhanThucTe = now; // actual accept
+  await congviec.save();
+  const populated = await CongViec.findById(congviec._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate("NhomViecUserID", "TenNhom MoTa")
+    .populate({
+      path: "NguoiThamGia.NhanVienID",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .lean();
+  return mapCongViecDTO(populated);
+};
+
+service.hoanThanh = async (id, req) => {
+  const congviec = await CongViec.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+  });
+  if (!congviec) throw new AppError(404, "Không tìm thấy công việc");
+  const now = new Date();
+  if (congviec.CoDuyetHoanThanh) {
+    // Nhánh cần duyệt
+    congviec.TrangThai = "CHO_DUYET";
+    if (!congviec.NgayHoanThanhTam) congviec.NgayHoanThanhTam = now;
+  } else {
+    // Hoàn thành trực tiếp
+    congviec.TrangThai = "HOAN_THANH";
+    congviec.NgayHoanThanh = now;
+    if (congviec.NgayHetHan) {
+      const lateMs = now - new Date(congviec.NgayHetHan);
+      const isLate = lateMs > 0;
+      congviec.HoanThanhTreHan = isLate;
+      congviec.SoGioTre = isLate
+        ? Math.round((lateMs / 3600000) * 100) / 100
+        : 0;
+    }
+  }
+  await congviec.save();
+  const populated = await CongViec.findById(congviec._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate("NhomViecUserID", "TenNhom MoTa")
+    .populate({
+      path: "NguoiThamGia.NhanVienID",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .lean();
+  return mapCongViecDTO(populated);
+};
+
+service.duyetHoanThanh = async (id, req) => {
+  const congviec = await CongViec.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+  });
+  if (!congviec) throw new AppError(404, "Không tìm thấy công việc");
+  const now = new Date();
+  congviec.TrangThai = "HOAN_THANH";
+  congviec.NgayHoanThanh = now;
+  if (congviec.NgayHetHan) {
+    const lateMs = now - new Date(congviec.NgayHetHan);
+    const isLate = lateMs > 0;
+    congviec.HoanThanhTreHan = isLate;
+    congviec.SoGioTre = isLate ? Math.round((lateMs / 3600000) * 100) / 100 : 0;
+  }
+  await congviec.save();
+  const populated = await CongViec.findById(congviec._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate("NhomViecUserID", "TenNhom MoTa")
+    .populate({
+      path: "NguoiThamGia.NhanVienID",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .lean();
+  return mapCongViecDTO(populated);
 };
 
 /**
@@ -734,7 +1157,43 @@ service.createCongViec = async (congViecData, req) => {
     NguoiThamGia: thamGia,
     NhomViecUserID: congViecData.NhomViecUserID || null,
     PhanTramTienDoTong: 0,
+    CoDuyetHoanThanh: !!congViecData.CoDuyetHoanThanh,
   };
+
+  // Cấu hình cảnh báo & mốc giao việc tạm thời khi tạo mới
+  // Cho phép null, nhưng nếu chọn PERCENT (hoặc không gửi) thì set mặc định và tính NgayCanhBao dựa trên now
+  const mode =
+    congViecData?.CanhBaoMode === "FIXED"
+      ? "FIXED"
+      : congViecData?.CanhBaoMode === "PERCENT"
+      ? "PERCENT"
+      : "PERCENT"; // mặc định PERCENT để tránh null gây lỗi ở nơi khác
+
+  newCongViecData.CanhBaoMode = mode;
+
+  if (mode === "PERCENT") {
+    const percent =
+      typeof congViecData?.CanhBaoSapHetHanPercent === "number"
+        ? Math.max(0.5, Math.min(0.99, congViecData.CanhBaoSapHetHanPercent))
+        : 0.8;
+    newCongViecData.CanhBaoSapHetHanPercent = percent;
+    const ngay = computeNgayCanhBao({
+      mode: "PERCENT",
+      ngayBatDau: ngayBatDau,
+      ngayHetHan: ngayHetHan,
+      percent,
+    });
+    if (ngay) newCongViecData.NgayCanhBao = ngay; // nếu không tính được thì để null
+  } else if (mode === "FIXED") {
+    // Giữ nguyên percent=null, chỉ set NgayCanhBao nếu client gửi và hợp lệ; nếu không, cho phép null
+    const ngay = computeNgayCanhBao({
+      mode: "FIXED",
+      ngayBatDau: ngayBatDau,
+      ngayHetHan: ngayHetHan,
+      fixedNgayCanhBao: congViecData?.NgayCanhBao,
+    });
+    if (ngay) newCongViecData.NgayCanhBao = ngay;
+  }
 
   if (req?.userId) {
     // Lấy thông tin User để get NhanVienID
@@ -784,6 +1243,134 @@ service.createCongViec = async (congViecData, req) => {
 };
 
 /**
+ * Thu hồi (xóa mềm) bình luận và file đính kèm của bình luận
+ */
+service.deleteComment = async (binhLuanId, req) => {
+  if (!mongoose.Types.ObjectId.isValid(binhLuanId))
+    throw new AppError(400, "ID bình luận không hợp lệ");
+  const comment = await BinhLuan.findById(binhLuanId);
+  if (!comment || comment.TrangThai === "DELETED")
+    throw new AppError(404, "Không tìm thấy bình luận");
+
+  // Kiểm quyền: chủ comment hoặc admin/manager
+  const user = await User.findById(req.userId).lean();
+  const isAdmin =
+    user && (user.PhanQuyen === "admin" || user.PhanQuyen === "manager");
+  const isOwner =
+    user && String(comment.NguoiBinhLuanID) === String(req.userId);
+  if (!isAdmin && !isOwner) throw new AppError(403, "Không có quyền thu hồi");
+
+  // Xóa mềm bình luận và file đính kèm
+  await BinhLuan.softDeleteWithFiles(binhLuanId);
+
+  // Trả về DTO tối giản để FE cập nhật UI
+  return { _id: String(comment._id), TrangThai: "DELETED" };
+};
+
+/**
+ * Thu hồi nội dung (text) của bình luận, không xóa file đính kèm
+ */
+service.recallCommentText = async (binhLuanId, req) => {
+  if (!mongoose.Types.ObjectId.isValid(binhLuanId))
+    throw new AppError(400, "ID bình luận không hợp lệ");
+  const comment = await BinhLuan.findById(binhLuanId);
+  if (!comment || comment.TrangThai === "DELETED")
+    throw new AppError(404, "Không tìm thấy bình luận");
+
+  const user = await User.findById(req.userId).lean();
+  const isAdmin =
+    user && (user.PhanQuyen === "admin" || user.PhanQuyen === "manager");
+  const isOwner =
+    user && String(comment.NguoiBinhLuanID) === String(req.userId);
+  if (!isAdmin && !isOwner)
+    throw new AppError(403, "Không có quyền thu hồi nội dung");
+
+  // Gỡ nội dung, giữ trạng thái ACTIVE để file vẫn hiển thị
+  comment.NoiDung = "";
+  await comment.save();
+  return { _id: String(comment._id), NoiDung: "" };
+};
+
+/**
+ * Lấy danh sách trả lời của một bình luận
+ */
+service.listReplies = async (parentId, req) => {
+  if (!mongoose.Types.ObjectId.isValid(parentId))
+    throw new AppError(400, "ID bình luận cha không hợp lệ");
+
+  const parent = await BinhLuan.findById(parentId).lean();
+  if (!parent || parent.TrangThai === "DELETED")
+    throw new AppError(404, "Không tìm thấy bình luận cha");
+
+  // Lấy các trả lời (ACTIVE)
+  const replies = await BinhLuan.find({
+    BinhLuanChaID: parent._id,
+    TrangThai: "ACTIVE",
+  })
+    .populate({
+      path: "NguoiBinhLuanID",
+      select: "NhanVienID HoTen UserName",
+      populate: { path: "NhanVienID", select: "Ten" },
+    })
+    .sort({ NgayBinhLuan: 1, createdAt: 1 })
+    .lean();
+
+  const replyIds = replies.map((r) => r._id);
+  const TepTin = require("../models/TepTin");
+  const files = await TepTin.find({
+    BinhLuanID: { $in: replyIds },
+    TrangThai: "ACTIVE",
+  })
+    .select(
+      "TenGoc TenFile LoaiFile KichThuoc CongViecID BinhLuanID NguoiTaiLenID NgayTaiLen TrangThai"
+    )
+    .lean();
+
+  const filesByComment = files.reduce((acc, f) => {
+    const key = String(f.BinhLuanID);
+    (acc[key] = acc[key] || []).push({
+      _id: String(f._id),
+      TenGoc: f.TenGoc,
+      TenFile: f.TenFile,
+      LoaiFile: f.LoaiFile,
+      KichThuoc: f.KichThuoc,
+      CongViecID: f.CongViecID ? String(f.CongViecID) : null,
+      BinhLuanID: f.BinhLuanID ? String(f.BinhLuanID) : null,
+      NguoiTaiLenID: f.NguoiTaiLenID ? String(f.NguoiTaiLenID) : null,
+      NgayTaiLen: f.NgayTaiLen,
+      TrangThai: f.TrangThai || "ACTIVE",
+      inlineUrl: `/api/workmanagement/files/${String(f._id)}/inline`,
+      downloadUrl: `/api/workmanagement/files/${String(f._id)}/download`,
+    });
+    return acc;
+  }, {});
+
+  const dtos = replies.map((r) => {
+    const user = r.NguoiBinhLuanID || {};
+    const tenNguoiBinhLuan =
+      (user.NhanVienID && user.NhanVienID.Ten) ||
+      user.HoTen ||
+      user.UserName ||
+      "Người dùng";
+    return {
+      _id: String(r._id),
+      CongViecID: r.CongViecID ? String(r.CongViecID) : null,
+      BinhLuanChaID: r.BinhLuanChaID ? String(r.BinhLuanChaID) : null,
+      NguoiBinhLuanID: r.NguoiBinhLuanID
+        ? String(r.NguoiBinhLuanID._id || r.NguoiBinhLuanID)
+        : null,
+      NoiDung: r.NoiDung,
+      NguoiBinhLuan: { Ten: tenNguoiBinhLuan },
+      NgayBinhLuan: r.NgayBinhLuan || r.createdAt,
+      TrangThai: r.TrangThai || "ACTIVE",
+      Files: filesByComment[String(r._id)] || [],
+    };
+  });
+
+  return dtos;
+};
+
+/**
  * Cập nhật công việc
  */
 service.updateCongViec = async (congviecid, updateData, req) => {
@@ -819,29 +1406,85 @@ service.updateCongViec = async (congviecid, updateData, req) => {
   }
 
   // =============================
-  // Chuẩn hoá dữ liệu cập nhật
+  // Chuẩn hoá dữ liệu cập nhật (nhãn TV -> mã code)
   // =============================
-  const priorityMap = {
-    Thấp: "THAP",
-    "Bình thường": "BINH_THUONG",
-    Cao: "CAO",
-    "Rất cao": "KHAN_CAP",
+  const normalizeLabel = (val) =>
+    String(val || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // bỏ dấu
+      .toUpperCase()
+      .trim();
+
+  const allowedStatusCodes = new Set([
+    "TAO_MOI",
+    "DA_GIAO",
+    "DANG_THUC_HIEN",
+    "CHO_DUYET",
+    "HOAN_THANH",
+  ]);
+  const allowedPriorityCodes = new Set([
+    "THAP",
+    "BINH_THUONG",
+    "CAO",
+    "KHAN_CAP",
+  ]);
+
+  const statusLabelToCode = {
+    "TAO MOI": "TAO_MOI",
+    "DA GIAO": "DA_GIAO",
+    "DANG THUC HIEN": "DANG_THUC_HIEN",
+    "CHO DUYET": "CHO_DUYET",
+    "HOAN THANH": "HOAN_THANH",
   };
-  const statusMap = {
-    Mới: "TAO_MOI",
-    "Đang thực hiện": "DANG_THUC_HIEN",
-    "Tạm dừng": "CHO_DUYET",
-    "Hoàn thành": "HOAN_THANH",
-    Hủy: "HUY",
+  const priorityLabelToCode = {
+    THAP: "THAP",
+    "BINH THUONG": "BINH_THUONG",
+    CAO: "CAO",
+    "KHAN CAP": "KHAN_CAP",
+    "RAT CAO": "KHAN_CAP", // chấp nhận cả "Rất cao" như khẩn cấp
   };
 
   if (updateData.MucDoUuTien) {
-    updateData.MucDoUuTien =
-      priorityMap[updateData.MucDoUuTien] || updateData.MucDoUuTien;
+    const raw = updateData.MucDoUuTien;
+    const norm = normalizeLabel(raw);
+    updateData.MucDoUuTien = allowedPriorityCodes.has(String(raw))
+      ? String(raw)
+      : priorityLabelToCode[norm] || String(raw);
   }
   if (updateData.TrangThai) {
-    updateData.TrangThai =
-      statusMap[updateData.TrangThai] || updateData.TrangThai;
+    const raw = updateData.TrangThai;
+    const norm = normalizeLabel(raw);
+    updateData.TrangThai = allowedStatusCodes.has(String(raw))
+      ? String(raw)
+      : statusLabelToCode[norm] || String(raw);
+  }
+
+  // Nếu đổi NgayBatDau hoặc NgayHetHan và mode PERCENT -> recalc NgayCanhBao
+  const willChangeBatDau = !!updateData.NgayBatDau;
+  const willChangeHetHan = !!updateData.NgayHetHan;
+  if (
+    congviec.CanhBaoMode === "PERCENT" &&
+    (willChangeBatDau || willChangeHetHan)
+  ) {
+    const start = willChangeBatDau
+      ? new Date(updateData.NgayBatDau)
+      : congviec.NgayBatDau;
+    const end = willChangeHetHan
+      ? new Date(updateData.NgayHetHan)
+      : congviec.NgayHetHan;
+    if (start && end) {
+      const percent =
+        typeof congviec.CanhBaoSapHetHanPercent === "number"
+          ? congviec.CanhBaoSapHetHanPercent
+          : 0.8;
+      const ngay = computeNgayCanhBao({
+        mode: "PERCENT",
+        ngayBatDau: start,
+        ngayHetHan: end,
+        percent,
+      });
+      if (ngay) updateData.NgayCanhBao = ngay;
+    }
   }
 
   // Nếu FE gửi NguoiChinh thì map sang NguoiChinhID
@@ -931,7 +1574,7 @@ service.updateCongViec = async (congviecid, updateData, req) => {
 /**
  * Thêm bình luận vào công việc
  */
-service.addComment = async (congviecid, noiDung, req) => {
+service.addComment = async (congviecid, noiDung, req, parentId = null) => {
   if (!mongoose.Types.ObjectId.isValid(congviecid)) {
     throw new AppError(400, "ID công việc không hợp lệ");
   }
@@ -949,31 +1592,55 @@ service.addComment = async (congviecid, noiDung, req) => {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
-  // Create comment
-  const commentData = {
-    CongViecID: congviecid,
-    NoiDung: noiDung.trim(),
-    NgayTao: new Date(),
-  };
-
-  // Add user info if available
-  if (req?.user?._id) {
-    commentData.NguoiBinhLuan = req.user._id;
+  // Validate parent if replying
+  let parent = null;
+  if (parentId) {
+    if (!mongoose.Types.ObjectId.isValid(parentId)) {
+      throw new AppError(400, "ID bình luận cha không hợp lệ");
+    }
+    parent = await BinhLuan.findById(parentId);
+    if (!parent) throw new AppError(404, "Không tìm thấy bình luận cha");
+    if (String(parent.CongViecID) !== String(congviecid))
+      throw new AppError(400, "Bình luận cha không thuộc công việc này");
+    if (parent.TrangThai === "DELETED")
+      throw new AppError(400, "Bình luận cha đã bị thu hồi");
   }
 
-  const binhLuan = new BinhLuan(commentData);
-  await binhLuan.save();
+  // Create comment (text-only)
+  const binhLuan = await BinhLuan.create({
+    CongViecID: new mongoose.Types.ObjectId(congviecid),
+    NoiDung: noiDung.trim(),
+    NguoiBinhLuanID: new mongoose.Types.ObjectId(req.userId),
+    BinhLuanChaID: parent ? new mongoose.Types.ObjectId(parentId) : undefined,
+  });
 
   // Add comment to CongViec
   congviec.BinhLuans.push(binhLuan._id);
   await congviec.save();
 
-  // Return populated comment
-  const populatedComment = await BinhLuan.findById(binhLuan._id)
-    .populate("NguoiBinhLuan", "Ten Email")
+  // Build DTO consistent with FE expectations
+  const user = await require("../../../models/User")
+    .findById(req.userId)
+    .populate({ path: "NhanVienID", select: "Ten" })
     .lean();
-
-  return populatedComment;
+  const tenNguoiBinhLuan =
+    (user && user.NhanVienID && user.NhanVienID.Ten) ||
+    (user && user.HoTen) ||
+    (user && user.UserName) ||
+    "Người dùng";
+  return {
+    _id: String(binhLuan._id),
+    CongViecID: String(binhLuan.CongViecID),
+    BinhLuanChaID: binhLuan.BinhLuanChaID
+      ? String(binhLuan.BinhLuanChaID)
+      : null,
+    NguoiBinhLuanID: String(req.userId),
+    NoiDung: binhLuan.NoiDung,
+    NguoiBinhLuan: { Ten: tenNguoiBinhLuan },
+    NgayBinhLuan: binhLuan.NgayBinhLuan || binhLuan.createdAt,
+    TrangThai: binhLuan.TrangThai || "ACTIVE",
+    Files: [],
+  };
 };
 
 module.exports = service;

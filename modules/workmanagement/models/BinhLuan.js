@@ -5,8 +5,9 @@ const binhLuanSchema = Schema(
   {
     NoiDung: {
       type: String,
-      required: true,
+      required: false, // cho phép bình luận chỉ có tệp đính kèm
       maxlength: 5000,
+      default: "",
     },
     CongViecID: {
       type: Schema.ObjectId,

@@ -44,7 +44,7 @@ const tepTinSchema = Schema(
     NguoiTaiLenID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "User",
+      ref: "NhanVien",
     },
     MoTa: {
       type: String,
@@ -73,6 +73,8 @@ tepTinSchema.index({ NguoiTaiLenID: 1 });
 tepTinSchema.index({ NgayTaiLen: -1 });
 tepTinSchema.index({ TrangThai: 1 });
 tepTinSchema.index({ BinhLuanID: 1 });
+// Tối ưu phổ biến: lọc theo công việc + trạng thái + sort thời gian
+tepTinSchema.index({ CongViecID: 1, TrangThai: 1, NgayTaiLen: -1 });
 
 // Virtual for formatted file size
 tepTinSchema.virtual("KichThuocFormat").get(function () {

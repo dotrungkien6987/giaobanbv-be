@@ -7,28 +7,27 @@ const userSchema = Schema(
     UserName: { type: String, require: true, unique: true },
     PassWord: { type: String, require: true, select: false },
 
-    KhoaID: {type: Schema.ObjectId, required: true, ref: "Khoa"  },
-    NhanVienID: {type: Schema.ObjectId, required: false, ref: "NhanVien"  },
+    KhoaID: { type: Schema.ObjectId, required: true, ref: "Khoa" },
+    NhanVienID: { type: Schema.ObjectId, required: false, ref: "NhanVien" },
     HoTen: { type: String, require: false, default: "" },
     UserHis: { type: String, require: false, default: "" },
-    
+
     isDeleted: { type: Boolean, default: false, select: false },
     Email: { type: String, require: false, default: "" },
     PhanQuyen: {
       type: String,
-      enum: ["admin","manager","nomal","daotao","noibo"],
+      enum: ["admin", "manager", "nomal", "daotao", "noibo"],
     },
-    KhoaTaiChinh:{type:[String],require:false,default:[]},
-    DashBoard:{type:[String],require:false,default:[]},
-    KhoaLichTruc:{type:[String],require:false,default:[]},
-    
+    KhoaTaiChinh: { type: [String], require: false, default: [] },
+    DashBoard: { type: [String], require: false, default: [] },
+    KhoaLichTruc: { type: [String], require: false, default: [] },
   },
   { timestamps: true }
 );
 
 userSchema.methods.toJSON = function () {
   const user = this._doc;
-  delete user.password;
+  delete user.PassWord; // sửa: xóa đúng trường schema
   delete user.isDeleted;
   return user;
 };
@@ -42,4 +41,3 @@ userSchema.methods.generateToken = async function () {
 
 const User = mongosee.model("User", userSchema);
 module.exports = User;
-

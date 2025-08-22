@@ -66,6 +66,15 @@ router.post("/congviec", congViecController.createCongViec);
  */
 router.put("/congviec/:id", congViecController.updateCongViec);
 
+// Flow actions
+router.post("/congviec/:id/giao-viec", congViecController.giaoViec);
+router.post("/congviec/:id/tiep-nhan", congViecController.tiepNhan);
+router.post("/congviec/:id/hoan-thanh", congViecController.hoanThanh);
+router.post(
+  "/congviec/:id/duyet-hoan-thanh",
+  congViecController.duyetHoanThanh
+);
+
 /**
  * @route   POST /api/workmanagement/congviec/:id/comment
  * @desc    Thêm bình luận vào công việc
@@ -73,5 +82,16 @@ router.put("/congviec/:id", congViecController.updateCongViec);
  * @body    NoiDung
  */
 router.post("/congviec/:id/comment", congViecController.addComment);
+
+/**
+ * @route   DELETE /api/workmanagement/binhluan/:id
+ * @desc    Thu hồi (xóa mềm) bình luận và các tệp đính kèm của bình luận
+ * @access  Private
+ */
+router.delete("/binhluan/:id", congViecController.deleteComment);
+// Thu hồi nội dung (text) của bình luận, giữ lại file đính kèm
+router.patch("/binhluan/:id/text", congViecController.recallCommentText);
+// Danh sách trả lời của bình luận
+router.get("/binhluan/:id/replies", congViecController.listReplies);
 
 module.exports = router;

@@ -37,6 +37,21 @@ const LichSuTrangThaiSchema = new Schema(
     DenTrangThai: { type: String, enum: TRANG_THAI },
     ThoiGian: { type: Date, default: Date.now },
     GhiChu: { type: String, maxlength: 2000 },
+    // Step 2 extended fields
+    IsRevert: { type: Boolean, default: false },
+    ResetFields: { type: [String], default: undefined }, // only store if non-empty
+    Snapshot: {
+      type: new Schema(
+        {
+          SoGioTre: { type: Number },
+          HoanThanhTreHan: { type: Boolean },
+          TrangThaiBefore: { type: String },
+          TrangThaiAfter: { type: String },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   { _id: false }
 );
@@ -111,6 +126,15 @@ const congViecSchema = new Schema(
       index: true,
     },
     PhanTramTienDoTong: { type: Number, min: 0, max: 100, default: 0 },
+
+    // Liên kết 1 Nhiệm Vụ Thường Quy (single-select) + cờ 'Khác'
+    NhiemVuThuongQuyID: {
+      type: Schema.ObjectId,
+      ref: "NhiemVuThuongQuy",
+      default: null,
+      index: true,
+    },
+    FlagNVTQKhac: { type: Boolean, default: false, index: true },
 
     CongViecChaID: {
       type: Schema.ObjectId,
@@ -203,6 +227,14 @@ congViecSchema.pre("validate", function (next) {
         new Error("CanhBaoSapHetHanPercent phải trong khoảng [0.5..1.0]")
       );
     }
+  }
+  // Validate NhiemVuThuongQuy single-select constraint
+  if (this.NhiemVuThuongQuyID && this.FlagNVTQKhac) {
+    return next(
+      new Error(
+        "Không thể vừa chọn NhiemVuThuongQuyID vừa bật FlagNVTQKhac=true"
+      )
+    );
   }
   const nhom = this.NguoiThamGia || [];
   if (nhom.length === 0)

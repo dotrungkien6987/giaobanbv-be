@@ -1,5 +1,6 @@
 const { catchAsync, sendResponse } = require("../../../helpers/utils");
 const congViecService = require("../services/congViec.service");
+const { catchAsync: _catchAsync } = require("../../../helpers/utils");
 
 const controller = {};
 
@@ -203,7 +204,7 @@ controller.createCongViec = catchAsync(async (req, res, next) => {
     res,
     201,
     true,
-    newCongViec,
+    { ...newCongViec, updatedAt: newCongViec.updatedAt },
     null,
     "Tạo công việc thành công"
   );
@@ -227,7 +228,7 @@ controller.updateCongViec = catchAsync(async (req, res, next) => {
     res,
     200,
     true,
-    updatedCongViec,
+    { ...updatedCongViec, updatedAt: updatedCongViec.updatedAt },
     null,
     "Cập nhật công việc thành công"
   );
@@ -310,28 +311,88 @@ controller.listReplies = catchAsync(async (req, res) => {
 });
 
 module.exports = controller;
-/** Flow actions **/
+/** Flow actions (LEGACY – will be deprecated after unified transition completes) **/
+// @deprecated Use POST /congviec/:id/transition instead. Retained temporarily for backward compatibility.
 // Giao việc
 controller.giaoViec = catchAsync(async (req, res) => {
   const { id } = req.params;
+  console.warn(
+    "[DEPRECATED] POST /congviec/:id/giao-viec – use /congviec/:id/transition {action:GIAO_VIEC}"
+  );
   const dto = await congViecService.giaoViec(id, req.body || {}, req);
   return sendResponse(res, 200, true, dto, null, "Đã giao việc");
 });
 // Tiếp nhận
 controller.tiepNhan = catchAsync(async (req, res) => {
   const { id } = req.params;
+  console.warn(
+    "[DEPRECATED] POST /congviec/:id/tiep-nhan – use /congviec/:id/transition {action:TIEP_NHAN}"
+  );
   const dto = await congViecService.tiepNhan(id, req);
   return sendResponse(res, 200, true, dto, null, "Đã tiếp nhận công việc");
 });
 // Hoàn thành (chuyển CHO_DUYET)
 controller.hoanThanh = catchAsync(async (req, res) => {
   const { id } = req.params;
+  console.warn(
+    "[DEPRECATED] POST /congviec/:id/hoan-thanh – use /congviec/:id/transition {action:HOAN_THANH(_TAM)}"
+  );
   const dto = await congViecService.hoanThanh(id, req);
   return sendResponse(res, 200, true, dto, null, "Đã chuyển chờ duyệt");
 });
 // Duyệt hoàn thành
 controller.duyetHoanThanh = catchAsync(async (req, res) => {
   const { id } = req.params;
+  console.warn(
+    "[DEPRECATED] POST /congviec/:id/duyet-hoan-thanh – use /congviec/:id/transition {action:DUYET_HOAN_THANH}"
+  );
   const dto = await congViecService.duyetHoanThanh(id, req);
   return sendResponse(res, 200, true, dto, null, "Đã duyệt hoàn thành");
+});
+
+// Unified transition (new flow)
+controller.transition = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { action, lyDo, ghiChu } = req.body || {};
+  const dto = await congViecService.transition(
+    id,
+    { action, lyDo, ghiChu },
+    req
+  );
+  // Build patch response (Step 4 optimization). If ?full=1 present -> include full object.
+  const wantFull = String(req.query.full || "") === "1";
+  const full = dto?.congViec;
+  let patch = null;
+  if (full) {
+    patch = {
+      _id: full._id,
+      TrangThai: full.TrangThai,
+    };
+    const candidateFields = [
+      "NgayHoanThanh",
+      "NgayHoanThanhTam",
+      "NgayGiaoViec",
+      "NgayCanhBao",
+      "SoGioTre",
+      "HoanThanhTreHan",
+    ];
+    candidateFields.forEach((f) => {
+      if (Object.prototype.hasOwnProperty.call(full, f) && full[f] != null)
+        patch[f] = full[f];
+    });
+  }
+  const payload = wantFull
+    ? { action: dto.action, patch, congViec: full }
+    : { action: dto.action, patch };
+  if (full && !patch.updatedAt && full.updatedAt) {
+    patch.updatedAt = full.updatedAt;
+  }
+  return sendResponse(
+    res,
+    200,
+    true,
+    payload,
+    null,
+    "Thao tác trạng thái thành công"
+  );
 });

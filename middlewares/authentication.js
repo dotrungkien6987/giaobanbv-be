@@ -1,29 +1,43 @@
 const jwt = require("jsonwebtoken");
 const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY;
-const { AppError,catchAsync } = require("../helpers/utils");
+const { AppError, catchAsync } = require("../helpers/utils");
 
 const User = require("../models/User");
+const NhanVien = require("../models/NhanVien");
 
 const authentication = {};
 
-authentication.loginRequired = (req, res, next) => {
+authentication.loginRequired = async (req, res, next) => {
   try {
     const tokenString = req.headers.authorization;
-    console.log(req.headers);
-    console.log(tokenString);
     if (!tokenString)
       throw new AppError(401, "Login required", "Authentication Error");
     const token = tokenString.replace("Bearer ", "");
-    jwt.verify(token, JWT_SECRET_KEY, (err, payload) => {
-      if (err) {
-        if (err.name === "TokenExpiredError") {
-          throw new AppError(401, "Token expired", "Authenticate Error");
-        } else {
-          throw new AppError(401, "Token is invalid", "Authentication Error");
-        }
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET_KEY);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        throw new AppError(401, "Token expired", "Authenticate Error");
       }
-      req.userId = payload._id;
-    });
+      throw new AppError(401, "Token is invalid", "Authentication Error");
+    }
+    req.userId = payload._id;
+    // Resolve NhanVienID strictly (Step 0)
+    const user = await User.findById(req.userId).select("NhanVienID");
+    if (!user || !user.NhanVienID) {
+      throw new AppError(
+        403,
+        "User chưa liên kết NhanVienID",
+        "Authentication Error"
+      );
+    }
+    // Validate NhanVien existence
+    const nv = await NhanVien.findById(user.NhanVienID).select("_id");
+    if (!nv) {
+      throw new AppError(403, "NhanVien không tồn tại", "Authentication Error");
+    }
+    req.nhanVienId = String(user.NhanVienID);
     next();
   } catch (error) {
     next(error);
@@ -47,17 +61,18 @@ authentication.adminRequired = catchAsync(async (req, res, next) => {
         }
       }
       req.userId = payload._id;
-     
+      // resolve nhanVienId lazily for admin guard too
+      // (kept for backward compatibility in admin routes)
     });
-    const user = await User.findById(req.userId)
-    console.log("user",user)
-    if(!(user.PhanQuyen==='admin')) throw new AppError(401,"Admin required","Authenticate error")
+    const user = await User.findById(req.userId);
+    console.log("user", user);
+    if (!(user.PhanQuyen === "admin"))
+      throw new AppError(401, "Admin required", "Authenticate error");
     next();
   } catch (error) {
     next(error);
   }
 });
-
 
 authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
   try {
@@ -76,11 +91,15 @@ authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
         }
       }
       req.userId = payload._id;
-     
     });
-    const user = await User.findById(req.userId)
-    console.log("user",user)
-    if(!(user.PhanQuyen==='admin'||user.PhanQuyen==='manager')) throw new AppError(401,"Admin or Manager required","Authenticate error")
+    const user = await User.findById(req.userId);
+    console.log("user", user);
+    if (!(user.PhanQuyen === "admin" || user.PhanQuyen === "manager"))
+      throw new AppError(
+        401,
+        "Admin or Manager required",
+        "Authenticate error"
+      );
     next();
   } catch (error) {
     next(error);

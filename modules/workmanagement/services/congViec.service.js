@@ -99,6 +99,11 @@ function mapCongViecDTO(doc) {
     NguoiChinhID: doc.NguoiChinhID ? String(doc.NguoiChinhID) : "",
     NguoiGiaoProfile,
     NguoiChinhProfile,
+    updatedAt: doc.updatedAt,
+    NhiemVuThuongQuyID: doc.NhiemVuThuongQuyID
+      ? String(doc.NhiemVuThuongQuyID)
+      : null,
+    FlagNVTQKhac: !!doc.FlagNVTQKhac,
   };
   // Chuẩn hóa kiểu Date thành JS Date (giữ nguyên nếu đã là string/Date)
   if (doc.NgayGiaoViec) dto.NgayGiaoViec = new Date(doc.NgayGiaoViec);
@@ -153,6 +158,40 @@ function computeNgayCanhBao({
   return new Date(t);
 }
 
+// Recompute warning date based on changed fields (Step 3)
+function recomputeWarningIfNeeded(cv, changed = {}) {
+  try {
+    const mode = cv.CanhBaoMode;
+    const start = cv.NgayBatDau;
+    const end = cv.NgayHetHan;
+    if (!end) return; // cannot compute
+    if (mode === "PERCENT") {
+      if (!start) return;
+      const p =
+        typeof cv.CanhBaoSapHetHanPercent === "number"
+          ? cv.CanhBaoSapHetHanPercent
+          : 0.8;
+      cv.NgayCanhBao = computeNgayCanhBao({
+        mode: "PERCENT",
+        ngayBatDau: start,
+        ngayHetHan: end,
+        percent: p,
+      });
+    } else if (mode === "FIXED") {
+      // Only validate fixed still inside interval; if out-of-range => null
+      if (!cv.NgayCanhBao) return;
+      const fixed = new Date(cv.NgayCanhBao);
+      if (start && !(fixed >= start && fixed < end)) {
+        cv.NgayCanhBao = null;
+      } else if (!start && fixed >= end) {
+        cv.NgayCanhBao = null;
+      }
+    }
+  } catch (_) {
+    // swallow
+  }
+}
+
 /**
  * Lấy thông tin nhân viên theo ID
  */
@@ -171,6 +210,27 @@ service.getNhanVienById = async (nhanvienid) => {
 
   return nhanvien;
 };
+
+// Lấy danh sách Nhiệm Vụ Thường Quy của nhân viên hiện tại
+// Assumption: Có model NhanVienNhiemVu với quan hệ NhanVienID - NhiemVuThuongQuyID
+try {
+  const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
+  service.getMyRoutineTasks = async (nhanVienId) => {
+    if (!nhanVienId) throw new AppError(400, "Thiếu nhanVienId");
+    const list = await NhanVienNhiemVu.find({ NhanVienID: nhanVienId })
+      .populate("NhiemVuThuongQuyID")
+      .lean();
+    return list
+      .filter((x) => x.NhiemVuThuongQuyID)
+      .map((x) => ({
+        _id: String(x.NhiemVuThuongQuyID._id),
+        Ten: x.NhiemVuThuongQuyID.Ten || x.NhiemVuThuongQuyID.TieuDe || "",
+        MoTa: x.NhiemVuThuongQuyID.MoTa || "",
+      }));
+  };
+} catch (_) {
+  // bỏ qua nếu model chưa tồn tại
+}
 
 /**
  * Xây dựng query filter cho công việc
@@ -609,6 +669,18 @@ service.deleteCongViec = async (congviecid, req) => {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
+  // Step 5: Concurrency guard using If-Unmodified-Since header or expectedVersion field
+  const clientVersion =
+    updateData?.expectedVersion || req.headers["if-unmodified-since"];
+  if (clientVersion) {
+    const serverVersion = congviec.updatedAt
+      ? congviec.updatedAt.toISOString()
+      : null;
+    if (serverVersion && serverVersion !== clientVersion) {
+      throw new AppError(409, "VERSION_CONFLICT", "Version mismatch");
+    }
+  }
+
   if (congviec.isDeleted) {
     throw new AppError(400, "Công việc đã bị xóa");
   }
@@ -908,6 +980,17 @@ service.giaoViec = async (id, payload = {}, req) => {
     isDeleted: { $ne: true },
   });
   if (!congviec) throw new AppError(404, "Không tìm thấy công việc");
+  // Step 5: Concurrency guard
+  const clientVersion =
+    payload.expectedVersion || req.headers["if-unmodified-since"];
+  if (clientVersion) {
+    const serverVersion = congviec.updatedAt
+      ? congviec.updatedAt.toISOString()
+      : null;
+    if (serverVersion && serverVersion !== clientVersion) {
+      throw new AppError(409, "VERSION_CONFLICT", "Version mismatch");
+    }
+  }
   if (!congviec.NgayHetHan)
     throw new AppError(400, "Thiếu NgayHetHan để giao việc");
   congviec.TrangThai = "DA_GIAO";
@@ -1042,6 +1125,7 @@ service.hoanThanh = async (id, req) => {
   return mapCongViecDTO(populated);
 };
 
+// LEGACY flow function – kept temporarily (@deprecated) use transition with DUYET_HOAN_THANH
 service.duyetHoanThanh = async (id, req) => {
   const congviec = await CongViec.findOne({
     _id: id,
@@ -1077,6 +1161,240 @@ service.duyetHoanThanh = async (id, req) => {
     })
     .lean();
   return mapCongViecDTO(populated);
+};
+
+// Unified transition service (new flow)
+// Import centralized constants
+const {
+  WORK_ACTIONS,
+  ROLE_REQUIREMENTS,
+} = require("../constants/workActions.constants");
+const TRANSITION_ACTIONS = WORK_ACTIONS; // backwards name for internal references
+
+function computeLate(congviec) {
+  if (!congviec.NgayHetHan || !congviec.NgayHoanThanh) {
+    congviec.SoGioTre = 0;
+    congviec.HoanThanhTreHan = false;
+    return;
+  }
+  try {
+    const diffMs =
+      new Date(congviec.NgayHoanThanh) - new Date(congviec.NgayHetHan);
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes > 0) {
+      congviec.SoGioTre = Number((diffMinutes / 60).toFixed(2));
+      congviec.HoanThanhTreHan = true;
+    } else {
+      congviec.SoGioTre = 0;
+      congviec.HoanThanhTreHan = false;
+    }
+  } catch (_) {
+    congviec.SoGioTre = 0;
+    congviec.HoanThanhTreHan = false;
+  }
+}
+
+function buildActionMap(cv) {
+  const coDuyet = !!cv.CoDuyetHoanThanh;
+  return {
+    GIAO_VIEC: {
+      allow: cv.TrangThai === "TAO_MOI" && !!cv.NgayHetHan,
+      next: "DA_GIAO",
+      mutate: (c, payload) => {
+        if (!c.NgayGiaoViec) c.NgayGiaoViec = new Date();
+        // optional update cảnh báo
+        const mode = payload?.mode;
+        if (mode === "PERCENT" || mode === "FIXED") c.CanhBaoMode = mode;
+        if (mode === "PERCENT") {
+          if (typeof payload?.percent === "number")
+            c.CanhBaoSapHetHanPercent = payload.percent;
+          c.NgayCanhBao = computeNgayCanhBao({
+            mode: "PERCENT",
+            ngayBatDau: c.NgayBatDau,
+            ngayHetHan: c.NgayHetHan,
+            percent: c.CanhBaoSapHetHanPercent,
+          });
+        } else if (mode === "FIXED") {
+          c.NgayCanhBao = computeNgayCanhBao({
+            mode: "FIXED",
+            ngayBatDau: c.NgayBatDau,
+            ngayHetHan: c.NgayHetHan,
+            fixedNgayCanhBao: payload?.ngayCanhBao,
+          });
+        }
+      },
+    },
+    HUY_GIAO: {
+      allow: cv.TrangThai === "DA_GIAO",
+      next: "TAO_MOI",
+      revert: true,
+      reset: ["NgayGiaoViec", "NgayHoanThanhTam", "NgayHoanThanh"],
+    },
+    TIEP_NHAN: {
+      allow: cv.TrangThai === "DA_GIAO",
+      next: "DANG_THUC_HIEN",
+      mutate: (c) => {
+        const now = new Date();
+        if (!c.NgayBatDau) c.NgayBatDau = now;
+        if (!c.NgayTiepNhanThucTe) c.NgayTiepNhanThucTe = now;
+      },
+    },
+    HOAN_THANH_TAM: {
+      allow: cv.TrangThai === "DANG_THUC_HIEN" && coDuyet,
+      next: "CHO_DUYET",
+      mutate: (c) => {
+        if (!c.NgayHoanThanhTam) c.NgayHoanThanhTam = new Date();
+      },
+    },
+    HUY_HOAN_THANH_TAM: {
+      allow: cv.TrangThai === "CHO_DUYET",
+      next: "DANG_THUC_HIEN",
+      revert: true,
+      reset: ["NgayHoanThanhTam"],
+    },
+    DUYET_HOAN_THANH: {
+      allow: cv.TrangThai === "CHO_DUYET",
+      next: "HOAN_THANH",
+      mutate: (c) => {
+        c.NgayHoanThanh = new Date();
+        computeLate(c);
+        if (typeof c.SoGioTre !== "number") {
+          c.SoGioTre = 0;
+          c.HoanThanhTreHan = false;
+        }
+      },
+    },
+    HOAN_THANH: {
+      allow: cv.TrangThai === "DANG_THUC_HIEN" && !coDuyet,
+      next: "HOAN_THANH",
+      mutate: (c) => {
+        c.NgayHoanThanh = new Date();
+        computeLate(c);
+        if (typeof c.SoGioTre !== "number") {
+          c.SoGioTre = 0;
+          c.HoanThanhTreHan = false;
+        }
+      },
+    },
+    MO_LAI_HOAN_THANH: {
+      allow: cv.TrangThai === "HOAN_THANH",
+      next: "DANG_THUC_HIEN",
+      revert: true,
+      reset: ["NgayHoanThanh", "HoanThanhTreHan", "SoGioTre"],
+    },
+  };
+}
+
+service.transition = async (id, payload = {}, req) => {
+  let { action, lyDo = "", ghiChu = "" } = payload;
+  if (!action) throw new AppError(400, "Thiếu action");
+  const congviec = await CongViec.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+  });
+  if (!congviec) throw new AppError(404, "Không tìm thấy công việc");
+  // Chuẩn hóa: nếu cần duyệt mà gửi thẳng HOAN_THANH ở trạng thái DANG_THUC_HIEN thì chuyển thành HOAN_THANH_TAM
+  if (
+    action === "HOAN_THANH" &&
+    congviec.CoDuyetHoanThanh &&
+    congviec.TrangThai === "DANG_THUC_HIEN"
+  ) {
+    action = "HOAN_THANH_TAM";
+  }
+  // Quyền (Step1): strictly by req.nhanVienId
+  const performerIdCtx = req?.nhanVienId || null;
+  const isAssigner =
+    performerIdCtx &&
+    String(congviec.NguoiGiaoViecID) === String(performerIdCtx);
+  const isMain =
+    performerIdCtx && String(congviec.NguoiChinhID) === String(performerIdCtx);
+  const ctx = { isAssigner, isMain };
+  const actorCheck = ROLE_REQUIREMENTS[action];
+  if (!actorCheck || !actorCheck(ctx, congviec)) {
+    console.warn(
+      "[transition] Permission denied",
+      JSON.stringify({
+        action,
+        performerIdCtx,
+        isAssigner,
+        isMain,
+        NguoiGiaoViecID: congviec.NguoiGiaoViecID,
+        NguoiChinhID: congviec.NguoiChinhID,
+      })
+    );
+    // Granular error codes
+    let code = "FORBIDDEN";
+    if (action === WORK_ACTIONS.HOAN_THANH && !isAssigner)
+      code = "NOT_ASSIGNER";
+    else if (
+      [WORK_ACTIONS.TIEP_NHAN, WORK_ACTIONS.HOAN_THANH_TAM].includes(action) &&
+      !isMain
+    )
+      code = "NOT_MAIN";
+    throw new AppError(403, code, "Permission Error");
+  }
+  const map = buildActionMap(congviec);
+  const conf = map[action];
+  if (!conf || !conf.allow)
+    throw new AppError(400, "Hành động không hợp lệ cho trạng thái hiện tại");
+  const prevState = congviec.TrangThai;
+  const resetFieldsApplied = [];
+  if (Array.isArray(conf.reset)) {
+    conf.reset.forEach((f) => {
+      if (congviec[f] != null) resetFieldsApplied.push(f);
+      congviec[f] = null;
+    });
+  }
+  if (conf.mutate) conf.mutate(congviec, payload);
+  // Recompute warning date when necessary: after GIAO_VIEC (already inside mutate) OR when reverting & then re-giao OR if dates changed passed via payload on transition (rare future use)
+  if (
+    action === WORK_ACTIONS.GIAO_VIEC ||
+    resetFieldsApplied.includes("NgayGiaoViec")
+  ) {
+    recomputeWarningIfNeeded(congviec);
+  }
+  congviec.TrangThai = conf.next;
+  const performerId = performerIdCtx || congviec.NguoiChinhID;
+  if (performerId) {
+    const isCompletion =
+      action === WORK_ACTIONS.DUYET_HOAN_THANH ||
+      action === WORK_ACTIONS.HOAN_THANH;
+    const snapshot = isCompletion
+      ? {
+          SoGioTre:
+            typeof congviec.SoGioTre === "number" ? congviec.SoGioTre : 0,
+          HoanThanhTreHan: !!congviec.HoanThanhTreHan,
+          TrangThaiBefore: prevState,
+          TrangThaiAfter: conf.next,
+        }
+      : undefined;
+    congviec.LichSuTrangThai = congviec.LichSuTrangThai || [];
+    congviec.LichSuTrangThai.push({
+      HanhDong: action,
+      NguoiThucHienID: toObjectId(performerId),
+      TuTrangThai: prevState,
+      DenTrangThai: conf.next,
+      GhiChu: ghiChu || lyDo || "",
+      IsRevert: !!conf.revert,
+      ResetFields: resetFieldsApplied.length ? resetFieldsApplied : undefined,
+      Snapshot: snapshot,
+    });
+  }
+  await congviec.save();
+  // Lightweight fetch for patch building already done in controller; still return full for backward compatibility
+  const populated = await CongViec.findById(congviec._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .lean();
+  return { action, congViec: mapCongViecDTO(populated) };
 };
 
 /**
@@ -1406,6 +1724,44 @@ service.updateCongViec = async (congviecid, updateData, req) => {
   }
 
   // =============================
+  // Nhiệm vụ thường quy (single-select) update rules
+  // Fields: NhiemVuThuongQuyID, FlagNVTQKhac
+  // Only main performer can modify
+  if (
+    Object.prototype.hasOwnProperty.call(updateData, "NhiemVuThuongQuyID") ||
+    Object.prototype.hasOwnProperty.call(updateData, "FlagNVTQKhac")
+  ) {
+    const performerNhanVienId = req.nhanVienId; // mapped in auth middleware
+    if (!performerNhanVienId) {
+      throw new AppError(403, "Không xác định nhân viên thực hiện");
+    }
+    if (String(congviec.NguoiChinhID) !== String(performerNhanVienId)) {
+      throw new AppError(
+        403,
+        "Chỉ Người Chính được phép cập nhật Nhiệm Vụ Thường Quy"
+      );
+    }
+    // If Khác flag set true -> clear ID
+    if (updateData.FlagNVTQKhac) {
+      updateData.NhiemVuThuongQuyID = null;
+    }
+    // If an ID provided -> ensure valid ObjectId and unset FlagKhac
+    if (updateData.NhiemVuThuongQuyID) {
+      if (!mongoose.Types.ObjectId.isValid(updateData.NhiemVuThuongQuyID)) {
+        throw new AppError(400, "NhiemVuThuongQuyID không hợp lệ");
+      }
+      updateData.FlagNVTQKhac = false;
+    }
+    // Prevent simultaneous both (redundant safeguard)
+    if (updateData.NhiemVuThuongQuyID && updateData.FlagNVTQKhac) {
+      throw new AppError(
+        400,
+        "Không thể vừa có NhiemVuThuongQuyID vừa đặt FlagNVTQKhac=true"
+      );
+    }
+  }
+
+  // =============================
   // Chuẩn hoá dữ liệu cập nhật (nhãn TV -> mã code)
   // =============================
   const normalizeLabel = (val) =>
@@ -1460,31 +1816,24 @@ service.updateCongViec = async (congviecid, updateData, req) => {
   }
 
   // Nếu đổi NgayBatDau hoặc NgayHetHan và mode PERCENT -> recalc NgayCanhBao
-  const willChangeBatDau = !!updateData.NgayBatDau;
-  const willChangeHetHan = !!updateData.NgayHetHan;
+  const willChangeBatDau = updateData.NgayBatDau != null;
+  const willChangeHetHan = updateData.NgayHetHan != null;
+  const willChangeMode = updateData.CanhBaoMode != null;
+  const willChangePercent = updateData.CanhBaoSapHetHanPercent != null;
+  // Apply incoming date/mode/percent to a temp clone to recompute preview
+  if (willChangeBatDau) congviec.NgayBatDau = new Date(updateData.NgayBatDau);
+  if (willChangeHetHan) congviec.NgayHetHan = new Date(updateData.NgayHetHan);
+  if (willChangeMode) congviec.CanhBaoMode = updateData.CanhBaoMode;
+  if (willChangePercent)
+    congviec.CanhBaoSapHetHanPercent = updateData.CanhBaoSapHetHanPercent;
   if (
-    congviec.CanhBaoMode === "PERCENT" &&
-    (willChangeBatDau || willChangeHetHan)
+    willChangeBatDau ||
+    willChangeHetHan ||
+    willChangeMode ||
+    willChangePercent
   ) {
-    const start = willChangeBatDau
-      ? new Date(updateData.NgayBatDau)
-      : congviec.NgayBatDau;
-    const end = willChangeHetHan
-      ? new Date(updateData.NgayHetHan)
-      : congviec.NgayHetHan;
-    if (start && end) {
-      const percent =
-        typeof congviec.CanhBaoSapHetHanPercent === "number"
-          ? congviec.CanhBaoSapHetHanPercent
-          : 0.8;
-      const ngay = computeNgayCanhBao({
-        mode: "PERCENT",
-        ngayBatDau: start,
-        ngayHetHan: end,
-        percent,
-      });
-      if (ngay) updateData.NgayCanhBao = ngay;
-    }
+    recomputeWarningIfNeeded(congviec);
+    updateData.NgayCanhBao = congviec.NgayCanhBao || null;
   }
 
   // Nếu FE gửi NguoiChinh thì map sang NguoiChinhID

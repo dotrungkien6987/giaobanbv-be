@@ -3,6 +3,7 @@ const router = express.Router();
 
 const authentication = require("../../../middlewares/authentication");
 const congViecController = require("../controllers/congViec.controller");
+const congViecService = require("../services/congViec.service");
 
 // Middleware authentication cho tất cả routes
 router.use(authentication.loginRequired);
@@ -50,6 +51,17 @@ router.delete("/congviec/:id", congViecController.deleteCongViec);
  */
 router.get("/congviec/detail/:id", congViecController.getCongViecDetail);
 
+// Danh sách nhiệm vụ thường quy của chính nhân viên đăng nhập
+router.get("/nhiemvuthuongquy/my", async (req, res, next) => {
+  try {
+    const nhanVienId = req.nhanVienId; // set by authentication middleware
+    const data = await congViecService.getMyRoutineTasks(nhanVienId);
+    return res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
  * @route   POST /api/workmanagement/congviec
  * @desc    Tạo công việc mới
@@ -74,6 +86,8 @@ router.post(
   "/congviec/:id/duyet-hoan-thanh",
   congViecController.duyetHoanThanh
 );
+// Unified transition endpoint (new consolidated workflow actions)
+router.post("/congviec/:id/transition", congViecController.transition);
 
 /**
  * @route   POST /api/workmanagement/congviec/:id/comment

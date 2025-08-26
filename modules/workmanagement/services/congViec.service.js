@@ -129,8 +129,218 @@ function mapCongViecDTO(doc) {
         return null;
       }
     })();
+
+  // Map lịch sử trạng thái (nếu có) – đảm bảo không trả về object Mongoose thô
+  if (Array.isArray(doc?.LichSuTrangThai)) {
+    dto.LichSuTrangThai = doc.LichSuTrangThai.map((h) => {
+      const performer = h.NguoiThucHienID;
+      const performerIsObj = performer && typeof performer === "object";
+      const performerId = performerIsObj ? performer._id : performer;
+      return {
+        CongViecID: String(doc._id),
+        HanhDong: h.HanhDong,
+        NguoiThucHienID: performerId ? String(performerId) : null,
+        NguoiThucHien: performerIsObj
+          ? {
+              _id: String(performerId),
+              Ten:
+                performer.Ten || performer.HoTen || performer.UserName || null,
+              Email: performer.Email || null,
+            }
+          : undefined,
+        TuTrangThai: h.TuTrangThai || null,
+        DenTrangThai: h.DenTrangThai || null,
+        ThoiGian: h.ThoiGian || h.createdAt || null,
+        GhiChu: h.GhiChu || "",
+        IsRevert: !!h.IsRevert,
+        ResetFields:
+          h.ResetFields && h.ResetFields.length ? h.ResetFields : undefined,
+        Snapshot: h.Snapshot || undefined,
+      };
+    });
+  }
+  // Map lịch sử tiến độ nếu có
+  if (Array.isArray(doc?.LichSuTienDo)) {
+    dto.LichSuTienDo = doc.LichSuTienDo.map((p) => {
+      const performer = p.NguoiThucHienID;
+      const performerIsObj = performer && typeof performer === "object";
+      const performerId = performerIsObj ? performer._id : performer;
+      return {
+        CongViecID: String(doc._id),
+        Tu: typeof p.Tu === "number" ? p.Tu : null,
+        Den: typeof p.Den === "number" ? p.Den : null,
+        ThoiGian: p.ThoiGian || p.createdAt || null,
+        NguoiThucHienID: performerId ? String(performerId) : null,
+        NguoiThucHien: performerIsObj
+          ? {
+              _id: String(performerId),
+              Ten:
+                performer.Ten || performer.HoTen || performer.UserName || null,
+              Email: performer.Email || null,
+            }
+          : undefined,
+        GhiChu: p.GhiChu || "",
+      };
+    });
+  }
   return dto;
 }
+
+// Cập nhật ghi chú cho một entry lịch sử trạng thái (inline edit)
+async function updateLichSuTrangThaiNote(congViecId, index, note, userId) {
+  if (!congViecId) throw new Error("INVALID_ID");
+  const cv = await CongViec.findById(congViecId).populate(
+    "LichSuTrangThai.NguoiThucHienID",
+    "Ten HoTen Email"
+  );
+  if (!cv) throw new Error("NOT_FOUND");
+  if (!Array.isArray(cv.LichSuTrangThai)) throw new Error("NO_HISTORY");
+  if (index < 0 || index >= cv.LichSuTrangThai.length)
+    throw new Error("INVALID_INDEX");
+  const entry = cv.LichSuTrangThai[index];
+  if (!entry) throw new Error("ENTRY_NOT_FOUND");
+  const performerIdRaw = entry.NguoiThucHienID;
+  const performerId =
+    performerIdRaw && typeof performerIdRaw === "object" && performerIdRaw._id
+      ? performerIdRaw._id
+      : performerIdRaw; // nếu đã populate thì lấy _id, nếu chưa thì dùng trực tiếp ObjectId
+  if (String(performerId) !== String(userId)) {
+    console.warn("[updateLichSuTrangThaiNote] FORBIDDEN", {
+      congViecId: String(congViecId),
+      requestedIndex: index,
+      entryNguoiThucHienID: performerIdRaw, // log object đầy đủ để debug
+      extractedPerformerId: String(performerId),
+      requesterNhanVienId: String(userId),
+      historyLength: cv.LichSuTrangThai.length,
+    });
+    const err = new Error("FORBIDDEN");
+    err.statusCode = 403;
+    throw err;
+  }
+  entry.GhiChu = note || "";
+  await cv.save();
+  return mapCongViecDTO(cv);
+}
+
+service.updateLichSuTrangThaiNote = updateLichSuTrangThaiNote;
+
+// Cập nhật ghi chú cho một entry lịch sử tiến độ
+async function updateLichSuTienDoNote(congViecId, index, note, userId) {
+  if (!congViecId) throw new Error("INVALID_ID");
+  const cv = await CongViec.findById(congViecId).populate(
+    "LichSuTienDo.NguoiThucHienID",
+    "Ten HoTen Email UserName"
+  );
+  if (!cv) throw new Error("NOT_FOUND");
+  if (!Array.isArray(cv.LichSuTienDo)) throw new Error("NO_HISTORY");
+  if (index < 0 || index >= cv.LichSuTienDo.length)
+    throw new Error("INVALID_INDEX");
+  const entry = cv.LichSuTienDo[index];
+  if (!entry) throw new Error("ENTRY_NOT_FOUND");
+  const performer = entry.NguoiThucHienID;
+  const performerId =
+    performer && typeof performer === "object" && performer._id
+      ? performer._id
+      : performer;
+  if (String(performerId) !== String(userId)) {
+    const err = new Error("FORBIDDEN");
+    err.statusCode = 403;
+    throw err;
+  }
+  entry.GhiChu = note || "";
+  await cv.save();
+  return mapCongViecDTO(cv);
+}
+
+service.updateLichSuTienDoNote = updateLichSuTienDoNote;
+
+/**
+ * Cập nhật tiến độ (PhanTramTienDoTong) với lịch sử LichSuTienDo.
+ * Chỉ Người Chính được phép. Cho phép giảm tiến độ.
+ * Nếu cập nhật lên 100% và TrangThai chưa HOAN_THANH: tự chuyển TrangThai=HOAN_THANH + set NgayHoanThanh.
+ */
+service.updateProgress = async (congviecId, payload, req) => {
+  if (!mongoose.Types.ObjectId.isValid(congviecId)) {
+    throw new AppError(400, "ID công việc không hợp lệ");
+  }
+  const { value, ghiChu, expectedVersion } = payload || {};
+  if (typeof value !== "number" || value < 0 || value > 100) {
+    throw new AppError(400, "Giá trị tiến độ phải trong [0,100]");
+  }
+  const cv = await CongViec.findOne({
+    _id: congviecId,
+    isDeleted: { $ne: true },
+  }).populate("LichSuTienDo.NguoiThucHienID", "Ten Email HoTen UserName");
+  if (!cv) throw new AppError(404, "Không tìm thấy công việc");
+  const performerId = req.nhanVienId;
+  if (String(cv.NguoiChinhID) !== String(performerId)) {
+    throw new AppError(403, "Chỉ Người Chính được cập nhật tiến độ");
+  }
+  // Concurrency guard: compare updatedAt (millisecond) with expectedVersion (ISO string) if provided
+  if (expectedVersion) {
+    const currentVersion = cv.updatedAt ? cv.updatedAt.toISOString() : null;
+    if (currentVersion && currentVersion !== expectedVersion) {
+      throw new AppError(
+        409,
+        "Dữ liệu đã thay đổi, vui lòng tải lại (progress)"
+      );
+    }
+  }
+  const old =
+    typeof cv.PhanTramTienDoTong === "number" ? cv.PhanTramTienDoTong : 0;
+  if (old === value) {
+    // Still log history? Business: nếu không đổi không tạo entry
+    return mapCongViecDTO(cv);
+  }
+  cv.PhanTramTienDoTong = value;
+  // Append history entry
+  cv.LichSuTienDo.push({
+    Tu: old,
+    Den: value,
+    NguoiThucHienID: performerId,
+    GhiChu: ghiChu || undefined,
+  });
+  // Auto-complete if 100%
+  let autoCompleted = false;
+  if (value === 100 && cv.TrangThai !== "HOAN_THANH") {
+    const prevStatus = cv.TrangThai;
+    cv.TrangThai = "HOAN_THANH";
+    cv.NgayHoanThanh = new Date();
+    autoCompleted = true;
+    cv.LichSuTrangThai.push({
+      HanhDong: "AUTO_COMPLETE_BY_PROGRESS",
+      NguoiThucHienID: performerId,
+      TuTrangThai: prevStatus,
+      DenTrangThai: "HOAN_THANH",
+      GhiChu: "Tự động chuyển hoàn thành do tiến độ đạt 100%",
+    });
+  }
+  await cv.save();
+  // Populate performers for mapping (only need main & progress performers; reuse get detail populate subset)
+  const populated = await CongViec.findById(cv._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "LichSuTienDo.NguoiThucHienID",
+      select: "Ten Email HoTen UserName",
+    })
+    .select(
+      "MaCongViec SoThuTu PhanTramTienDoTong TrangThai NgayHoanThanh NguoiGiaoViecID NguoiChinhID LichSuTienDo LichSuTrangThai updatedAt"
+    )
+    .lean();
+  const dto = mapCongViecDTO(populated);
+  // Patch response optimization could be added later; for now return full subset
+  dto._progressAutoCompleted = autoCompleted;
+  return dto;
+};
 
 // Tính NgayCanhBao dựa theo mode
 function computeNgayCanhBao({
@@ -217,19 +427,56 @@ try {
   const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
   service.getMyRoutineTasks = async (nhanVienId) => {
     if (!nhanVienId) throw new AppError(400, "Thiếu nhanVienId");
-    const list = await NhanVienNhiemVu.find({ NhanVienID: nhanVienId })
-      .populate("NhiemVuThuongQuyID")
+    // Chỉ lấy các assignment đang hoạt động để tránh trả về nhiệm vụ đã ngưng
+    const list = await NhanVienNhiemVu.find({
+      NhanVienID: nhanVienId,
+      TrangThaiHoatDong: true,
+    })
+      .populate({
+        path: "NhiemVuThuongQuyID",
+        select: "TenNhiemVu MoTa MucDoKho TrangThaiHoatDong isDeleted",
+      })
       .lean();
-    return list
-      .filter((x) => x.NhiemVuThuongQuyID)
-      .map((x) => ({
-        _id: String(x.NhiemVuThuongQuyID._id),
-        Ten: x.NhiemVuThuongQuyID.Ten || x.NhiemVuThuongQuyID.TieuDe || "",
-        MoTa: x.NhiemVuThuongQuyID.MoTa || "",
-      }));
+
+    return (
+      list
+        // Bỏ những assignment populate lỗi hoặc nhiệm vụ đã bị xóa mềm
+        .filter(
+          (x) =>
+            x.NhiemVuThuongQuyID &&
+            x.NhiemVuThuongQuyID.isDeleted !== true &&
+            x.NhiemVuThuongQuyID.TrangThaiHoatDong === true
+        )
+        .map((x) => {
+          const duty = x.NhiemVuThuongQuyID;
+          return {
+            _id: String(duty._id),
+            Ten: duty.TenNhiemVu || "", // FE hiện đang dùng field Ten
+            TenNhiemVu: duty.TenNhiemVu || "", // để phòng trường hợp FE muốn dùng đúng tên gốc
+            MoTa: duty.MoTa || "",
+            // Không có MaNhiemVu trong schema hiện tại: giữ lại để không vỡ FE nhưng để rỗng
+            MaNhiemVu: "", // TODO: nếu cần mã nhiệm vụ, bổ sung field trong schema hoặc generate
+            TrangThai: duty.TrangThaiHoatDong ? "ACTIVE" : "INACTIVE",
+            MucDoKho: duty.MucDoKho ?? null,
+          };
+        })
+        .sort((a, b) =>
+          (a.Ten || "").localeCompare(b.Ten || "", "vi", {
+            numeric: true,
+            sensitivity: "base",
+          })
+        )
+    );
   };
 } catch (_) {
   // bỏ qua nếu model chưa tồn tại
+  service.getMyRoutineTasks = async () => {
+    // Fallback service nếu model chưa tồn tại
+    console.warn(
+      "[getMyRoutineTasks] NhanVienNhiemVu model not found, returning empty array"
+    );
+    return [];
+  };
 }
 
 /**
@@ -783,8 +1030,17 @@ service.getCongViecDetail = async (congviecid) => {
       select: "Ten KhoaID",
       populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
     })
+    .populate({
+      path: "LichSuTrangThai.NguoiThucHienID",
+      select: "Ten Email HoTen UserName",
+    })
+    .populate({
+      path: "LichSuTienDo.NguoiThucHienID",
+      select: "Ten Email HoTen UserName",
+    })
     .select(
-      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID createdAt"
+      // Bổ sung NhiemVuThuongQuyID & FlagNVTQKhac để FE hiển thị đúng liên kết nhiệm vụ thường quy
+      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID LichSuTrangThai LichSuTienDo createdAt NhiemVuThuongQuyID FlagNVTQKhac"
     )
     .lean();
 
@@ -1324,8 +1580,7 @@ service.transition = async (id, payload = {}, req) => {
     );
     // Granular error codes
     let code = "FORBIDDEN";
-    if (action === WORK_ACTIONS.HOAN_THANH && !isAssigner)
-      code = "NOT_ASSIGNER";
+    if (action === WORK_ACTIONS.HOAN_THANH && !isMain) code = "NOT_MAIN";
     else if (
       [WORK_ACTIONS.TIEP_NHAN, WORK_ACTIONS.HOAN_THANH_TAM].includes(action) &&
       !isMain
@@ -1555,6 +1810,10 @@ service.createCongViec = async (congViecData, req) => {
       select: "Ten Email KhoaID",
       populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
     })
+    // Bổ sung select để đảm bảo FE nhận được thay đổi NhiemVuThuongQuyID/FlagNVTQKhac ngay sau update
+    .select(
+      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID LichSuTrangThai createdAt NhiemVuThuongQuyID FlagNVTQKhac"
+    )
     .lean();
 
   return mapCongViecDTO(populatedCongViec);

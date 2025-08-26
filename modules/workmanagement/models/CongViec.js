@@ -56,6 +56,18 @@ const LichSuTrangThaiSchema = new Schema(
   { _id: false }
 );
 
+// Lịch sử cập nhật tiến độ (Method A) – lưu lại mỗi lần người chính thay đổi %
+const LichSuTienDoSchema = new Schema(
+  {
+    Tu: { type: Number, min: 0, max: 100, required: true },
+    Den: { type: Number, min: 0, max: 100, required: true },
+    ThoiGian: { type: Date, default: Date.now },
+    NguoiThucHienID: { type: Schema.ObjectId, ref: "NhanVien", required: true },
+    GhiChu: { type: String, maxlength: 2000 },
+  },
+  { _id: false }
+);
+
 const congViecSchema = new Schema(
   {
     MaCongViec: {
@@ -153,6 +165,7 @@ const congViecSchema = new Schema(
     },
 
     LichSuTrangThai: { type: [LichSuTrangThaiSchema], default: [] },
+    LichSuTienDo: { type: [LichSuTienDoSchema], default: [] },
     // Danh sách bình luận (tham chiếu) – thêm để tránh StrictPopulateError khi populate
     BinhLuans: [{ type: Schema.ObjectId, ref: "BinhLuan", default: [] }],
 

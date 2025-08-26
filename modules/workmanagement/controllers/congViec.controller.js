@@ -235,6 +235,57 @@ controller.updateCongViec = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * Cập nhật tiến độ & ghi lịch sử
+ * POST /api/workmanagement/congviec/:id/progress
+ */
+controller.updateProgress = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { value, ghiChu, expectedVersion } = req.body || {};
+  const dto = await congViecService.updateProgress(
+    id,
+    { value, ghiChu, expectedVersion },
+    req
+  );
+  const wantFull = String(req.query.full || "") === "1";
+  if (wantFull) {
+    return sendResponse(
+      res,
+      200,
+      true,
+      dto,
+      null,
+      "Cập nhật tiến độ thành công"
+    );
+  }
+  // Build minimal patch + last progress entry append
+  const patch = {
+    _id: dto._id,
+    PhanTramTienDoTong: dto.PhanTramTienDoTong,
+    updatedAt: dto.updatedAt,
+  };
+  if (dto.TrangThai === "HOAN_THANH") {
+    patch.TrangThai = dto.TrangThai;
+    if (dto.NgayHoanThanh) patch.NgayHoanThanh = dto.NgayHoanThanh;
+  }
+  const lastEntry = Array.isArray(dto.LichSuTienDo)
+    ? dto.LichSuTienDo[dto.LichSuTienDo.length - 1]
+    : null;
+  const payload = {
+    patch,
+    lastProgressEntry: lastEntry,
+    autoCompleted: !!dto._progressAutoCompleted,
+  };
+  return sendResponse(
+    res,
+    200,
+    true,
+    payload,
+    null,
+    "Cập nhật tiến độ thành công"
+  );
+});
+
+/**
  * Thêm bình luận vào công việc
  * POST /api/workmanagement/congviec/:id/comment
  */
@@ -307,6 +358,71 @@ controller.listReplies = catchAsync(async (req, res) => {
     items,
     null,
     "Lấy danh sách trả lời thành công"
+  );
+});
+
+/**
+ * Cập nhật ghi chú của một dòng lịch sử trạng thái
+ * PUT /api/workmanagement/congviec/:id/history/:index/note
+ */
+controller.updateHistoryNote = catchAsync(async (req, res) => {
+  const { id, index } = req.params;
+  const { note } = req.body || {};
+  const idx = parseInt(index, 10);
+  if (Number.isNaN(idx)) {
+    return sendResponse(
+      res,
+      400,
+      false,
+      null,
+      "INVALID_INDEX",
+      "Index không hợp lệ"
+    );
+  }
+  const updated = await congViecService.updateLichSuTrangThaiNote(
+    id,
+    idx,
+    note || "",
+    req.nhanVienId || req.userId
+  );
+  return sendResponse(
+    res,
+    200,
+    true,
+    updated,
+    null,
+    "Cập nhật ghi chú lịch sử thành công"
+  );
+});
+
+// Cập nhật ghi chú lịch sử tiến độ
+controller.updateProgressHistoryNote = catchAsync(async (req, res) => {
+  const { id, index } = req.params;
+  const { note } = req.body || {};
+  const idx = parseInt(index, 10);
+  if (Number.isNaN(idx)) {
+    return sendResponse(
+      res,
+      400,
+      false,
+      null,
+      "INVALID_INDEX",
+      "Index không hợp lệ"
+    );
+  }
+  const updated = await congViecService.updateLichSuTienDoNote(
+    id,
+    idx,
+    note || "",
+    req.nhanVienId || req.userId
+  );
+  return sendResponse(
+    res,
+    200,
+    true,
+    updated,
+    null,
+    "Cập nhật ghi chú lịch sử tiến độ thành công"
   );
 });
 

@@ -56,6 +56,7 @@ router.get("/nhiemvuthuongquy/my", async (req, res, next) => {
   try {
     const nhanVienId = req.nhanVienId; // set by authentication middleware
     const data = await congViecService.getMyRoutineTasks(nhanVienId);
+    console.log("Routine tasks:", data);
     return res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -78,6 +79,9 @@ router.post("/congviec", congViecController.createCongViec);
  */
 router.put("/congviec/:id", congViecController.updateCongViec);
 
+// Cập nhật tiến độ (thêm lịch sử)
+router.post("/congviec/:id/progress", congViecController.updateProgress);
+
 // Flow actions
 router.post("/congviec/:id/giao-viec", congViecController.giaoViec);
 router.post("/congviec/:id/tiep-nhan", congViecController.tiepNhan);
@@ -96,6 +100,17 @@ router.post("/congviec/:id/transition", congViecController.transition);
  * @body    NoiDung
  */
 router.post("/congviec/:id/comment", congViecController.addComment);
+
+// Cập nhật ghi chú lịch sử trạng thái (inline edit)
+router.put(
+  "/congviec/:id/history/:index/note",
+  congViecController.updateHistoryNote
+);
+// Cập nhật ghi chú lịch sử tiến độ
+router.put(
+  "/congviec/:id/progress-history/:index/note",
+  congViecController.updateProgressHistoryNote
+);
 
 /**
  * @route   DELETE /api/workmanagement/binhluan/:id

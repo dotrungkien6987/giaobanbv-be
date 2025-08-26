@@ -62,3 +62,6 @@ typings/
 
 # Database schema documentation
 controllers/SQL/schema_docs/
+
+# Ignore uploads directory
+uploads/

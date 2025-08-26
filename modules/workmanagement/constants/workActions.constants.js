@@ -24,8 +24,7 @@ const ROLE_REQUIREMENTS = Object.freeze({
   [WORK_ACTIONS.HOAN_THANH_TAM]: (ctx, cv) => ctx.isMain,
   [WORK_ACTIONS.HUY_HOAN_THANH_TAM]: (ctx, cv) => ctx.isMain || ctx.isAssigner,
   [WORK_ACTIONS.DUYET_HOAN_THANH]: (ctx, cv) => ctx.isAssigner,
-  [WORK_ACTIONS.HOAN_THANH]: (ctx, cv) =>
-    !cv.CoDuyetHoanThanh && ctx.isAssigner,
+  [WORK_ACTIONS.HOAN_THANH]: (ctx, cv) => !cv.CoDuyetHoanThanh && ctx.isMain,
   [WORK_ACTIONS.MO_LAI_HOAN_THANH]: (ctx, cv) => ctx.isAssigner,
 });
 

@@ -191,6 +191,39 @@ controller.getCongViecDetail = catchAsync(async (req, res, next) => {
   );
 });
 
+// Tạo subtask: POST /congviec/:id/subtasks
+controller.createSubtask = catchAsync(async (req, res) => {
+  const { id } = req.params; // parent id
+  const data = { ...req.body };
+  // Force parent binding server-side
+  const dto = await congViecService.createSubtask(id, data, req);
+  return sendResponse(
+    res,
+    201,
+    true,
+    dto,
+    null,
+    "Tạo công việc con thành công"
+  );
+});
+
+// List children: GET /congviec/:id/children
+controller.listChildrenCongViec = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { page = 1, limit = 50 } = req.query;
+  const p = Math.max(1, parseInt(page) || 1);
+  const l = Math.min(100, Math.max(1, parseInt(limit) || 50));
+  const items = await congViecService.listChildren(id, p, l);
+  return sendResponse(
+    res,
+    200,
+    true,
+    items,
+    null,
+    "Lấy danh sách công việc con thành công"
+  );
+});
+
 /**
  * Tạo công việc mới
  * POST /api/workmanagement/congviec

@@ -154,6 +154,11 @@ const congViecSchema = new Schema(
       default: null,
       index: true,
     },
+    // Cấu trúc cây (subtasks) – GIAI ĐOẠN 1 (Slim Plan)
+    // Path: danh sách tổ tiên (ObjectId) theo thứ tự root -> parent gần nhất
+    Path: { type: [Schema.ObjectId], default: [], index: false },
+    Depth: { type: Number, default: 0, min: 0, index: true },
+    ChildrenCount: { type: Number, default: 0, min: 0 },
 
     NhomViecUserID: {
       type: Schema.ObjectId,
@@ -299,6 +304,47 @@ congViecSchema.virtual("TinhTrangThoiHan").get(function () {
   } catch (_) {
     return null;
   }
+});
+
+// PRE-SAVE: Thiết lập Path / Depth cho subtask mới
+congViecSchema.pre("save", async function (next) {
+  try {
+    if (!this.isNew) return next();
+    if (!this.CongViecChaID) return next();
+    // Fetch parent tối thiểu các field cần
+    const parent = await this.constructor
+      .findById(this.CongViecChaID)
+      .select("_id TrangThai Path Depth isDeleted");
+    if (!parent || parent.isDeleted) {
+      return next(new Error("PARENT_NOT_FOUND"));
+    }
+    if (parent.TrangThai === "HOAN_THANH") {
+      return next(new Error("PARENT_ALREADY_COMPLETED"));
+    }
+    // Thiết lập Path & Depth
+    this.Path = Array.isArray(parent.Path)
+      ? [...parent.Path, parent._id]
+      : [parent._id];
+    this.Depth = (parent.Depth || 0) + 1;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST-SAVE: Tăng ChildrenCount của cha (không rollback nếu lỗi để tránh fail tạo subtask)
+congViecSchema.post("save", async function (doc, next) {
+  try {
+    if (doc && doc.isNew && doc.CongViecChaID) {
+      await doc.constructor.updateOne(
+        { _id: doc.CongViecChaID },
+        { $inc: { ChildrenCount: 1 } }
+      );
+    }
+  } catch (_) {
+    // Nuốt lỗi increment để không ảnh hưởng tạo subtask – có thể chạy recount sau
+  }
+  next();
 });
 
 module.exports = mongoose.model("CongViec", congViecSchema);

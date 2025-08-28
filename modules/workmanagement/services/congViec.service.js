@@ -1039,8 +1039,8 @@ service.getCongViecDetail = async (congviecid) => {
       select: "Ten Email HoTen UserName",
     })
     .select(
-      // Bổ sung NhiemVuThuongQuyID & FlagNVTQKhac để FE hiển thị đúng liên kết nhiệm vụ thường quy
-      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID LichSuTrangThai LichSuTienDo createdAt NhiemVuThuongQuyID FlagNVTQKhac"
+      // Bổ sung subtask fields: CongViecChaID Path Depth ChildrenCount
+      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID LichSuTrangThai LichSuTienDo createdAt NhiemVuThuongQuyID FlagNVTQKhac CongViecChaID Path Depth ChildrenCount"
     )
     .lean();
 
@@ -1050,6 +1050,53 @@ service.getCongViecDetail = async (congviecid) => {
 
   // Map to unified DTO
   const dto = mapCongViecDTO(congviec);
+  // Subtask enrich
+  dto.CongViecChaID = congviec.CongViecChaID
+    ? String(congviec.CongViecChaID)
+    : null;
+  dto.Path = Array.isArray(congviec.Path)
+    ? congviec.Path.map((x) => String(x))
+    : [];
+  dto.Depth = typeof congviec.Depth === "number" ? congviec.Depth : 0;
+  dto.ChildrenCount =
+    typeof congviec.ChildrenCount === "number" ? congviec.ChildrenCount : 0;
+  if (dto.Path && dto.Path.length) {
+    const ancestors = await CongViec.find({ _id: { $in: dto.Path } })
+      .select("_id TieuDe")
+      .lean();
+    const mapAnc = new Map(ancestors.map((a) => [String(a._id), a]));
+    dto.Ancestors = dto.Path.map((id) => {
+      const a = mapAnc.get(String(id));
+      return a
+        ? { _id: String(a._id), TieuDe: a.TieuDe }
+        : { _id: String(id), TieuDe: null };
+    });
+  } else {
+    dto.Ancestors = [];
+  }
+  // ChildrenSummary (trực tiếp)
+  const childrenAgg = await CongViec.aggregate([
+    {
+      $match: {
+        CongViecChaID: new mongoose.Types.ObjectId(congviecid),
+        isDeleted: { $ne: true },
+      },
+    },
+    { $group: { _id: "$TrangThai", c: { $sum: 1 } } },
+  ]);
+  let total = 0,
+    done = 0;
+  childrenAgg.forEach((g) => {
+    total += g.c;
+    if (g._id === "HOAN_THANH") done += g.c;
+  });
+  dto.ChildrenSummary = {
+    total,
+    done,
+    active: total - done,
+    incomplete: total - done,
+  };
+  dto.AllChildrenDone = total > 0 && done === total;
   // Preserve createdAt for UI as NgayTao
   if (congviec.createdAt) dto.NgayTao = congviec.createdAt;
 
@@ -1592,6 +1639,24 @@ service.transition = async (id, payload = {}, req) => {
   const conf = map[action];
   if (!conf || !conf.allow)
     throw new AppError(400, "Hành động không hợp lệ cho trạng thái hiện tại");
+  // Subtasks: không cho hoàn thành nếu còn con chưa HOAN_THANH
+  if (
+    [WORK_ACTIONS.DUYET_HOAN_THANH, WORK_ACTIONS.HOAN_THANH].includes(action) &&
+    congviec.ChildrenCount > 0
+  ) {
+    const incomplete = await CongViec.countDocuments({
+      CongViecChaID: congviec._id,
+      TrangThai: { $ne: "HOAN_THANH" },
+      isDeleted: { $ne: true },
+    });
+    if (incomplete > 0) {
+      throw new AppError(
+        409,
+        "CHILDREN_INCOMPLETE",
+        "Còn công việc con chưa hoàn thành"
+      );
+    }
+  }
   const prevState = congviec.TrangThai;
   const resetFieldsApplied = [];
   if (Array.isArray(conf.reset)) {
@@ -1733,6 +1798,12 @@ service.createCongViec = async (congViecData, req) => {
     CoDuyetHoanThanh: !!congViecData.CoDuyetHoanThanh,
   };
 
+  // Preserve parent relation if provided (subtask creation). Validation of parent
+  // existence & status occurs in pre-save hook (and in createSubtask wrapper).
+  if (congViecData.CongViecChaID) {
+    newCongViecData.CongViecChaID = congViecData.CongViecChaID;
+  }
+
   // Cấu hình cảnh báo & mốc giao việc tạm thời khi tạo mới
   // Cho phép null, nhưng nếu chọn PERCENT (hoặc không gửi) thì set mặc định và tính NgayCanhBao dựa trên now
   const mode =
@@ -1812,11 +1883,46 @@ service.createCongViec = async (congViecData, req) => {
     })
     // Bổ sung select để đảm bảo FE nhận được thay đổi NhiemVuThuongQuyID/FlagNVTQKhac ngay sau update
     .select(
-      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID LichSuTrangThai createdAt NhiemVuThuongQuyID FlagNVTQKhac"
+      "MaCongViec SoThuTu TieuDe MoTa NgayBatDau NgayHetHan NgayGiaoViec NgayCanhBao NgayHoanThanh CanhBaoMode CanhBaoSapHetHanPercent MucDoUuTien TrangThai PhanTramTienDoTong NguoiGiaoViecID NguoiChinhID NguoiThamGia NhomViecUserID LichSuTrangThai createdAt NhiemVuThuongQuyID FlagNVTQKhac CongViecChaID Path Depth ChildrenCount"
     )
     .lean();
 
   return mapCongViecDTO(populatedCongViec);
+};
+
+// Tạo công việc con (wrap createCongViec) – Slim Plan
+service.createSubtask = async (parentId, data, req) => {
+  if (!mongoose.Types.ObjectId.isValid(parentId))
+    throw new AppError(400, "PARENT_ID_INVALID");
+  const parent = await CongViec.findOne({
+    _id: parentId,
+    isDeleted: { $ne: true },
+  }).select("_id TrangThai");
+  if (!parent) throw new AppError(404, "PARENT_NOT_FOUND");
+  if (parent.TrangThai === "HOAN_THANH")
+    throw new AppError(400, "PARENT_ALREADY_COMPLETED");
+  const payload = { ...data, CongViecChaID: parentId };
+  return await service.createCongViec(payload, req);
+};
+
+// Danh sách con trực tiếp
+service.listChildren = async (parentId, page = 1, limit = 50) => {
+  if (!mongoose.Types.ObjectId.isValid(parentId))
+    throw new AppError(400, "PARENT_ID_INVALID");
+  const skip = (page - 1) * limit;
+  const rows = await CongViec.find({
+    CongViecChaID: parentId,
+    isDeleted: { $ne: true },
+  })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .select(
+      "MaCongViec SoThuTu TieuDe TrangThai PhanTramTienDoTong NgayHetHan NguoiChinhID CongViecChaID Depth ChildrenCount"
+    )
+    .populate({ path: "NguoiChinh", select: "Ten Email" })
+    .lean();
+  return rows.map((r) => mapCongViecDTO(r));
 };
 
 /**

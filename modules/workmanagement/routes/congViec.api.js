@@ -51,6 +51,16 @@ router.delete("/congviec/:id", congViecController.deleteCongViec);
  */
 router.get("/congviec/detail/:id", congViecController.getCongViecDetail);
 
+// Subtasks (Slim Plan)
+router.post(
+  "/congviec/:id/subtasks",
+  congViecController.createSubtask // body giống create công việc nhưng bỏ qua CongViecChaID client (server set)
+);
+router.get(
+  "/congviec/:id/children",
+  congViecController.listChildrenCongViec // danh sách con trực tiếp
+);
+
 // Danh sách nhiệm vụ thường quy của chính nhân viên đăng nhập
 router.get("/nhiemvuthuongquy/my", async (req, res, next) => {
   try {

@@ -3,7 +3,7 @@ const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY;
 const { AppError, catchAsync } = require("../helpers/utils");
 
 const User = require("../models/User");
-const NhanVien = require("../models/NhanVien");
+// NhanVien references removed from loginRequired per request
 
 const authentication = {};
 
@@ -23,21 +23,11 @@ authentication.loginRequired = async (req, res, next) => {
       throw new AppError(401, "Token is invalid", "Authentication Error");
     }
     req.userId = payload._id;
-    // Resolve NhanVienID strictly (Step 0)
-    const user = await User.findById(req.userId).select("NhanVienID");
-    if (!user || !user.NhanVienID) {
-      throw new AppError(
-        403,
-        "User chưa liên kết NhanVienID",
-        "Authentication Error"
-      );
+    // Keep a lightweight user existence check but do NOT touch NhanVienID at all.
+    const user = await User.findById(req.userId).select("_id");
+    if (!user) {
+      throw new AppError(401, "User không tồn tại", "Authentication Error");
     }
-    // Validate NhanVien existence
-    const nv = await NhanVien.findById(user.NhanVienID).select("_id");
-    if (!nv) {
-      throw new AppError(403, "NhanVien không tồn tại", "Authentication Error");
-    }
-    req.nhanVienId = String(user.NhanVienID);
     next();
   } catch (error) {
     next(error);

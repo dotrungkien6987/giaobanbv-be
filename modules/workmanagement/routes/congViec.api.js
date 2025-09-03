@@ -50,6 +50,12 @@ router.delete("/congviec/:id", congViecController.deleteCongViec);
  * @access  Private
  */
 router.get("/congviec/detail/:id", congViecController.getCongViecDetail);
+// Tree endpoints
+router.get("/congviec/:id/tree-root", congViecController.getTreeRoot);
+router.get("/congviec/:id/tree-children", congViecController.getTreeChildren);
+router.get("/congviec/:id/full-tree", congViecController.getFullTree);
+// (Removed) Ancestors endpoint no longer used by FE; controller removed to simplify codebase
+// router.get("/congviec/:id/ancestors", congViecController.getAncestors);
 
 // Subtasks (Slim Plan)
 router.post(

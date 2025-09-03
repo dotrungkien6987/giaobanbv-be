@@ -309,8 +309,9 @@ congViecSchema.virtual("TinhTrangThoiHan").get(function () {
 // PRE-SAVE: Thiết lập Path / Depth cho subtask mới
 congViecSchema.pre("save", async function (next) {
   try {
-    if (!this.isNew) return next();
-    if (!this.CongViecChaID) return next();
+    // Ghi lại trạng thái ban đầu để dùng ở post-save (vì doc.isNew sẽ false sau khi save)
+    this._wasNew = this.isNew;
+    if (!this.isNew || !this.CongViecChaID) return next();
     // Fetch parent tối thiểu các field cần
     const parent = await this.constructor
       .findById(this.CongViecChaID)
@@ -321,7 +322,7 @@ congViecSchema.pre("save", async function (next) {
     if (parent.TrangThai === "HOAN_THANH") {
       return next(new Error("PARENT_ALREADY_COMPLETED"));
     }
-    // Thiết lập Path & Depth
+    // Thiết lập Path & Depth cho subtask
     this.Path = Array.isArray(parent.Path)
       ? [...parent.Path, parent._id]
       : [parent._id];
@@ -332,17 +333,17 @@ congViecSchema.pre("save", async function (next) {
   }
 });
 
-// POST-SAVE: Tăng ChildrenCount của cha (không rollback nếu lỗi để tránh fail tạo subtask)
+// POST-SAVE: Tăng ChildrenCount của cha (dựa vào _wasNew)
 congViecSchema.post("save", async function (doc, next) {
   try {
-    if (doc && doc.isNew && doc.CongViecChaID) {
+    if (this._wasNew && doc && doc.CongViecChaID) {
       await doc.constructor.updateOne(
         { _id: doc.CongViecChaID },
         { $inc: { ChildrenCount: 1 } }
       );
     }
   } catch (_) {
-    // Nuốt lỗi increment để không ảnh hưởng tạo subtask – có thể chạy recount sau
+    // Nuốt lỗi increment để không ảnh hưởng việc tạo subtask – có thể chạy recount sau
   }
   next();
 });

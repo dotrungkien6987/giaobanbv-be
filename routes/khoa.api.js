@@ -66,7 +66,7 @@ router.put(
     body("TenKhoa", "Tên khoa không được để trống").optional().notEmpty(),
     body("LoaiKhoa", "Loại khoa không hợp lệ")
       .optional()
-      .isIn(["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc", "khac"]),
+      .isIn(["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc","phong","khac"]),
     body("STT", "STT phải là số").optional().isNumeric(),
     body("MaKhoa", "Mã khoa không được để trống").optional().notEmpty(),
   ]),

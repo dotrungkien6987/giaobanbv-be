@@ -916,9 +916,8 @@ service.deleteCongViec = async (congviecid, req) => {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
-  // Step 5: Concurrency guard using If-Unmodified-Since header or expectedVersion field
-  const clientVersion =
-    updateData?.expectedVersion || req.headers["if-unmodified-since"];
+  // Step 5: Concurrency guard using If-Unmodified-Since header
+  const clientVersion = req.headers["if-unmodified-since"];
   if (clientVersion) {
     const serverVersion = congviec.updatedAt
       ? congviec.updatedAt.toISOString()
@@ -977,6 +976,14 @@ service.deleteCongViec = async (congviecid, req) => {
   // Soft delete
   congviec.isDeleted = true;
   await congviec.save();
+
+  // If this is a subtask, decrement parent's ChildrenCount
+  if (congviec.CongViecChaID) {
+    await CongViec.updateOne(
+      { _id: congviec.CongViecChaID },
+      { $inc: { ChildrenCount: -1 } }
+    );
+  }
 
   // Cascade mềm bình luận (đánh dấu DELETED)
   const commentUpdate = await BinhLuan.updateMany(
@@ -1918,11 +1925,173 @@ service.listChildren = async (parentId, page = 1, limit = 50) => {
     .skip(skip)
     .limit(limit)
     .select(
-      "MaCongViec SoThuTu TieuDe TrangThai PhanTramTienDoTong NgayHetHan NguoiChinhID CongViecChaID Depth ChildrenCount"
+      "MaCongViec SoThuTu TieuDe TrangThai PhanTramTienDoTong NgayHetHan NguoiChinhID NguoiGiaoViecID MucDoUuTien CongViecChaID Depth ChildrenCount SoLuongBinhLuan SoLuongNguoiThamGia"
     )
     .populate({ path: "NguoiChinh", select: "Ten Email" })
+    .populate({ path: "NguoiGiaoViecID", select: "Ten Email" })
     .lean();
   return rows.map((r) => mapCongViecDTO(r));
+};
+
+// Tree view lightweight DTO mapper
+function mapTreeNode(doc) {
+  if (!doc) return null;
+  const priorityOrder = { THAP: 1, BINH_THUONG: 2, CAO: 3, KHAN_CAP: 4 };
+  // Extract participant IDs (NguoiThamGia.NhanVienID)
+  const nguoiThamGiaIds = Array.isArray(doc.NguoiThamGia)
+    ? doc.NguoiThamGia.map((p) => {
+        const raw = p && p.NhanVienID;
+        if (!raw) return null;
+        if (typeof raw === "object" && raw._id) return String(raw._id);
+        return String(raw);
+      }).filter(Boolean)
+    : [];
+  return {
+    _id: String(doc._id),
+    TenCongViec: doc.TieuDe,
+    MaCongViec: doc.MaCongViec || null,
+    TrangThai: doc.TrangThai,
+    TrangThaiLabel: doc.TrangThai, // FE có thể map màu
+    DoUuTien: priorityOrder[doc.MucDoUuTien] || 2,
+    DoUuTienLabel: doc.MucDoUuTien,
+    PhanTramTienDoTong: doc.PhanTramTienDoTong ?? 0,
+    HanHoanThanh: doc.NgayHetHan || doc.NgayHoanThanh || null,
+    // Thêm các mốc thời gian riêng để FE hiển thị chi tiết
+    NgayBatDau: doc.NgayBatDau || null,
+    NgayHetHan: doc.NgayHetHan || null,
+    NgayHoanThanh: doc.NgayHoanThanh || null,
+    // Người giao việc – canonical single field cho FE (title, hiển thị)
+    NguoiGiaoViecID: doc.NguoiGiaoViecID ? String(doc.NguoiGiaoViecID) : null,
+    NguoiGiaoViec: doc.NguoiGiaoViec
+      ? doc.NguoiGiaoViec.Ten ||
+        doc.NguoiGiaoViec.HoTen ||
+        doc.NguoiGiaoViec.TenNhanVien ||
+        ""
+      : null,
+    NguoiThamGiaIds: nguoiThamGiaIds,
+    ChildrenCount:
+      typeof doc.ChildrenCount === "number" ? doc.ChildrenCount : 0,
+    PhuTrach: doc.NguoiChinh
+      ? [
+          {
+            _id: doc.NguoiChinh._id ? String(doc.NguoiChinh._id) : null,
+            TenNhanVien:
+              doc.NguoiChinh.Ten ||
+              doc.NguoiChinh.HoTen ||
+              doc.NguoiChinh.TenNhanVien ||
+              "",
+          },
+        ]
+      : [],
+    ParentID: doc.CongViecChaID ? String(doc.CongViecChaID) : null,
+    Depth: doc.Depth || 0,
+  };
+}
+
+service.getTreeRoot = async (id) => {
+  if (!mongoose.Types.ObjectId.isValid(id))
+    throw new AppError(400, "ID_INVALID");
+  const doc = await CongViec.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select(
+      "MaCongViec TieuDe TrangThai MucDoUuTien PhanTramTienDoTong NgayBatDau NgayHetHan NgayHoanThanh ChildrenCount CongViecChaID Depth NguoiChinhID NguoiGiaoViecID NguoiThamGia"
+    )
+    .populate({ path: "NguoiChinh", select: "Ten HoTen TenNhanVien" })
+    .populate({ path: "NguoiGiaoViec", select: "Ten HoTen TenNhanVien" })
+    .populate({
+      path: "NguoiThamGia.NhanVienID",
+      select: "Ten HoTen TenNhanVien",
+    })
+    .lean();
+  if (!doc) throw new AppError(404, "NOT_FOUND");
+  return mapTreeNode(doc);
+};
+
+service.getTreeChildren = async (parentId) => {
+  if (!mongoose.Types.ObjectId.isValid(parentId))
+    throw new AppError(400, "PARENT_ID_INVALID");
+  const children = await CongViec.find({
+    CongViecChaID: parentId,
+    isDeleted: { $ne: true },
+  })
+    .select(
+      "MaCongViec TieuDe TrangThai MucDoUuTien PhanTramTienDoTong NgayBatDau NgayHetHan NgayHoanThanh ChildrenCount CongViecChaID Depth NguoiChinhID NguoiGiaoViecID NguoiThamGia"
+    )
+    .populate({ path: "NguoiChinh", select: "Ten HoTen TenNhanVien" })
+    .populate({ path: "NguoiGiaoViec", select: "Ten HoTen TenNhanVien" })
+    .populate({
+      path: "NguoiThamGia.NhanVienID",
+      select: "Ten HoTen TenNhanVien",
+    })
+    .lean();
+  return children.map(mapTreeNode);
+};
+
+// Find top-most ancestor and return its mapped node (lightweight like getTreeRoot)
+service.findRootNode = async (id) => {
+  if (!mongoose.Types.ObjectId.isValid(id))
+    throw new AppError(400, "ID_INVALID");
+  let current = await CongViec.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select("CongViecChaID")
+    .lean();
+  if (!current) throw new AppError(404, "NOT_FOUND");
+  let guard = 0;
+  let rootId = id;
+  while (current.CongViecChaID && guard < 50) {
+    const parentId = current.CongViecChaID;
+    const parent = await CongViec.findOne({
+      _id: parentId,
+      isDeleted: { $ne: true },
+    })
+      .select("CongViecChaID")
+      .lean();
+    if (!parent) break;
+    rootId = parentId;
+    current = parent;
+    guard++;
+  }
+  const rootDoc = await CongViec.findOne({
+    _id: rootId,
+    isDeleted: { $ne: true },
+  })
+    .select(
+      "MaCongViec TieuDe TrangThai MucDoUuTien PhanTramTienDoTong NgayBatDau NgayHetHan NgayHoanThanh ChildrenCount CongViecChaID Depth NguoiChinhID NguoiGiaoViecID"
+    )
+    .populate({ path: "NguoiChinh", select: "Ten HoTen TenNhanVien" })
+    .populate({ path: "NguoiGiaoViec", select: "Ten HoTen TenNhanVien" })
+    .lean();
+  if (!rootDoc) throw new AppError(404, "ROOT_NOT_FOUND");
+  return mapTreeNode(rootDoc);
+};
+
+// Get ancestor chain (from root ancestor down to the specified node)
+service.getAncestorsChain = async (id) => {
+  if (!mongoose.Types.ObjectId.isValid(id))
+    throw new AppError(400, "ID_INVALID");
+  const chain = [];
+  let current = await CongViec.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select("CongViecChaID")
+    .lean();
+  if (!current) throw new AppError(404, "NOT_FOUND");
+  chain.push(String(id));
+  let guard = 0;
+  while (current.CongViecChaID && guard < 50) {
+    const parentId = current.CongViecChaID;
+    const parent = await CongViec.findOne({
+      _id: parentId,
+      isDeleted: { $ne: true },
+    })
+      .select("CongViecChaID")
+      .lean();
+    if (!parent) {
+      chain.push(String(parentId));
+      break;
+    }
+    chain.push(String(parentId));
+    current = parent;
+    guard++;
+  }
+  // chain currently from node up to root, reverse
+  return chain.reverse();
 };
 
 /**

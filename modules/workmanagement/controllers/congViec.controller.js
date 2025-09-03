@@ -459,6 +459,55 @@ controller.updateProgressHistoryNote = catchAsync(async (req, res) => {
   );
 });
 
+// Tree root: GET /api/workmanagement/congviec/:id/tree-root
+controller.getTreeRoot = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const root = await congViecService.getTreeRoot(id);
+  const children = await congViecService.getTreeChildren(id);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { root, children },
+    null,
+    "Lấy cây công việc gốc thành công"
+  );
+});
+
+// Full tree from any node: GET /api/workmanagement/congviec/:id/full-tree
+controller.getFullTree = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  // Find ancestor root
+  const ancestorRoot = await congViecService.findRootNode(id);
+  const children = await congViecService.getTreeChildren(ancestorRoot._id);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { root: ancestorRoot, children },
+    null,
+    "Lấy cây đầy đủ từ root tổ tiên thành công"
+  );
+});
+
+// Ancestors chain: GET /api/workmanagement/congviec/:id/ancestors
+// (ĐÃ BỎ) getAncestors endpoint không còn được FE sử dụng – giữ comment để tránh gọi nhầm
+// controller.getAncestors = catchAsync(async (req, res) => { ... });
+
+// Tree children: GET /api/workmanagement/congviec/:id/tree-children
+controller.getTreeChildren = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const children = await congViecService.getTreeChildren(id);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { parentId: id, children },
+    null,
+    "Lấy danh sách con thành công"
+  );
+});
+
 module.exports = controller;
 /** Flow actions (LEGACY – will be deprecated after unified transition completes) **/
 // @deprecated Use POST /congviec/:id/transition instead. Retained temporarily for backward compatibility.

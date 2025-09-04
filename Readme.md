@@ -1,4 +1,5 @@
 # How to set up and run the API locally
+
 npm i
 add file .env
 PORT=8020
@@ -10,9 +11,11 @@ JWT_SECRET_KEY ="DFSDFSD"
 npm run start
 
 # How to consume the API
+
 ## Endpoint APIs
 
 ### Auth APIs
+
 ```javascript
 /**
  * @route POST /auth/login  Login with username and password
@@ -21,17 +24,19 @@ npm run start
  * @access Public
  */
 ```
+
 ### User APIs
+
 ```javascript
 /**
- * @route POST /user  
+ * @route POST /user
  * @description  Insert a new account
  * @body {UserName,Email,PassWord,KhoaID,HoTen,PhanQuyen}
  * @access Admin require
  */
 
 /**
- * @route GET /user  
+ * @route GET /user
  * @description  get all user
  * @params { page, limit, ...filter }
  * @access Admin require
@@ -45,16 +50,15 @@ npm run start
  */
 
 /**
- * @route PUT /user/:id  
+ * @route PUT /user/:id
  * @description  Update a account
  * @body {UserName,Email,PassWord,KhoaID,HoTen,PhanQuyen}
  * @access Admin require
  */
 
-
 /**
- * @route PUT /user/resetpass/:id  
- * @description  reset pass 
+ * @route PUT /user/resetpass/:id
+ * @description  reset pass
  * @body {PassWord}
  * @access Admin require
  */
@@ -71,11 +75,10 @@ npm run start
  * @description  Delete a user
  * @access Admin required
  */
-
-
 ```
 
 ### Khoa APIs
+
 ```javascript
 /**
  * @route POST /khoa
@@ -91,10 +94,9 @@ npm run start
  */
 ```
 
-
 ### BCGiaoBan
-```javascript
 
+```javascript
 /**
  * @route POST /bcgiaoban
  * @description Insert a new bcgiaoban
@@ -125,6 +127,7 @@ npm run start
 ```
 
 ### BaoCaoNGay
+
 ```javascript
 /**
  * @route POST /baocaongay
@@ -147,9 +150,10 @@ npm run start
  * @access  login require,
  */
 ```
+
 ### BaoCaoSuCo
 
-```javascript
+````javascript
 /**
  * @route POST /baocaosuco
  * @description Insert  new baocaosuco
@@ -157,59 +161,92 @@ npm run start
  * @access  login require,
  */
 
+### Backup & Restore (NEW)
+```javascript
 /**
- * @route GET /baocaosuco
- * @description Get all baocaosuco
- 
+ * @route GET /backup/download
+ * @description Tạo mới và tải về 1 file backup (.zip) dùng mongodump
+ * @access Admin required
+ */
+/**
+ * @route GET /backup/download?f=<filename>
+ * @description Tải lại file backup đã có trong thư mục _backups
+ * @access Admin required
+ */
+/**
+ * @route GET /backup/list
+ * @description Liệt kê các file backup hiện có
+ * @access Admin required
+ */
+/**
+ * @route POST /backup/restore (multipart/form-data, field "file")
+ * @description Phục hồi dữ liệu từ file backup zip (mongorestore --drop)
+ * @access Admin required
+ */
+````
 
+Lưu ý vận hành:
 
- * @access  login require,
- */
+- Cần cài MongoDB Database Tools (mongodump, mongorestore) trên server.
+- Thư mục lưu: `_backups/` (cần dọn dẹp định kỳ hoặc chuyển sang object storage).
+- Restore dùng cờ --drop nên xóa dữ liệu hiện có trước khi nạp.
+- Khuyến cáo kiểm thử file backup trên môi trường staging trước khi restore production.
 
-/**
- * @route GET /baocaosuco
- * @description Get all baocaongay in one day
- * @params { Ngay}
- * @access  login require,
- */
+/\*\*
 
-/**
- * @route GET /baocaosuco/tonghop
- * @description Get báo cáo tổng hợp cho chart 
- * @params { fromDate, toDate}
- * @access  login require,
- */
-/**
- * @route GET /baocaosuco/tonghoptheokhoa
- * @description Get báo cáo tổng hợp theo khoa
- * @params { fromDate, toDate}
- * @access  login require,
- */
+- @route GET /baocaosuco
+- @description Get all baocaosuco
 
-/**
- * @route GET /baocaosuco/:sucoId
- * @description Get one baocaosuco
- * @params {sucoId}
- * @access  login require,
- */
-/**
- * @route DELETE /baocaosuco/:sucoId
- * @description DELETE one baocaosuco
- * @params {sucoId}
- * @access  login require,
- */
-/**
- * @route PUT /baocaosuco/:sucoId
- * @description update one baocaosuco
- * @body {baocaosuco}
- * @access  login require,
- */
-/**
- * @route PUT /baocaosuco/updatetrangthai
- * @description update trang thai for one baocaosuco
- * @body {sucoId, trangthai}
- * @access  login require,
- */
+- @access login require,
+  \*/
+
+/\*\*
+
+- @route GET /baocaosuco
+- @description Get all baocaongay in one day
+- @params { Ngay}
+- @access login require,
+  \*/
+
+/\*\*
+
+- @route GET /baocaosuco/tonghop
+- @description Get báo cáo tổng hợp cho chart
+- @params { fromDate, toDate}
+- @access login require,
+  \*/
+  /\*\*
+- @route GET /baocaosuco/tonghoptheokhoa
+- @description Get báo cáo tổng hợp theo khoa
+- @params { fromDate, toDate}
+- @access login require,
+  \*/
+
+/\*\*
+
+- @route GET /baocaosuco/:sucoId
+- @description Get one baocaosuco
+- @params {sucoId}
+- @access login require,
+  \*/
+  /\*\*
+- @route DELETE /baocaosuco/:sucoId
+- @description DELETE one baocaosuco
+- @params {sucoId}
+- @access login require,
+  \*/
+  /\*\*
+- @route PUT /baocaosuco/:sucoId
+- @description update one baocaosuco
+- @body {baocaosuco}
+- @access login require,
+  \*/
+  /\*\*
+- @route PUT /baocaosuco/updatetrangthai
+- @description update trang thai for one baocaosuco
+- @body {sucoId, trangthai}
+- @access login require,
+  \*/
 
 ```
 
@@ -217,3 +254,4 @@ npm run start
 # ERD
 
 ![Alt text](diagramGiaobanBV.jpg)
+```

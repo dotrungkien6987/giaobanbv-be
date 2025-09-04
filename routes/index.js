@@ -98,4 +98,8 @@ router.use("/nhiemvu-thuongquy", nhiemvuThuongQuyApi);
 const workManagementApi = require("../modules/workmanagement/routes");
 router.use("/workmanagement", workManagementApi);
 
+// API backup & restore
+const backupApi = require("./backup.api");
+router.use("/backup", backupApi);
+
 module.exports = router;

@@ -65,4 +65,5 @@ controllers/SQL/schema_docs/
 
 # Ignore uploads directory
 uploads/
-
+# Ignore backup directory
+_backups/

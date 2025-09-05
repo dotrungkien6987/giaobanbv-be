@@ -300,9 +300,19 @@ nhanvienController.getNhanviensPhanTrang = catchAsync(
     console.log("filter", filterConditions);
     let nhanviens = await NhanVien.find(filterCriteria)
       .populate("KhoaID")
+      .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" })
       .sort({ createdAt: -1 })
       .skip(offset)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    // Flatten helper fields (non-breaking: keep original structure)
+    nhanviens = nhanviens.map((nv) => ({
+      ...nv,
+      LoaiChuyenMon:
+        nv.LoaiChuyenMon || nv.LoaiChuyenMonID?.LoaiChuyenMon || undefined,
+      TrinhDo: nv.TrinhDo || nv.LoaiChuyenMonID?.TrinhDo || undefined,
+    }));
 
     return sendResponse(
       res,
@@ -343,7 +353,7 @@ nhanvienController.updateOneNhanVien = catchAsync(async (req, res, next) => {
     const id = nhanvienUpdate._id;
     nhanvienUpdate = await NhanVien.findByIdAndUpdate(id, nhanvien, {
       new: true,
-    }).populate("KhoaID");
+    }).populate("KhoaID").populate("LoaiChuyenMonID");
   }
   console.log("nhanvienupdate", nhanvienUpdate);
   return sendResponse(

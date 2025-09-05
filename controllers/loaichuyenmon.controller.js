@@ -12,16 +12,7 @@ loaichuyenmonController.insertOne = catchAsync(async (req, res, next) => {
       "Thiếu trường LoaiChuyenMon",
       "Insert LoaiChuyenMon Error"
     );
-  const existed = await LoaiChuyenMon.findOne({
-    LoaiChuyenMon: LoaiChuyenMonValue,
-    isDeleted: false,
-  });
-  if (existed)
-    throw new AppError(
-      400,
-      "Đã tồn tại loại chuyên môn",
-      "Insert LoaiChuyenMon Error"
-    );
+  
   const newLoaiChuyenMon = await LoaiChuyenMon.create({
     LoaiChuyenMon: LoaiChuyenMonValue,
     TrinhDo,

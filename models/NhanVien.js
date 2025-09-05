@@ -8,6 +8,8 @@ const nhanvienSchema = Schema(
       required: false,
       ref: "LoaiChuyenMon",
     },
+     DaNghi: { type: Boolean, default: false},
+     LyDoNghi: { type: String, default: ""},
     TinChiBanDau: { type: Number, required: false, default: 0 },
     MaNhanVien: { type: String, require: true, unique: true },
 

@@ -64,6 +64,10 @@ router.use("/lopdaotaonhanvientam", lopdaotaonhanvientamApi);
 const lopdaotaonhanviendt06Api = require("./lopdaotaonhanviendt06.api");
 router.use("/lopdaotaonhanviendt06", lopdaotaonhanviendt06Api);
 
+// Loai Chuyen Mon
+const loaichuyenmonApi = require("./loaichuyenmon.api");
+router.use("/loaichuyenmon", loaichuyenmonApi);
+
 const logeventApi = require("./his/logevent.api");
 router.use("/logevent", logeventApi);
 

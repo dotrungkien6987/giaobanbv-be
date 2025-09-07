@@ -10,113 +10,116 @@ const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const nhanvienController = {};
 
-// Helper: build aggregated cơ cấu nguồn nhân lực (QuyDoi1/QuyDoi2 + CCHN stats)
+// Helper: build aggregated cơ cấu nguồn nhân lực (theo LoaiChuyenMon + CCHN)
 function buildCoCauNguonNhanLuc(nhanViens, dataFix) {
-  const mapping = new Map();
-  for (const td of dataFix.TrinhDoChuyenMon) {
-    mapping.set(td.TrinhDoChuyenMon, {
-      QuyDoi1: td.QuyDoi1 || null,
-      QuyDoi2: td.QuyDoi2 || null,
-    });
-  }
+  // Lọc bỏ những nhân viên đã nghỉ (DaNghi === true)
+  const activeNhanViens = (nhanViens || []).filter((nv) => !nv?.DaNghi);
 
-  const nhomQuyDoi1Set = new Set(
-    dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi1).filter(Boolean)
-  );
-  const nhomQuyDoi2Set = new Set(
-    dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi2).filter(Boolean)
-  );
-
-  const quyDoi1Counts = new Map();
-  const quyDoi2Counts = new Map();
-  for (const q of nhomQuyDoi1Set) quyDoi1Counts.set(q, 0);
-  for (const q of nhomQuyDoi2Set) quyDoi2Counts.set(q, 0);
-  let khac1 = 0;
-  let khac2 = 0;
-
-  for (const nv of nhanViens) {
-    const td = nv.TrinhDoChuyenMon || "";
-    const mapInfo = mapping.get(td);
-    if (mapInfo && mapInfo.QuyDoi1 && quyDoi1Counts.has(mapInfo.QuyDoi1)) {
-      quyDoi1Counts.set(
-        mapInfo.QuyDoi1,
-        quyDoi1Counts.get(mapInfo.QuyDoi1) + 1
-      );
-    } else {
-      khac1++;
-    }
-    if (mapInfo && mapInfo.QuyDoi2 && quyDoi2Counts.has(mapInfo.QuyDoi2)) {
-      quyDoi2Counts.set(
-        mapInfo.QuyDoi2,
-        quyDoi2Counts.get(mapInfo.QuyDoi2) + 1
-      );
-    } else {
-      khac2++;
-    }
-  }
-
-  const resultQuyDoi1 = [
-    ...Array.from(quyDoi1Counts.entries()).map(([label, value]) => ({
-      label,
-      value,
-    })),
-    { label: "Khác", value: khac1 },
-  ];
-  const resultQuyDoi2 = [
-    ...Array.from(quyDoi2Counts.entries()).map(([label, value]) => ({
-      label,
-      value,
-    })),
-    { label: "Khác", value: khac2 },
-  ];
-
-  const sortOrderQuyDoi1 = ["Bác sĩ", "Điều dưỡng", "Kỹ thuật viên", "Dược sĩ"];
-  const sortOrderQuyDoi2 = [
-    "PGS - Tiến sĩ y học",
-    "Tiến sĩ y học",
-    "Bác sĩ CKII",
-    "Bác sĩ CKI",
-    "Thạc sĩ bác sĩ",
-    "Bác sĩ nội trú",
-    "Bác sĩ",
-    "Điều dưỡng CKI",
-    "Điều dưỡng đại học",
-    "Điều dưỡng cao đẳng",
-    "Thạc sĩ khác",
-    "CKI khác",
-    "Kỹ sư",
-    "Cử nhân",
-  ];
-
-  const sortResult = (result, sortOrder) => {
-    const sorted = result.sort((a, b) => {
-      const ia = sortOrder.indexOf(a.label);
-      const ib = sortOrder.indexOf(b.label);
-      if (ia === -1 && ib === -1) return 0;
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    });
-    const khacIndex = sorted.findIndex((x) => x.label === "Khác");
-    if (khacIndex !== -1) sorted.push(sorted.splice(khacIndex, 1)[0]);
-    return sorted;
+  // Helper: lấy mã LoaiChuyenMon từ document (hỗ trợ trường hợp populated hoặc đã thêm trường LoaiChuyenMon)
+  const getLoaiCode = (nv) => {
+    if (!nv) return undefined;
+    if (nv.LoaiChuyenMon && typeof nv.LoaiChuyenMon === "string")
+      return nv.LoaiChuyenMon;
+    if (nv.LoaiChuyenMonID && typeof nv.LoaiChuyenMonID === "object")
+      return nv.LoaiChuyenMonID.LoaiChuyenMon;
+    return undefined;
   };
 
-  const sortedResultQuyDoi1 = sortResult(resultQuyDoi1, sortOrderQuyDoi1);
-  const sortedResultQuyDoi2 = sortResult(resultQuyDoi2, sortOrderQuyDoi2);
+  const loaiMap = {
+    BAC_SI: "Bác sĩ",
+    DUOC_SI: "Dược sĩ",
+    DIEU_DUONG: "Điều dưỡng",
+    KTV: "Kỹ thuật viên",
+    KHAC: "Khác",
+  };
 
-  const coChungChi = nhanViens.filter(
-    (nv) => nv.SoCCHN && nv.SoCCHN.trim() !== ""
+  // 1) cocauChung: đếm theo LoaiChuyenMon (theo 5 label cố định)
+  const cocauChungCounts = {
+    "Bác sĩ": 0,
+    "Dược sĩ": 0,
+    "Điều dưỡng": 0,
+    "Kỹ thuật viên": 0,
+    Khác: 0,
+  };
+
+  for (const nv of activeNhanViens) {
+    const code = getLoaiCode(nv);
+    const label = loaiMap[code] || "Khác";
+    cocauChungCounts[label] = (cocauChungCounts[label] || 0) + 1;
+  }
+
+  const cocauChung = Object.keys(cocauChungCounts).map((label) => ({
+    label,
+    value: cocauChungCounts[label],
+  }));
+
+  // 2) Hàm xây cocau cho từng nhóm LoaiChuyenMon theo TrinhDo (lấy từ LoaiChuyenMonID.TrinhDo)
+  const buildCocauTheoTrinhDo = (loaiCode) => {
+    const group = activeNhanViens.filter((nv) => getLoaiCode(nv) === loaiCode);
+    const map = new Map();
+    let khac = 0;
+    for (const nv of group) {
+      const trinh = (
+        (nv.LoaiChuyenMonID && typeof nv.LoaiChuyenMonID === "object"
+          ? nv.LoaiChuyenMonID.TrinhDo
+          : "") || ""
+      )
+        .toString()
+        .trim();
+      if (trinh) map.set(trinh, (map.get(trinh) || 0) + 1);
+      else khac++;
+    }
+    const arr = [...map.entries()].map(([label, value]) => ({ label, value }));
+    arr.push({ label: "Khác", value: khac });
+    return arr;
+  };
+
+  const cocauBacSi = buildCocauTheoTrinhDo("BAC_SI");
+  const cocauDuocSi = buildCocauTheoTrinhDo("DUOC_SI");
+  const cocauDieuDuong = buildCocauTheoTrinhDo("DIEU_DUONG");
+  const cocauKTV = buildCocauTheoTrinhDo("KTV");
+
+  // cocauKhac: những nhân viên không thuộc 4 mã trên
+  const otherCodes = new Set(["BAC_SI", "DUOC_SI", "DIEU_DUONG", "KTV"]);
+  const groupKhac = activeNhanViens.filter(
+    (nv) => !otherCodes.has(getLoaiCode(nv))
+  );
+  const mapKhac = new Map();
+  let khacCount = 0;
+  for (const nv of groupKhac) {
+    const trinh = (
+      (nv.LoaiChuyenMonID && typeof nv.LoaiChuyenMonID === "object"
+        ? nv.LoaiChuyenMonID.TrinhDo
+        : "") || ""
+    )
+      .toString()
+      .trim();
+    if (trinh) mapKhac.set(trinh, (mapKhac.get(trinh) || 0) + 1);
+    else khacCount++;
+  }
+  const cocauKhac = [...mapKhac.entries()].map(([label, value]) => ({
+    label,
+    value,
+  }));
+  cocauKhac.push({ label: "Khác", value: khacCount });
+
+  // 3) Thống kê chứng chỉ hành nghề (trên nhân viên active)
+  const coChungChi = activeNhanViens.filter(
+    (nv) => nv?.SoCCHN && nv.SoCCHN.toString().trim() !== ""
   ).length;
-  const khongChungChi = nhanViens.length - coChungChi;
+  const khongChungChi = activeNhanViens.length - coChungChi;
   const resultChungChiHanhNghe = [
     { label: "Có CCHN", value: coChungChi },
     { label: "Không có CCHN", value: khongChungChi },
   ];
 
   return {
-    resultQuyDoi1: sortedResultQuyDoi1,
-    resultQuyDoi2: sortedResultQuyDoi2,
+    cocauChung,
+    cocauBacSi,
+    cocauDuocSi,
+    cocauDieuDuong,
+    cocauKTV,
+    cocauKhac,
     resultChungChiHanhNghe,
   };
 }
@@ -353,7 +356,9 @@ nhanvienController.updateOneNhanVien = catchAsync(async (req, res, next) => {
     const id = nhanvienUpdate._id;
     nhanvienUpdate = await NhanVien.findByIdAndUpdate(id, nhanvien, {
       new: true,
-    }).populate("KhoaID").populate("LoaiChuyenMonID");
+    })
+      .populate("KhoaID")
+      .populate("LoaiChuyenMonID");
   }
   console.log("nhanvienupdate", nhanvienUpdate);
   return sendResponse(
@@ -905,9 +910,9 @@ nhanvienController.getCoCauNguonNhanLuc = catchAsync(async (req, res, next) => {
   if (!dataFix) {
     throw new AppError(404, "DataFix not found", "Get CoCauNguonNhanLuc error");
   }
-  const nhanViens = await NhanVien.find({ isDeleted: false }).select(
-    "TrinhDoChuyenMon SoCCHN"
-  );
+  const nhanViens = await NhanVien.find({ isDeleted: false })
+    .select("SoCCHN LoaiChuyenMonID DaNghi")
+    .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" });
   const data = buildCoCauNguonNhanLuc(nhanViens, dataFix);
   return sendResponse(
     res,
@@ -936,7 +941,9 @@ nhanvienController.getCoCauNguonNhanLucByKhoa = catchAsync(
     const nhanViens = await NhanVien.find({
       isDeleted: false,
       KhoaID: khoaID,
-    }).select("TrinhDoChuyenMon SoCCHN");
+    })
+      .select("SoCCHN LoaiChuyenMonID DaNghi")
+      .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" });
     const data = buildCoCauNguonNhanLuc(nhanViens, dataFix);
     return sendResponse(
       res,

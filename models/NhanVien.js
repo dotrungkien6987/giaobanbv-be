@@ -8,8 +8,9 @@ const nhanvienSchema = Schema(
       required: false,
       ref: "LoaiChuyenMon",
     },
-     DaNghi: { type: Boolean, default: false},
-     LyDoNghi: { type: String, default: ""},
+    // Cờ đánh dấu nhân viên đã nghỉ (không còn tính vào số liệu thống kê hoạt động)
+    DaNghi: { type: Boolean, default: false },
+    LyDoNghi: { type: String, default: "" },
     TinChiBanDau: { type: Number, required: false, default: 0 },
     MaNhanVien: { type: String, require: true, unique: true },
 
@@ -24,6 +25,7 @@ const nhanvienSchema = Schema(
     SoCCHN: { type: String, default: "" },
     NgayCapCCHN: { type: Date, require: false },
     PhamViHanhNghe: { type: String, default: "" },
+    PhamViHanhNgheBoSung: { type: String, default: "" },
     ChucDanh: { type: String, default: "" },
     ChucVu: { type: String, default: "" },
 
@@ -39,5 +41,15 @@ const nhanvienSchema = Schema(
   },
   { timestamps: true }
 );
+
+// Indexes hỗ trợ các truy vấn thống kê / lọc thường xuyên
+nhanvienSchema.index({ LoaiChuyenMonID: 1 });
+nhanvienSchema.index({ KhoaID: 1, DaNghi: 1 });
+nhanvienSchema.index({ DaNghi: 1, isDeleted: 1 });
+
+// Helper truy vấn nhân viên đang làm việc (active)
+nhanvienSchema.statics.findDangLamViec = function (filter = {}) {
+  return this.find({ isDeleted: false, DaNghi: false, ...filter });
+};
 const NhanVien = mongosee.model("NhanVien", nhanvienSchema);
 module.exports = NhanVien;

@@ -1289,7 +1289,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
         ...nhanVienData,
         Dat: KhuyenCao
           ? nhanVienData.totalSoTinChiTichLuy >= Number(KhuyenCao)
-          : false, // Xử lý logic Dat
+          : false, // Xử lý logic DatDeEEEEE
       };
     });
 
@@ -1320,6 +1320,81 @@ nhanvienController.getOneByNhanVienID = catchAsync(async (req, res, next) => {
     nhanvien,
     null,
     "Get NhanVien successful"
+  );
+});
+
+// Lấy danh sách nhân viên đã xóa mềm (isDeleted = true)
+nhanvienController.getNhanViensDeleted = catchAsync(async (req, res, next) => {
+  let { page, limit, ...filter } = { ...req.query };
+  page = parseInt(page) || 1;
+  limit = parseInt(limit) || 2000;
+
+  const filterConditions = [{ isDeleted: true }];
+
+  const filterCriteria = filterConditions.length
+    ? { $and: filterConditions }
+    : {};
+
+  const count = await NhanVien.countDocuments(filterCriteria);
+  const totalPages = Math.ceil(count / limit);
+  const offset = limit * (page - 1);
+
+  let nhanviens = await NhanVien.find(filterCriteria)
+    .populate("KhoaID")
+    .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" })
+    .sort({ updatedAt: -1 }) // Sắp xếp theo thời gian xóa gần nhất
+    .skip(offset)
+    .limit(limit)
+    .lean();
+
+  // Flatten helper fields
+  nhanviens = nhanviens.map((nv) => ({
+    ...nv,
+    LoaiChuyenMon:
+      nv.LoaiChuyenMon || nv.LoaiChuyenMonID?.LoaiChuyenMon || undefined,
+    TrinhDo: nv.TrinhDo || nv.LoaiChuyenMonID?.TrinhDo || undefined,
+  }));
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { nhanviens, totalPages, count },
+    null,
+    "Lấy danh sách nhân viên đã xóa thành công"
+  );
+});
+
+// Phục hồi nhân viên đã xóa mềm (update isDeleted = false)
+nhanvienController.restoreNhanVien = catchAsync(async (req, res, next) => {
+  const nhanvienID = req.params.nhanvienID;
+
+  const nhanvien = await NhanVien.findOneAndUpdate(
+    {
+      _id: nhanvienID,
+      isDeleted: true, // Chỉ phục hồi những nhân viên đã bị xóa
+    },
+    { isDeleted: false },
+    { new: true }
+  )
+    .populate("KhoaID")
+    .populate("LoaiChuyenMonID");
+
+  if (!nhanvien) {
+    throw new AppError(
+      404,
+      "Nhân viên không tồn tại hoặc chưa bị xóa",
+      "Not Found"
+    );
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    nhanvien,
+    null,
+    "Phục hồi nhân viên thành công"
   );
 });
 

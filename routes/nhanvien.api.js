@@ -82,13 +82,15 @@ router.get(
   nhanvienController.getCoCauNguonNhanLucByKhoa
 );
 
+/**
+ * @route GET /nhanvien/deleted
+ * @description Get all deleted nhanvien (isDeleted = true)
+ * @access  login require,
+ */
 router.get(
-  "/:nhanvienID",
+  "/deleted",
   authentication.loginRequired,
-  validators.validate([
-    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
-  ]),
-  nhanvienController.getById
+  nhanvienController.getNhanViensDeleted
 );
 
 /**
@@ -104,6 +106,30 @@ router.get(
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
   ]),
   nhanvienController.getOneByNhanVienID
+);
+
+router.get(
+  "/:nhanvienID",
+  authentication.loginRequired,
+  validators.validate([
+    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
+  ]),
+  nhanvienController.getById
+);
+
+/**
+ * @route PATCH /nhanvien/:nhanvienID/restore
+ * @description Restore a soft-deleted nhanvien (set isDeleted = false)
+ * @params {nhanvienID}
+ * @access  login require,
+ */
+router.patch(
+  "/:nhanvienID/restore",
+  authentication.loginRequired,
+  validators.validate([
+    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
+  ]),
+  nhanvienController.restoreNhanVien
 );
 
 /**

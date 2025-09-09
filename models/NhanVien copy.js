@@ -1,0 +1,40 @@
+const mongosee = require("mongoose");
+const Schema = mongosee.Schema;
+const tapsanSchema = Schema(
+  {
+    
+    DaNghi: { type: Boolean, default: false },
+    LyDoNghi: { type: String, default: "" },
+    TinChiBanDau: { type: Number, required: false, default: 0 },
+    MaNhanVien: { type: String, require: true, unique: true },
+
+    Ten: { type: String, required: true },
+    NgaySinh: { type: Date, require: true },
+    Loai: {
+      type: Number,
+      enum: [0, 1, 2],
+    },
+    TrinhDoChuyenMon: { type: String, default: "" },
+    DanToc: { type: String, default: "" },
+    SoCCHN: { type: String, default: "" },
+    NgayCapCCHN: { type: Date, require: false },
+    PhamViHanhNghe: { type: String, default: "" },
+    PhamViHanhNgheBoSung: { type: String, default: "" },
+    ChucDanh: { type: String, default: "" },
+    ChucVu: { type: String, default: "" },
+
+    CMND: { type: String, default: "" },
+    SoDienThoai: { type: String, default: "" },
+    Email: { type: String, default: "" },
+    GioiTinh: {
+      type: Number,
+      enum: [0, 1],
+    },
+    Images: { type: [String], default: [] },
+    isDeleted: { type: Boolean, default: false, select: false },
+  },
+  { timestamps: true }
+);
+
+const TapSan = mongosee.model("TapSan", tapsanSchema);
+module.exports = TapSan;

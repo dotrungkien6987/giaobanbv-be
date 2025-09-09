@@ -2,8 +2,15 @@ const path = require("path");
 
 const MB = 1024 * 1024;
 
+const uploadRoot =
+  process.env.WM_UPLOAD_ROOT ||
+  process.env.UPLOAD_DIR ||
+  path.join(process.cwd(), "uploads");
+
 const config = {
-  UPLOAD_DIR: process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads"),
+  // Keep legacy name for compatibility; prefer UPLOAD_ROOT in new code
+  UPLOAD_DIR: uploadRoot,
+  UPLOAD_ROOT: uploadRoot,
   MAX_FILE_SIZE:
     (parseInt(process.env.MAX_FILE_SIZE_MB || "50", 10) || 50) * MB,
   MAX_TOTAL_UPLOAD:
@@ -20,4 +27,17 @@ const config = {
     "true",
 };
 
-module.exports = config;
+// Resolve a relative path (stored in DB) to absolute path under UPLOAD_DIR.
+// If input is already absolute, return as-is. Includes basic traversal guard.
+function toAbs(relOrAbs) {
+  const root = path.resolve(config.UPLOAD_ROOT || config.UPLOAD_DIR);
+  if (!relOrAbs) return root;
+  if (path.isAbsolute(relOrAbs)) return relOrAbs;
+  const abs = path.resolve(root, relOrAbs);
+  if (!abs.startsWith(root)) {
+    throw new Error("Invalid file path");
+  }
+  return abs;
+}
+
+module.exports = { ...config, toAbs };

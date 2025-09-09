@@ -86,12 +86,27 @@ service.uploadForTask = async (
     const tenGocUtf8 = decodeOriginalNameToUtf8(
       f.originalnameUtf8 || f.originalname
     );
+    // Determine a relative storage path under UPLOAD_DIR
+    let relPath;
+    try {
+      const root = path.resolve(config.UPLOAD_DIR);
+      const abs = path.resolve(f.path);
+      const candidate = path.relative(root, abs);
+      relPath =
+        candidate && !candidate.startsWith("..")
+          ? candidate
+          : f.filename || path.basename(abs);
+    } catch {
+      relPath = f.filename || path.basename(f.path);
+    }
+
     let doc = await TepTin.create({
       TenFile: path.basename(f.filename || f.path),
       TenGoc: (tenGocUtf8 || "file").trim(),
       LoaiFile: f.mimetype,
       KichThuoc: f.size,
-      DuongDan: f.path,
+      // Store RELATIVE path for portability; old records may contain absolute
+      DuongDan: relPath,
       CongViecID: toObjectId(congViecId),
       BinhLuanID: binhLuanId ? toObjectId(binhLuanId) : undefined,
       NguoiTaiLenID: toObjectId(nhanVienId),
@@ -235,7 +250,9 @@ service.streamInline = async (fileId, req, res) => {
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
   await assertAccess(doc.CongViecID, req);
-  const filePath = doc.DuongDan;
+  const filePath = path.isAbsolute(doc.DuongDan)
+    ? doc.DuongDan
+    : config.toAbs(doc.DuongDan);
   const ctype =
     mime.lookup(doc.TenGoc) || doc.LoaiFile || "application/octet-stream";
   res.setHeader("Content-Type", ctype);
@@ -259,7 +276,9 @@ service.streamDownload = async (fileId, req, res) => {
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
   await assertAccess(doc.CongViecID, req);
-  const filePath = doc.DuongDan;
+  const filePath = path.isAbsolute(doc.DuongDan)
+    ? doc.DuongDan
+    : config.toAbs(doc.DuongDan);
   const ctype =
     mime.lookup(doc.TenGoc) || doc.LoaiFile || "application/octet-stream";
   res.setHeader("Content-Type", ctype);

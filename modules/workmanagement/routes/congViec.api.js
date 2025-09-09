@@ -70,9 +70,26 @@ router.get(
 // Danh sách nhiệm vụ thường quy của chính nhân viên đăng nhập
 router.get("/nhiemvuthuongquy/my", async (req, res, next) => {
   try {
-    const nhanVienId = req.nhanVienId; // set by authentication middleware
+    let nhanVienId = req.nhanVienId; // legacy: set by old authentication middleware (now removed)
+    // Fallback: resolve NhanVienID from current user if not provided by middleware
+    if (!nhanVienId && req.userId) {
+      try {
+        const User = require("../../../models/User");
+        const user = await User.findById(req.userId)
+          .select("NhanVienID")
+          .lean();
+        nhanVienId = user?.NhanVienID;
+      } catch (e) {
+        // ignore resolve errors and continue with empty result below
+      }
+    }
+
+    // If still no nhanVienId, return empty list to avoid blocking UI
+    if (!nhanVienId) {
+      return res.json({ success: true, data: [] });
+    }
+
     const data = await congViecService.getMyRoutineTasks(nhanVienId);
-    console.log("Routine tasks:", data);
     return res.json({ success: true, data });
   } catch (err) {
     next(err);

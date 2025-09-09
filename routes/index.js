@@ -106,4 +106,12 @@ router.use("/workmanagement", workManagementApi);
 const backupApi = require("./backup.api");
 router.use("/backup", backupApi);
 
+// Generic attachments API
+const attachmentsApi = require("./attachments.api");
+router.use("/attachments", attachmentsApi);
+
+// TapSan CRUD API
+const tapsanApi = require("./tapsan.api");
+router.use("/tapsan", tapsanApi);
+
 module.exports = router;

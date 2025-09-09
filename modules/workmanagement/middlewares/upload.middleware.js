@@ -41,12 +41,32 @@ function isMimeAllowed(mime) {
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     try {
-      const congViecId =
-        req.params.congViecId || req.params.id || req.body.CongViecID;
-      const binhLuanId = req.params.binhLuanId || req.body.BinhLuanID || null;
       const now = new Date();
       const yyyy = String(now.getFullYear());
       const mm = String(now.getMonth() + 1).padStart(2, "0");
+
+      // Generic attachments path if ownerType/ownerId present
+      const { ownerType, ownerId } = req.params || {};
+      const field =
+        req.params && (req.params.field || req.query?.field || req.body?.field);
+      if (ownerType && ownerId) {
+        const dest = path.join(
+          config.UPLOAD_DIR,
+          "attachments",
+          String(ownerType).toLowerCase(),
+          String(ownerId),
+          String(field || "default").toLowerCase(),
+          yyyy,
+          mm
+        );
+        await fs.ensureDir(dest);
+        return cb(null, dest);
+      }
+
+      // Legacy workmanagement task/comment destinations (unchanged)
+      const congViecId =
+        req.params.congViecId || req.params.id || req.body.CongViecID;
+      const binhLuanId = req.params.binhLuanId || req.body.BinhLuanID || null;
       let dest = path.join(
         config.UPLOAD_DIR,
         "congviec",

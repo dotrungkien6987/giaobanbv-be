@@ -28,6 +28,23 @@ const tepTinSchema = Schema(
       required: true,
       maxlength: 500,
     },
+    // Generic owner-based linking for attachments across entities
+    OwnerType: {
+      type: String,
+      maxlength: 100,
+      default: null,
+    },
+    OwnerID: {
+      // Store as string for flexibility across modules (can be ObjectId hex or other IDs)
+      type: String,
+      maxlength: 100,
+      default: null,
+    },
+    OwnerField: {
+      type: String,
+      maxlength: 100,
+      default: "default",
+    },
     CongViecID: {
       type: Schema.ObjectId,
       ref: "CongViec",
@@ -73,6 +90,15 @@ tepTinSchema.index({ NguoiTaiLenID: 1 });
 tepTinSchema.index({ NgayTaiLen: -1 });
 tepTinSchema.index({ TrangThai: 1 });
 tepTinSchema.index({ BinhLuanID: 1 });
+// Indexes for generic owner attachments queries
+tepTinSchema.index({ OwnerType: 1, OwnerID: 1 });
+tepTinSchema.index({
+  OwnerType: 1,
+  OwnerID: 1,
+  OwnerField: 1,
+  TrangThai: 1,
+  NgayTaiLen: -1,
+});
 // Tối ưu phổ biến: lọc theo công việc + trạng thái + sort thời gian
 tepTinSchema.index({ CongViecID: 1, TrangThai: 1, NgayTaiLen: -1 });
 

@@ -17,6 +17,7 @@ const lopdaotaoSchema = Schema(
     NguonKinhPhi: { type: String, default: "" },
     HinhThucDaoTao: { type: String, default: "" },
     TenTapChi: { type: String, default: "" },
+    SoTapChi: { type: String, default: "" },
     GhiChu: { type: String, default: "" },
     SoLuong: { type: Number, default: 1 },
     SoThanhVien: { type: Number, default: 0 },

@@ -1,5 +1,7 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const DashBoard = require("../models/DashBoard");
+const LopDaoTao = require("../models/LopDaoTao");
+const HinhThucCapNhat = require("../models/HinhThucCapNhat");
 
 const dashboardController = {};
 const moment = require("moment-timezone");
@@ -257,7 +259,7 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
     const chisoKhoa = {};
 
     dashboard[0].ChiSoDashBoard.forEach((item) => {
-      const chiSoJson = item.Value!=="null"?JSON.parse(item.Value):[]; // Chuyển đổi từ chuỗi JSON thành đối tượng
+      const chiSoJson = item.Value !== "null" ? JSON.parse(item.Value) : []; // Chuyển đổi từ chuỗi JSON thành đối tượng
       const chiSoTheoKhoaid = chiSoJson.filter(
         (item) => item.khoaid === parseInt(KhoaID, 10) // Lọc theo khoaid
       );
@@ -318,3 +320,94 @@ dashboardController.deleteByNgay = catchAsync(async (req, res, next) => {
 });
 
 module.exports = dashboardController;
+// Đếm số lớp đào tạo theo năm và mã hình thức cập nhật
+dashboardController.getLopDaoTaoCountByYear = catchAsync(
+  async (req, res, next) => {
+    const tz = req.query.tz || "Asia/Ho_Chi_Minh";
+    const toInt = (v, def = null) => {
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : def;
+    };
+    const fromYear = toInt(req.query.fromYear, null);
+    const toYear = toInt(req.query.toYear, null);
+    const onlyCompleted = String(req.query.onlyCompleted ?? "false") === "true";
+    const includeMeta = String(req.query.includeMeta ?? "true") === "true";
+
+    const match = { isDeleted: false };
+    if (onlyCompleted) match.TrangThai = true;
+
+    const pipeline = [
+      { $match: match },
+      {
+        $addFields: {
+          eventDate: {
+            $ifNull: [
+              "$NgayKetThuc",
+              { $ifNull: ["$NgayBatDau", "$createdAt"] },
+            ],
+          },
+        },
+      },
+    ];
+
+    if (fromYear || toYear) {
+      const range = {};
+      if (fromYear) range.$gte = new Date(Date.UTC(fromYear, 0, 1, 0, 0, 0, 0));
+      if (toYear)
+        range.$lte = new Date(Date.UTC(toYear, 11, 31, 23, 59, 59, 999));
+      pipeline.push({ $match: { eventDate: range } });
+    }
+
+    pipeline.push(
+      {
+        $addFields: {
+          yearStr: {
+            $dateToString: { date: "$eventDate", format: "%Y", timezone: tz },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { Ma: "$MaHinhThucCapNhat", year: "$yearStr" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          MaHinhThucCapNhat: "$_id.Ma",
+          year: { $toInt: "$_id.year" },
+          count: 1,
+        },
+      },
+      { $sort: { year: 1, MaHinhThucCapNhat: 1 } }
+    );
+
+    let data = await LopDaoTao.aggregate(pipeline);
+
+    if (includeMeta && data.length) {
+      const maSet = [...new Set(data.map((d) => d.MaHinhThucCapNhat))];
+      const meta = await HinhThucCapNhat.find(
+        { Ma: { $in: maSet } },
+        { Ma: 1, Ten: 1, TenBenhVien: 1, MaNhomHinhThucCapNhat: 1, Loai: 1 }
+      ).lean();
+      const metaByMa = Object.fromEntries(meta.map((m) => [m.Ma, m]));
+      data = data.map((d) => ({
+        ...d,
+        Ten: metaByMa[d.MaHinhThucCapNhat]?.Ten || "",
+        TenBenhVien: metaByMa[d.MaHinhThucCapNhat]?.TenBenhVien || "",
+        Nhom: metaByMa[d.MaHinhThucCapNhat]?.MaNhomHinhThucCapNhat || "",
+        Loai: metaByMa[d.MaHinhThucCapNhat]?.Loai || "",
+      }));
+    }
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      { data, filters: { fromYear, toYear, onlyCompleted, tz } },
+      null,
+      "Thống kê số lớp theo năm và mã hình thức thành công"
+    );
+  }
+);

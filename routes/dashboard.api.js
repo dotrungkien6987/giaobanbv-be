@@ -24,20 +24,24 @@ router.get(
   dashboardController.getOneNewestByNgayKhoa
 );
 
-
 router.get(
   "/all",
   authentication.loginRequired,
   dashboardController.getAllByNgay
 );
 
+// GET /api/dashboard/lopdaotao-by-year
+router.get(
+  "/lopdaotao-by-year",
+  authentication.loginRequired,
+  dashboardController.getLopDaoTaoCountByYear
+);
 
 router.delete(
   "/delbyngay",
-  authentication.loginRequired,authentication.adminRequired,
+  authentication.loginRequired,
+  authentication.adminRequired,
   dashboardController.deleteByNgay
 );
 
-
 module.exports = router;
-

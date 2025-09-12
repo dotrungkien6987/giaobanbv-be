@@ -188,63 +188,69 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
   const tinChiTichLuys = {};
   const hinhThuCapNhatMap = new Map(); // Map để lưu trữ thông tin HinhThucCapNhat
 
-  // Tính tổng số tín chỉ tích lũy cho mỗi năm
+  // Prefetch toàn bộ HinhThucCapNhat theo danh sách mã xuất hiện (giảm N truy vấn)
+  const maSet = new Set();
+  const collectMa = (list) => {
+    for (const item of list || []) {
+      const ma = item?.LopDaoTaoID?.MaHinhThucCapNhat;
+      if (ma) maSet.add(ma);
+    }
+  };
+  collectMa(daotaos);
+  collectMa(daotaosDT06);
+  const maArray = Array.from(maSet);
+  const hinhThucDocs = maArray.length
+    ? await HinhThucCapNhat.find({ Ma: { $in: maArray } }).lean()
+    : [];
+  const hinhThucByMa = new Map(hinhThucDocs.map((d) => [d.Ma, d]));
+
+  // Tính tổng số tín chỉ tích lũy cho mỗi năm (dùng dữ liệu đã prefetch và có guard null)
   const calculateTinChiTichLuy = async (daotaosList) => {
     for (const daoTao of daotaosList) {
-      if (daoTao.LopDaoTaoID && daoTao.LopDaoTaoID.MaHinhThucCapNhat) {
-        const loai = await getLoai(daoTao.LopDaoTaoID.MaHinhThucCapNhat);
-        const lopDaoTaoInfo = {
-          ...daoTao.LopDaoTaoID.toObject(),
-          VaiTro: daoTao.VaiTro,
-          SoTinChiTichLuy: daoTao.SoTinChiTichLuy,
-          Images: daoTao.Images,
-          LopDaoTaoNhanVienID: daoTao._id,
-          TenHinhThucCapNhat: loai.TenBenhVien,
-        };
+      const lop = daoTao?.LopDaoTaoID;
+      const ma = lop?.MaHinhThucCapNhat;
+      if (!lop || !ma) continue;
 
-        if (loai.Loai === "Đào tạo") {
-          daotaosFiltered.push(lopDaoTaoInfo);
-        } else if (loai.Loai === "Nghiên cứu khoa học") {
-          nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
-        }
-        // Trường hợp lop dao tao là ĐT06
-        if (daoTao.LopDaoTaoID.MaHinhThucCapNhat.startsWith("ĐT06")) {
-          const year = new Date(daoTao.DenNgay).getFullYear();
+      const loaiDoc = hinhThucByMa.get(ma) || null;
+      const tenHinhThuc = loaiDoc?.TenBenhVien || "";
+      const lopDaoTaoInfo = {
+        ...lop.toObject(),
+        VaiTro: daoTao.VaiTro,
+        SoTinChiTichLuy: daoTao.SoTinChiTichLuy,
+        Images: daoTao.Images,
+        LopDaoTaoNhanVienID: daoTao._id,
+        TenHinhThucCapNhat: tenHinhThuc,
+      };
 
-          if (!tinChiTichLuys[year]) {
-            tinChiTichLuys[year] = 0;
-          }
+      // Phân loại: nếu thiếu thông tin, mặc định vào 'Đào tạo' để giữ cấu trúc cũ
+      if (loaiDoc?.Loai === "Nghiên cứu khoa học")
+        nghiencuukhoahocsFiltered.push(lopDaoTaoInfo);
+      else daotaosFiltered.push(lopDaoTaoInfo);
+
+      // Cộng tín chỉ theo năm
+      if (ma.startsWith("ĐT06")) {
+        const year = daoTao.DenNgay
+          ? new Date(daoTao.DenNgay).getFullYear()
+          : null;
+        if (year !== null) {
+          if (!tinChiTichLuys[year]) tinChiTichLuys[year] = 0;
           tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
         }
-        // Trường hợp không là ĐT06
-        else if (daoTao.LopDaoTaoID.TrangThai) {
-          const year = new Date(daoTao.LopDaoTaoID.NgayKetThuc).getFullYear();
-          if (!tinChiTichLuys[year]) {
-            tinChiTichLuys[year] = 0;
-          }
-          tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
-        }
-
-        // Tính toán thông tin HinhThucCapNhat
-        if (!hinhThuCapNhatMap.has(daoTao.LopDaoTaoID.MaHinhThucCapNhat)) {
-          const hinhThucCapNhatInfo = await HinhThucCapNhat.findOne({
-            Ma: daoTao.LopDaoTaoID.MaHinhThucCapNhat,
-          });
-          if (hinhThucCapNhatInfo) {
-            hinhThuCapNhatMap.set(daoTao.LopDaoTaoID.MaHinhThucCapNhat, {
-              ma: hinhThucCapNhatInfo.Ma,
-              label: hinhThucCapNhatInfo.TenBenhVien,
-              value: 0,
-            });
-          }
-        }
-        if (hinhThuCapNhatMap.has(daoTao.LopDaoTaoID.MaHinhThucCapNhat)) {
-          const hinhThucCapNhatData = hinhThuCapNhatMap.get(
-            daoTao.LopDaoTaoID.MaHinhThucCapNhat
-          );
-          hinhThucCapNhatData.value += 1;
-        }
+      } else if (lop.TrangThai && lop.NgayKetThuc) {
+        const year = new Date(lop.NgayKetThuc).getFullYear();
+        if (!tinChiTichLuys[year]) tinChiTichLuys[year] = 0;
+        tinChiTichLuys[year] += daoTao.SoTinChiTichLuy;
       }
+
+      // Đếm số lần theo mã hình thức cập nhật (giữ cấu trúc {ma,label,value})
+      if (!hinhThuCapNhatMap.has(ma)) {
+        hinhThuCapNhatMap.set(ma, {
+          ma,
+          label: loaiDoc?.TenBenhVien || "",
+          value: 0,
+        });
+      }
+      hinhThuCapNhatMap.get(ma).value += 1;
     }
   };
 
@@ -476,6 +482,7 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
       })
       .populate({
         path: "NhanVienID",
+        match: { DaNghi: false },
         populate: { path: "KhoaID" },
       });
 
@@ -547,6 +554,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyCu = catchAsync(
       })
       .populate({
         path: "NhanVienID",
+        match: { DaNghi: false },
         populate: { path: "KhoaID" },
       });
 
@@ -586,6 +594,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyCu = catchAsync(
       })
       .populate({
         path: "NhanVienID",
+        match: { DaNghi: false },
         populate: { path: "KhoaID" },
       });
 
@@ -606,9 +615,10 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyCu = catchAsync(
     }
 
     // Lấy tất cả các nhân viên không bị xóa
-    const allNhanVien = await NhanVien.find({ isDeleted: false }).populate(
-      "KhoaID"
-    );
+    const allNhanVien = await NhanVien.find({
+      isDeleted: false,
+      DaNghi: false,
+    }).populate("KhoaID");
 
     // Thêm những nhân viên không có trong lopDaoTaoNhanVienList và lopDaoTaoNhanVienDT06List vào kết quả với totalSoTinChiTichLuy = 0
     for (const nhanVien of allNhanVien) {
@@ -676,7 +686,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
       })
       .populate({
         path: "NhanVienID",
-        match: { KhoaID: khoaID }, // Chỉ lấy những nhân viên thuộc khoaID
+        match: { KhoaID: khoaID, DaNghi: false }, // Chỉ lấy nhân viên thuộc khoaID và chưa nghỉ
         populate: { path: "KhoaID" },
       });
 
@@ -715,7 +725,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
       })
       .populate({
         path: "NhanVienID",
-        match: { KhoaID: khoaID }, // Chỉ lấy những nhân viên thuộc khoaID
+        match: { KhoaID: khoaID, DaNghi: false }, // Chỉ lấy nhân viên thuộc khoaID và chưa nghỉ
         populate: { path: "KhoaID" },
       });
 
@@ -738,6 +748,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
     // Lấy tất cả các nhân viên không bị xóa và thuộc khoaID
     const allNhanVien = await NhanVien.find({
       isDeleted: false,
+      DaNghi: false,
       KhoaID: khoaID,
     }).populate("KhoaID");
 
@@ -854,8 +865,8 @@ nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
       ),
     ];
 
-    // Lấy toàn bộ danh sách NhanVien
-    const nhanViens = await NhanVien.find({ isDeleted: false });
+    // Lấy toàn bộ danh sách NhanVien (loại nhân viên đã nghỉ)
+    const nhanViens = await NhanVien.find({ isDeleted: false, DaNghi: false });
 
     // Nhóm lại theo QuyDoi1 với nhóm 'Khác' nếu không ánh xạ được
     const resultQuyDoi1 = nhomQuyDoi1.map((quyDoi1) => {
@@ -982,6 +993,8 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       if (!nvDoc) return;
       // isDeleted bị select:false trong schema, đảm bảo không lấy nhân viên đã xóa bằng match ở populate/find
       if (nvDoc.isDeleted) return;
+      // Bỏ qua nhân viên đã nghỉ để không thống kê nhầm
+      if (nvDoc.DaNghi) return;
       const key = nvDoc._id.toString();
       if (!nhanVienMap.has(key)) {
         nhanVienMap.set(key, {
@@ -1007,8 +1020,8 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       })
       .populate({
         path: "NhanVienID",
-        match: { isDeleted: false },
-        select: "KhoaID SoCCHN isDeleted",
+        match: { isDeleted: false, DaNghi: false },
+        select: "KhoaID SoCCHN isDeleted DaNghi",
         populate: { path: "KhoaID" },
       });
 
@@ -1029,8 +1042,8 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       })
       .populate({
         path: "NhanVienID",
-        match: { isDeleted: false },
-        select: "KhoaID SoCCHN isDeleted",
+        match: { isDeleted: false, DaNghi: false },
+        select: "KhoaID SoCCHN isDeleted DaNghi",
         populate: { path: "KhoaID" },
       });
 
@@ -1041,8 +1054,8 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     }
 
     // 3. Bổ sung toàn bộ nhân viên active (đảm bảo không bỏ sót)
-    const allNhanVien = await NhanVien.find({ isDeleted: false })
-      .select("KhoaID SoCCHN isDeleted")
+    const allNhanVien = await NhanVien.find({ isDeleted: false, DaNghi: false })
+      .select("KhoaID SoCCHN isDeleted DaNghi")
       .populate("KhoaID");
     for (const nv of allNhanVien) pushOrAccumulate(nv, 0);
 
@@ -1184,6 +1197,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
       })
       .populate({
         path: "NhanVienID",
+        match: { DaNghi: false },
         populate: { path: "KhoaID" },
       });
 
@@ -1233,6 +1247,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
       })
       .populate({
         path: "NhanVienID",
+        match: { DaNghi: false },
         populate: { path: "KhoaID" },
       });
 
@@ -1265,9 +1280,10 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
     }
 
     // Lấy tất cả các nhân viên không bị xóa
-    const allNhanVien = await NhanVien.find({ isDeleted: false }).populate(
-      "KhoaID"
-    );
+    const allNhanVien = await NhanVien.find({
+      isDeleted: false,
+      DaNghi: false,
+    }).populate("KhoaID");
 
     // Thêm những nhân viên không có trong danh sách vào kết quả với totalSoTinChiTichLuy = 0
     for (const nhanVien of allNhanVien) {

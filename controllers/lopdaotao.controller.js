@@ -104,12 +104,14 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
       });
   }
 
-  let lopdaotaonhanvienDT06 = await LopDaoTaoNhanVienDT06.find({LopDaoTaoID: lopdaotaoID})  
+  let lopdaotaonhanvienDT06 = await LopDaoTaoNhanVienDT06.find({
+    LopDaoTaoID: lopdaotaoID,
+  });
   return sendResponse(
     res,
     200,
     true,
-    { lopdaotao, lopdaotaonhanvien,lopdaotaonhanvienDT06 },
+    { lopdaotao, lopdaotaonhanvien, lopdaotaonhanvienDT06 },
     null,
     "Get lopdaotao successful"
   );
@@ -125,6 +127,18 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
 
     const filterConditions = [{ isDeleted: false }];
 
+    // Support filtering by type or MaHinhThucCapNhat directly from query
+    const rawCode = req.query.type || req.query.MaHinhThucCapNhat;
+    if (rawCode && typeof rawCode === "string") {
+      // Normalize first-letter D/Đ variations for robustness
+      const variants = [rawCode];
+      if (rawCode.startsWith("D")) variants.push("Đ" + rawCode.slice(1));
+      if (rawCode.startsWith("Đ")) variants.push("D" + rawCode.slice(1));
+      filterConditions.push({
+        MaHinhThucCapNhat: { $in: Array.from(new Set(variants)) },
+      });
+    }
+
     const filterCriteria = filterConditions.length
       ? { $and: filterConditions }
       : {};
@@ -135,7 +149,7 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
 
     console.log("filter", filterConditions);
     let lopdaotaos = await LopDaoTao.find(filterCriteria)
-    .populate("UserIDCreated")
+      .populate("UserIDCreated")
       .sort({ createdAt: -1 })
       .skip(offset)
       .limit(limit);
@@ -144,36 +158,41 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
 
     const hinhthuccapnhats = await HinhThucCapNhat.find();
 
-    lopdaotaos = await Promise.all(lopdaotaos.map(async (lopdaotao) => {
-      const hinhthuccapnhat = hinhthuccapnhats.find(
-        (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
-      );
-      const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
-        (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
-      );
+    lopdaotaos = await Promise.all(
+      lopdaotaos.map(async (lopdaotao) => {
+        const hinhthuccapnhat = hinhthuccapnhats.find(
+          (hinhthuccapnhat) =>
+            hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+        );
+        const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
+          (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+        );
 
-      // Kiểm tra nếu MaHinhThucCapNhat bắt đầu bằng "ĐT06"
-      let canBoThamGia = null;
-      if (lopdaotao.MaHinhThucCapNhat.startsWith("ĐT06")) {
-        // Tìm bản ghi LopDaoTaoNhanVien theo LopDaoTaoID
-        const lopDaoTaoNhanVien = await LopDaoTaoNhanVien.findOne({ LopDaoTaoID: lopdaotao._id }).populate('NhanVienID');
-        if (lopDaoTaoNhanVien) {
-          const nhanvien = lopDaoTaoNhanVien.NhanVienID;
-          if (nhanvien) {
-            // Lấy thông tin TrinhDoChuyenMon và Ten của NhanVien
-            canBoThamGia = `${nhanvien.TrinhDoChuyenMon} - ${nhanvien.Ten}`;
+        // Kiểm tra nếu MaHinhThucCapNhat bắt đầu bằng "ĐT06"
+        let canBoThamGia = null;
+        if (lopdaotao.MaHinhThucCapNhat.startsWith("ĐT06")) {
+          // Tìm bản ghi LopDaoTaoNhanVien theo LopDaoTaoID
+          const lopDaoTaoNhanVien = await LopDaoTaoNhanVien.findOne({
+            LopDaoTaoID: lopdaotao._id,
+          }).populate("NhanVienID");
+          if (lopDaoTaoNhanVien) {
+            const nhanvien = lopDaoTaoNhanVien.NhanVienID;
+            if (nhanvien) {
+              // Lấy thông tin TrinhDoChuyenMon và Ten của NhanVien
+              canBoThamGia = `${nhanvien.TrinhDoChuyenMon} - ${nhanvien.Ten}`;
+            }
           }
         }
-      }
 
-      return {
-        ...lopdaotao.toObject(),
-        TenHinhThucCapNhat: hinhthuccapnhat.TenBenhVien,
-        MaNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ma,
-        TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
-        CanBoThamGia: canBoThamGia || "", // Nếu không có NhanVien, ghi ""
-      };
-    }));
+        return {
+          ...lopdaotao.toObject(),
+          TenHinhThucCapNhat: hinhthuccapnhat.TenBenhVien,
+          MaNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ma,
+          TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
+          CanBoThamGia: canBoThamGia || "", // Nếu không có NhanVien, ghi ""
+        };
+      })
+    );
 
     return sendResponse(
       res,
@@ -205,7 +224,7 @@ lopdaotaoController.getlopdaotaosPhanTrang1 = catchAsync(
 
     console.log("filter", filterConditions);
     let lopdaotaos = await LopDaoTao.find(filterCriteria)
-    .populate("UserIDCreated")
+      .populate("UserIDCreated")
       .sort({ createdAt: -1 })
       .skip(offset)
       .limit(limit);
@@ -221,7 +240,7 @@ lopdaotaoController.getlopdaotaosPhanTrang1 = catchAsync(
       const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
         (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
       );
-      
+
       // const nhanvien = NhanVien.findOne({LopDaoTaoID:lopdaotao._id})
       return {
         ...lopdaotao.toObject(),
@@ -252,12 +271,13 @@ lopdaotaoController.deleteOneLopDaoTao = catchAsync(async (req, res, next) => {
     { isDeleted: true },
     { new: true }
   );
-  
+
   if (!lopdaotao) {
-    return next(new AppError(404, "LopDaoTao not found", "Delete LopDaoTao error"));
+    return next(
+      new AppError(404, "LopDaoTao not found", "Delete LopDaoTao error")
+    );
   }
 
-  
   // Tìm và cập nhật tất cả các LopDaoTaoNhanVien liên quan, đánh dấu là đã xóa (isDeleted: true)
   await LopDaoTaoNhanVien.updateMany(
     { LopDaoTaoID: lopdaotaoID },
@@ -348,7 +368,7 @@ lopdaotaoController.updateOneLopDaoTao = catchAsync(async (req, res, next) => {
 lopdaotaoController.updateHoiDongIDForLopDaoTao = catchAsync(
   async (req, res, next) => {
     let { hoidongID, lopdaotaoID } = { ...req.body };
-   
+
     let lopdaotaoUpdate = await LopDaoTao.findById(lopdaotaoID || 0);
     if (!lopdaotaoUpdate)
       throw new AppError(

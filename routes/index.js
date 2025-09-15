@@ -114,4 +114,8 @@ router.use("/attachments", attachmentsApi);
 const tapsanApi = require("./tapsan.api");
 router.use("/tapsan", tapsanApi);
 
+// TapSan BaiBao API
+const tapsanBaiBaoApi = require("./tapsanbaibao");
+router.use("/tapsan", tapsanBaiBaoApi);
+
 module.exports = router;

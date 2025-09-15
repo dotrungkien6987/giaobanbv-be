@@ -7,6 +7,8 @@ function normalize(input = {}) {
   if (typeof input.NamXuatBan === "string")
     o.NamXuatBan = input.NamXuatBan.trim();
   if (input.SoXuatBan !== undefined) o.SoXuatBan = Number(input.SoXuatBan);
+  if (typeof input.GhiChu === "string") o.GhiChu = input.GhiChu.trim();
+  if (typeof input.TrangThai === "string") o.TrangThai = input.TrangThai.trim();
   return o;
 }
 
@@ -20,7 +22,9 @@ async function assertUnique({ Loai, NamXuatBan, SoXuatBan }, excludeId = null) {
 }
 
 exports.create = catchAsync(async (req, res) => {
-  const { Loai, NamXuatBan, SoXuatBan } = normalize(req.body || {});
+  const { Loai, NamXuatBan, SoXuatBan, GhiChu, TrangThai } = normalize(
+    req.body || {}
+  );
   if (!Loai || !NamXuatBan || !SoXuatBan)
     throw new AppError(400, "Thiếu dữ liệu bắt buộc");
   if (!/^\d{4}$/.test(NamXuatBan))
@@ -29,7 +33,12 @@ exports.create = catchAsync(async (req, res) => {
     throw new AppError(400, "Số xuất bản phải là số nguyên dương");
 
   await assertUnique({ Loai, NamXuatBan, SoXuatBan });
-  const doc = await TapSan.create({ Loai, NamXuatBan, SoXuatBan });
+
+  const createData = { Loai, NamXuatBan, SoXuatBan };
+  if (GhiChu !== undefined) createData.GhiChu = GhiChu;
+  if (TrangThai !== undefined) createData.TrangThai = TrangThai;
+
+  const doc = await TapSan.create(createData);
   return sendResponse(res, 201, true, doc, null, "Tạo Tập san thành công");
 });
 
@@ -37,11 +46,12 @@ exports.list = catchAsync(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
   const size = Math.max(1, parseInt(req.query.size || "20", 10));
   const skip = (page - 1) * size;
-  const { Loai, NamXuatBan, SoXuatBan, search } = req.query || {};
+  const { Loai, NamXuatBan, SoXuatBan, TrangThai, search } = req.query || {};
   const filter = { isDeleted: false };
   if (Loai) filter.Loai = String(Loai);
   if (NamXuatBan) filter.NamXuatBan = String(NamXuatBan);
   if (SoXuatBan) filter.SoXuatBan = Number(SoXuatBan);
+  if (TrangThai) filter.TrangThai = String(TrangThai);
   if (search) {
     const s = String(search).trim();
     filter.$or = [
@@ -73,7 +83,9 @@ exports.update = catchAsync(async (req, res) => {
   const id = req.params.id;
   const doc = await TapSan.findById(id);
   if (!doc || doc.isDeleted) throw new AppError(404, "Không tìm thấy Tập san");
-  const { Loai, NamXuatBan, SoXuatBan } = normalize(req.body || {});
+  const { Loai, NamXuatBan, SoXuatBan, GhiChu, TrangThai } = normalize(
+    req.body || {}
+  );
   const next = { ...doc.toObject() };
   if (Loai) next.Loai = Loai;
   if (NamXuatBan) next.NamXuatBan = NamXuatBan;
@@ -95,6 +107,11 @@ exports.update = catchAsync(async (req, res) => {
   doc.Loai = next.Loai;
   doc.NamXuatBan = next.NamXuatBan;
   doc.SoXuatBan = next.SoXuatBan;
+
+  // Update new fields
+  if (GhiChu !== undefined) doc.GhiChu = GhiChu;
+  if (TrangThai !== undefined) doc.TrangThai = TrangThai;
+
   await doc.save();
   return sendResponse(res, 200, true, doc, null, "Cập nhật thành công");
 });

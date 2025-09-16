@@ -13,8 +13,8 @@ router.get("/:tapSanId/baibao", tapsanBaiBaoController.getByTapSan);
 // POST /api/tapsan/:tapSanId/baibao - Tạo bài báo mới cho tập san
 router.post("/:tapSanId/baibao", tapsanBaiBaoController.create);
 
-// GET /api/tapsan/:tapSanId/baibao/stats - Thống kê bài báo theo trạng thái
-router.get("/:tapSanId/baibao/stats", tapsanBaiBaoController.getStatsByTapSan);
+// PATCH /api/tapsan/:tapSanId/baibao/reorder - Cập nhật thứ tự bài báo hàng loạt
+router.patch("/:tapSanId/baibao/reorder", tapsanBaiBaoController.reorder);
 
 // Routes cho bài báo cụ thể
 // GET /api/baibao/:id - Lấy chi tiết bài báo

@@ -46,7 +46,8 @@ exports.list = catchAsync(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
   const size = Math.max(1, parseInt(req.query.size || "20", 10));
   const skip = (page - 1) * size;
-  const { Loai, NamXuatBan, SoXuatBan, TrangThai, search } = req.query || {};
+  const { Loai, NamXuatBan, SoXuatBan, TrangThai, search, includeCounts } =
+    req.query || {};
   const filter = { isDeleted: false };
   if (Loai) filter.Loai = String(Loai);
   if (NamXuatBan) filter.NamXuatBan = String(NamXuatBan);
@@ -59,10 +60,55 @@ exports.list = catchAsync(async (req, res) => {
       { Loai: { $regex: s, $options: "i" } },
     ];
   }
-  const [items, total] = await Promise.all([
-    TapSan.find(filter).sort({ createdAt: -1 }).skip(skip).limit(size),
-    TapSan.countDocuments(filter),
-  ]);
+
+  const needCounts = includeCounts === "1" || includeCounts === "true";
+
+  let items;
+  const total = await TapSan.countDocuments(filter);
+
+  if (!needCounts) {
+    items = await TapSan.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(size);
+  } else {
+    // Use aggregation to join with TapSanBaiBao for counts
+    items = await TapSan.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: size },
+      {
+        $lookup: {
+          from: "TapSanBaiBao", // collection name
+          let: { tapsanId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$TapSanId", "$$tapsanId"] },
+                    { $ne: ["$isDeleted", true] },
+                  ],
+                },
+              },
+            },
+            { $count: "cnt" },
+          ],
+          as: "__BaiBaoCount",
+        },
+      },
+      {
+        $addFields: {
+          BaiBaoCount: {
+            $ifNull: [{ $arrayElemAt: ["$__BaiBaoCount.cnt", 0] }, 0],
+          },
+        },
+      },
+      { $project: { __BaiBaoCount: 0 } },
+    ]);
+  }
+
   return sendResponse(
     res,
     200,

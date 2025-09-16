@@ -1,6 +1,8 @@
 const TapSanBaiBao = require("../models/TapSanBaiBao");
 const TapSan = require("../models/TapSan");
 
+const pad2 = (n) => String(n).padStart(2, "0");
+
 // Lấy danh sách bài báo theo TapSan
 exports.getByTapSan = async (req, res) => {
   try {
@@ -8,11 +10,11 @@ exports.getByTapSan = async (req, res) => {
     const {
       page = 1,
       limit = 20,
-      sort = "NgayTao",
-      order = "desc",
+      sort = "SoThuTu",
+      order = "asc",
       search = "",
-      trangThai = "",
-      tacGia = "",
+      khoiChuyenMon = "",
+      loaiHinh = "",
     } = req.query;
 
     // Kiểm tra TapSan có tồn tại
@@ -25,20 +27,15 @@ exports.getByTapSan = async (req, res) => {
     }
 
     // Xây dựng filter
-    const filter = {};
+    const filter = { isDeleted: { $ne: true } };
     if (search) {
       filter.$or = [
         { TieuDe: { $regex: search, $options: "i" } },
-        { TacGia: { $regex: search, $options: "i" } },
-        { TomTat: { $regex: search, $options: "i" } },
+        { MaBaiBao: { $regex: search, $options: "i" } },
       ];
     }
-    if (trangThai) {
-      filter.TrangThai = trangThai;
-    }
-    if (tacGia) {
-      filter.TacGia = { $regex: tacGia, $options: "i" };
-    }
+    if (khoiChuyenMon) filter.KhoiChuyenMon = String(khoiChuyenMon);
+    if (loaiHinh) filter.LoaiHinh = String(loaiHinh);
 
     // Xây dựng sort
     const sortObj = {};
@@ -50,7 +47,7 @@ exports.getByTapSan = async (req, res) => {
       limit: parseInt(limit),
       sort: sortObj,
       filter,
-      populate: ["NguoiTao", "NguoiCapNhat"],
+      populate: ["NguoiTao", "NguoiCapNhat", "TacGiaChinhID", "DongTacGiaIDs"],
     };
 
     const [items, total] = await Promise.all([
@@ -97,9 +94,11 @@ exports.getById = async (req, res) => {
     const baiBao = await TapSanBaiBao.findById(id)
       .populate("TapSanId")
       .populate("NguoiTao", "HoTen Email")
-      .populate("NguoiCapNhat", "HoTen Email");
+      .populate("NguoiCapNhat", "HoTen Email")
+      .populate("TacGiaChinhID", "Ten MaNhanVien")
+      .populate("DongTacGiaIDs", "Ten MaNhanVien");
 
-    if (!baiBao) {
+    if (!baiBao || baiBao.isDeleted) {
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy bài báo",
@@ -124,7 +123,16 @@ exports.getById = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const { tapSanId } = req.params;
-    const { TieuDe, TacGia, TomTat, NoiDung, TrangThai, GhiChu } = req.body;
+    const {
+      TieuDe,
+      TomTat,
+      LoaiHinh,
+      KhoiChuyenMon,
+      SoThuTu,
+      TacGiaChinhID,
+      DongTacGiaIDs = [],
+      GhiChu,
+    } = req.body;
 
     // Kiểm tra TapSan có tồn tại
     const tapSan = await TapSan.findById(tapSanId);
@@ -136,20 +144,54 @@ exports.create = async (req, res) => {
     }
 
     // Validation
-    if (!TieuDe || !TacGia) {
+    if (!TieuDe || !LoaiHinh || !KhoiChuyenMon || !SoThuTu || !TacGiaChinhID) {
       return res.status(400).json({
         success: false,
-        message: "Tiêu đề và tác giả là bắt buộc",
+        message:
+          "Thiếu dữ liệu bắt buộc (Tiêu đề, Loại hình, Khối chuyên môn, Số thứ tự, Tác giả chính)",
       });
+    }
+    if (
+      Array.isArray(DongTacGiaIDs) &&
+      DongTacGiaIDs.some((x) => String(x) === String(TacGiaChinhID))
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Đồng tác giả không được trùng Tác giả chính",
+        });
+    }
+    if (!Number.isInteger(Number(SoThuTu)) || Number(SoThuTu) <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Số thứ tự phải là số nguyên dương" });
+    }
+
+    // Check unique SoThuTu within TapSan
+    const dup = await TapSanBaiBao.findOne({
+      TapSanId: tapSanId,
+      SoThuTu: Number(SoThuTu),
+      isDeleted: { $ne: true },
+    }).lean();
+    if (dup) {
+      return res
+        .status(409)
+        .json({
+          success: false,
+          message: "Số thứ tự đã tồn tại trong Tập san",
+        });
     }
 
     const baiBao = new TapSanBaiBao({
       TapSanId: tapSanId,
       TieuDe,
-      TacGia,
       TomTat,
-      NoiDung,
-      TrangThai: TrangThai || "Dự thảo",
+      LoaiHinh,
+      KhoiChuyenMon,
+      SoThuTu: Number(SoThuTu),
+      TacGiaChinhID,
+      DongTacGiaIDs,
       GhiChu,
       NguoiTao: req.userId,
       NguoiCapNhat: req.userId,
@@ -160,7 +202,9 @@ exports.create = async (req, res) => {
     const populated = await TapSanBaiBao.findById(baiBao._id)
       .populate("TapSanId")
       .populate("NguoiTao", "HoTen Email")
-      .populate("NguoiCapNhat", "HoTen Email");
+      .populate("NguoiCapNhat", "HoTen Email")
+      .populate("TacGiaChinhID", "Ten MaNhanVien")
+      .populate("DongTacGiaIDs", "Ten MaNhanVien");
 
     res.status(201).json({
       success: true,
@@ -181,10 +225,19 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { TieuDe, TacGia, TomTat, NoiDung, TrangThai, GhiChu } = req.body;
+    const {
+      TieuDe,
+      TomTat,
+      LoaiHinh,
+      KhoiChuyenMon,
+      SoThuTu,
+      TacGiaChinhID,
+      DongTacGiaIDs = [],
+      GhiChu,
+    } = req.body;
 
     const baiBao = await TapSanBaiBao.findById(id);
-    if (!baiBao) {
+    if (!baiBao || baiBao.isDeleted) {
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy bài báo",
@@ -192,19 +245,55 @@ exports.update = async (req, res) => {
     }
 
     // Validation
-    if (!TieuDe || !TacGia) {
+    if (!TieuDe || !LoaiHinh || !KhoiChuyenMon || !SoThuTu || !TacGiaChinhID) {
       return res.status(400).json({
         success: false,
-        message: "Tiêu đề và tác giả là bắt buộc",
+        message:
+          "Thiếu dữ liệu bắt buộc (Tiêu đề, Loại hình, Khối chuyên môn, Số thứ tự, Tác giả chính)",
       });
+    }
+    if (
+      Array.isArray(DongTacGiaIDs) &&
+      DongTacGiaIDs.some((x) => String(x) === String(TacGiaChinhID))
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Đồng tác giả không được trùng Tác giả chính",
+        });
+    }
+    if (!Number.isInteger(Number(SoThuTu)) || Number(SoThuTu) <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Số thứ tự phải là số nguyên dương" });
+    }
+
+    // Nếu đổi SoThuTu → kiểm tra trùng
+    if (baiBao.SoThuTu !== Number(SoThuTu)) {
+      const dup = await TapSanBaiBao.findOne({
+        TapSanId: baiBao.TapSanId,
+        SoThuTu: Number(SoThuTu),
+        isDeleted: { $ne: true },
+      }).lean();
+      if (dup) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+            message: "Số thứ tự đã tồn tại trong Tập san",
+          });
+      }
     }
 
     // Cập nhật các trường
     baiBao.TieuDe = TieuDe;
-    baiBao.TacGia = TacGia;
     baiBao.TomTat = TomTat;
-    baiBao.NoiDung = NoiDung;
-    baiBao.TrangThai = TrangThai;
+    baiBao.LoaiHinh = LoaiHinh;
+    baiBao.KhoiChuyenMon = KhoiChuyenMon;
+    baiBao.SoThuTu = Number(SoThuTu);
+    baiBao.TacGiaChinhID = TacGiaChinhID;
+    baiBao.DongTacGiaIDs = Array.isArray(DongTacGiaIDs) ? DongTacGiaIDs : [];
     baiBao.GhiChu = GhiChu;
     baiBao.NguoiCapNhat = req.userId;
 
@@ -213,7 +302,9 @@ exports.update = async (req, res) => {
     const populated = await TapSanBaiBao.findById(baiBao._id)
       .populate("TapSanId")
       .populate("NguoiTao", "HoTen Email")
-      .populate("NguoiCapNhat", "HoTen Email");
+      .populate("NguoiCapNhat", "HoTen Email")
+      .populate("TacGiaChinhID", "Ten MaNhanVien")
+      .populate("DongTacGiaIDs", "Ten MaNhanVien");
 
     res.json({
       success: true,
@@ -230,20 +321,22 @@ exports.update = async (req, res) => {
   }
 };
 
-// Xóa bài báo
+// Xóa bài báo (soft delete)
 exports.delete = async (req, res) => {
   try {
     const { id } = req.params;
 
     const baiBao = await TapSanBaiBao.findById(id);
-    if (!baiBao) {
+    if (!baiBao || baiBao.isDeleted) {
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy bài báo",
       });
     }
 
-    await TapSanBaiBao.findByIdAndDelete(id);
+    baiBao.isDeleted = true;
+    baiBao.NguoiCapNhat = req.userId;
+    await baiBao.save();
 
     res.json({
       success: true,
@@ -259,64 +352,88 @@ exports.delete = async (req, res) => {
   }
 };
 
-// Thống kê bài báo theo trạng thái
-exports.getStatsByTapSan = async (req, res) => {
+// Reorder SoThuTu hàng loạt
+exports.reorder = async (req, res) => {
   try {
     const { tapSanId } = req.params;
-
-    // Kiểm tra TapSan có tồn tại
-    const tapSan = await TapSan.findById(tapSanId);
-    if (!tapSan) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy tập san",
-      });
+    const items = Array.isArray(req.body) ? req.body : req.body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Dữ liệu reorder không hợp lệ" });
     }
 
-    const stats = await TapSanBaiBao.aggregate([
-      { $match: { TapSanId: tapSan._id } },
-      {
-        $group: {
-          _id: "$TrangThai",
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: "$count" },
-          byStatus: {
-            $push: {
-              status: "$_id",
-              count: "$count",
-            },
+    const ts = await TapSan.findById(tapSanId).lean();
+    if (!ts)
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy tập san" });
+
+    const ids = items.map((x) => x.id);
+    const docs = await TapSanBaiBao.find({
+      _id: { $in: ids },
+      TapSanId: tapSanId,
+      isDeleted: { $ne: true },
+    })
+      .select("_id")
+      .lean();
+    if (docs.length !== ids.length) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Tồn tại bài báo không thuộc tập san hoặc đã xóa",
+        });
+    }
+
+    const setSo = new Set();
+    for (const it of items) {
+      const v = Number(it.SoThuTu);
+      if (!Number.isInteger(v) || v <= 0) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Số thứ tự phải là số nguyên dương",
+          });
+      }
+      if (setSo.has(v)) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Số thứ tự bị trùng trong danh sách gửi lên",
+          });
+      }
+      setSo.add(v);
+    }
+
+    const soTap = pad2(ts.SoXuatBan || 0);
+    const ops = items.map(({ id, SoThuTu }) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: {
+          $set: {
+            SoThuTu: Number(SoThuTu),
+            MaBaiBao: `${ts.Loai}-${ts.NamXuatBan}-${soTap}-${pad2(
+              Number(SoThuTu)
+            )}`,
           },
         },
       },
-    ]);
+    }));
 
-    const result = stats[0] || { total: 0, byStatus: [] };
+    await TapSanBaiBao.bulkWrite(ops);
 
-    res.json({
-      success: true,
-      data: {
-        total: result.total,
-        byStatus: result.byStatus,
-        tapSan: {
-          _id: tapSan._id,
-          Loai: tapSan.Loai,
-          NamXuatBan: tapSan.NamXuatBan,
-          SoXuatBan: tapSan.SoXuatBan,
-          TrangThai: tapSan.TrangThai,
-        },
-      },
-    });
+    return res.json({ success: true, message: "Cập nhật thứ tự thành công" });
   } catch (error) {
-    console.error("Error getting article stats:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi server khi lấy thống kê bài báo",
-      error: error.message,
-    });
+    console.error("Error reordering articles:", error);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi server khi sắp xếp bài báo",
+        error: error.message,
+      });
   }
 };

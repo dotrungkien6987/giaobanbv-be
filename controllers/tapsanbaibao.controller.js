@@ -15,6 +15,8 @@ exports.getByTapSan = async (req, res) => {
       search = "",
       khoiChuyenMon = "",
       loaiHinh = "",
+      TacGiaChinhID = "",
+      NguoiThamDinhID = "",
     } = req.query;
 
     // Kiểm tra TapSan có tồn tại
@@ -36,6 +38,8 @@ exports.getByTapSan = async (req, res) => {
     }
     if (khoiChuyenMon) filter.KhoiChuyenMon = String(khoiChuyenMon);
     if (loaiHinh) filter.LoaiHinh = String(loaiHinh);
+    if (TacGiaChinhID) filter.TacGiaChinhID = String(TacGiaChinhID);
+    if (NguoiThamDinhID) filter.NguoiThamDinhID = String(NguoiThamDinhID);
 
     // Xây dựng sort
     const sortObj = {};
@@ -47,7 +51,13 @@ exports.getByTapSan = async (req, res) => {
       limit: parseInt(limit),
       sort: sortObj,
       filter,
-      populate: ["NguoiTao", "NguoiCapNhat", "TacGiaChinhID", "DongTacGiaIDs"],
+      populate: [
+        "NguoiTao",
+        "NguoiCapNhat",
+        "TacGiaChinhID",
+        "DongTacGiaIDs",
+        "NguoiThamDinhID",
+      ],
     };
 
     const [items, total] = await Promise.all([
@@ -96,6 +106,7 @@ exports.getById = async (req, res) => {
       .populate("NguoiTao", "HoTen Email")
       .populate("NguoiCapNhat", "HoTen Email")
       .populate("TacGiaChinhID", "Ten MaNhanVien")
+      .populate("NguoiThamDinhID", "Ten MaNhanVien")
       .populate("DongTacGiaIDs", "Ten MaNhanVien");
 
     if (!baiBao || baiBao.isDeleted) {
@@ -123,16 +134,7 @@ exports.getById = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const { tapSanId } = req.params;
-    const {
-      TieuDe,
-      TomTat,
-      LoaiHinh,
-      KhoiChuyenMon,
-      SoThuTu,
-      TacGiaChinhID,
-      DongTacGiaIDs = [],
-      GhiChu,
-    } = req.body;
+    const body = req.body || {};
 
     // Kiểm tra TapSan có tồn tại
     const tapSan = await TapSan.findById(tapSanId);
@@ -143,56 +145,80 @@ exports.create = async (req, res) => {
       });
     }
 
-    // Validation
-    if (!TieuDe || !LoaiHinh || !KhoiChuyenMon || !SoThuTu || !TacGiaChinhID) {
+    // Base validations
+    if (!body.TieuDe || !body.KhoiChuyenMon || !body.SoThuTu) {
       return res.status(400).json({
         success: false,
-        message:
-          "Thiếu dữ liệu bắt buộc (Tiêu đề, Loại hình, Khối chuyên môn, Số thứ tự, Tác giả chính)",
+        message: "Thiếu dữ liệu bắt buộc (Tiêu đề, Khối chuyên môn, Số thứ tự)",
       });
     }
-    if (
-      Array.isArray(DongTacGiaIDs) &&
-      DongTacGiaIDs.some((x) => String(x) === String(TacGiaChinhID))
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Đồng tác giả không được trùng Tác giả chính",
-        });
-    }
-    if (!Number.isInteger(Number(SoThuTu)) || Number(SoThuTu) <= 0) {
+    if (!Number.isInteger(Number(body.SoThuTu)) || Number(body.SoThuTu) <= 0) {
       return res
         .status(400)
         .json({ success: false, message: "Số thứ tự phải là số nguyên dương" });
+    }
+    // Normalize by TapSan type and author mode
+    const isTTT = tapSan.Loai === "TTT";
+    const isYHTH = tapSan.Loai === "YHTH";
+    const payload = { ...body };
+    if (isTTT) {
+      // TTT: LoaiHinh ignored; NoiDungChuyenDe và NguonTaiLieuThamKhao đều tùy chọn
+      delete payload.LoaiHinh;
+    } else if (isYHTH) {
+      // YHTH: LoaiHinh optional; clear TTT-only fields
+      payload.NoiDungChuyenDe = undefined;
+      payload.NguonTaiLieuThamKhao = undefined;
+    }
+    // Normalize optional enum fields: treat empty string/null as undefined
+    if (!payload.LoaiHinh) delete payload.LoaiHinh;
+    if (!payload.NoiDungChuyenDe) delete payload.NoiDungChuyenDe;
+
+    if (payload.TacGiaLoai === "ngoai-vien") {
+      if (!payload.TacGiaNgoaiVien) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Thiếu Tác giả (ngoại viện)" });
+      }
+      payload.TacGiaChinhID = undefined;
+      payload.DongTacGiaIDs = [];
+    } else {
+      if (!payload.TacGiaChinhID) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Thiếu Tác giả chính (nội viện)" });
+      }
+      if (
+        Array.isArray(payload.DongTacGiaIDs) &&
+        payload.DongTacGiaIDs.some(
+          (x) => String(x) === String(payload.TacGiaChinhID)
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Đồng tác giả không được trùng Tác giả chính",
+        });
+      }
+      payload.TacGiaNgoaiVien = undefined;
     }
 
     // Check unique SoThuTu within TapSan
     const dup = await TapSanBaiBao.findOne({
       TapSanId: tapSanId,
-      SoThuTu: Number(SoThuTu),
+      SoThuTu: Number(payload.SoThuTu),
       isDeleted: { $ne: true },
     }).lean();
     if (dup) {
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: "Số thứ tự đã tồn tại trong Tập san",
-        });
+      return res.status(409).json({
+        success: false,
+        message: "Số thứ tự đã tồn tại trong Tập san",
+      });
     }
 
     const baiBao = new TapSanBaiBao({
+      ...payload,
       TapSanId: tapSanId,
-      TieuDe,
-      TomTat,
-      LoaiHinh,
-      KhoiChuyenMon,
-      SoThuTu: Number(SoThuTu),
-      TacGiaChinhID,
-      DongTacGiaIDs,
-      GhiChu,
+      SoThuTu: Number(payload.SoThuTu),
+      NguoiThamDinhID: payload.NguoiThamDinhID || null,
       NguoiTao: req.userId,
       NguoiCapNhat: req.userId,
     });
@@ -204,6 +230,7 @@ exports.create = async (req, res) => {
       .populate("NguoiTao", "HoTen Email")
       .populate("NguoiCapNhat", "HoTen Email")
       .populate("TacGiaChinhID", "Ten MaNhanVien")
+      .populate("NguoiThamDinhID", "Ten MaNhanVien")
       .populate("DongTacGiaIDs", "Ten MaNhanVien");
 
     res.status(201).json({
@@ -213,6 +240,14 @@ exports.create = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating article:", error);
+    if (error?.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: "Dữ liệu không hợp lệ khi tạo bài báo",
+        error: error.message,
+        details: error.errors,
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Lỗi server khi tạo bài báo",
@@ -225,16 +260,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      TieuDe,
-      TomTat,
-      LoaiHinh,
-      KhoiChuyenMon,
-      SoThuTu,
-      TacGiaChinhID,
-      DongTacGiaIDs = [],
-      GhiChu,
-    } = req.body;
+    const body = req.body || {};
 
     const baiBao = await TapSanBaiBao.findById(id);
     if (!baiBao || baiBao.isDeleted) {
@@ -244,57 +270,93 @@ exports.update = async (req, res) => {
       });
     }
 
-    // Validation
-    if (!TieuDe || !LoaiHinh || !KhoiChuyenMon || !SoThuTu || !TacGiaChinhID) {
+    // Base validation
+    if (!body.TieuDe || !body.KhoiChuyenMon || !body.SoThuTu) {
       return res.status(400).json({
         success: false,
-        message:
-          "Thiếu dữ liệu bắt buộc (Tiêu đề, Loại hình, Khối chuyên môn, Số thứ tự, Tác giả chính)",
+        message: "Thiếu dữ liệu bắt buộc (Tiêu đề, Khối chuyên môn, Số thứ tự)",
       });
     }
-    if (
-      Array.isArray(DongTacGiaIDs) &&
-      DongTacGiaIDs.some((x) => String(x) === String(TacGiaChinhID))
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Đồng tác giả không được trùng Tác giả chính",
-        });
-    }
-    if (!Number.isInteger(Number(SoThuTu)) || Number(SoThuTu) <= 0) {
+    if (!Number.isInteger(Number(body.SoThuTu)) || Number(body.SoThuTu) <= 0) {
       return res
         .status(400)
         .json({ success: false, message: "Số thứ tự phải là số nguyên dương" });
     }
 
     // Nếu đổi SoThuTu → kiểm tra trùng
-    if (baiBao.SoThuTu !== Number(SoThuTu)) {
+    if (baiBao.SoThuTu !== Number(body.SoThuTu)) {
       const dup = await TapSanBaiBao.findOne({
         TapSanId: baiBao.TapSanId,
-        SoThuTu: Number(SoThuTu),
+        SoThuTu: Number(body.SoThuTu),
         isDeleted: { $ne: true },
       }).lean();
       if (dup) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-            message: "Số thứ tự đã tồn tại trong Tập san",
-          });
+        return res.status(409).json({
+          success: false,
+          message: "Số thứ tự đã tồn tại trong Tập san",
+        });
       }
     }
 
     // Cập nhật các trường
-    baiBao.TieuDe = TieuDe;
-    baiBao.TomTat = TomTat;
-    baiBao.LoaiHinh = LoaiHinh;
-    baiBao.KhoiChuyenMon = KhoiChuyenMon;
-    baiBao.SoThuTu = Number(SoThuTu);
-    baiBao.TacGiaChinhID = TacGiaChinhID;
-    baiBao.DongTacGiaIDs = Array.isArray(DongTacGiaIDs) ? DongTacGiaIDs : [];
-    baiBao.GhiChu = GhiChu;
+    // Normalize by TapSan and author mode
+    const ts = await TapSan.findById(baiBao.TapSanId).lean();
+    const isTTT = ts?.Loai === "TTT";
+    const isYHTH = ts?.Loai === "YHTH";
+    const payload = { ...body };
+    if (isTTT) {
+      // TTT: LoaiHinh ignored; optional TTT fields are allowed
+      delete payload.LoaiHinh;
+    } else if (isYHTH) {
+      payload.NoiDungChuyenDe = undefined;
+      payload.NguonTaiLieuThamKhao = undefined;
+    }
+    // Normalize optional enum fields: treat empty string/null as undefined
+    if (!payload.LoaiHinh) delete payload.LoaiHinh;
+    if (!payload.NoiDungChuyenDe) delete payload.NoiDungChuyenDe;
+    if (payload.TacGiaLoai === "ngoai-vien") {
+      if (!payload.TacGiaNgoaiVien) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Thiếu Tác giả (ngoại viện)" });
+      }
+      payload.TacGiaChinhID = undefined;
+      payload.DongTacGiaIDs = [];
+    } else {
+      if (!payload.TacGiaChinhID) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Thiếu Tác giả chính (nội viện)" });
+      }
+      if (
+        Array.isArray(payload.DongTacGiaIDs) &&
+        payload.DongTacGiaIDs.some(
+          (x) => String(x) === String(payload.TacGiaChinhID)
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Đồng tác giả không được trùng Tác giả chính",
+        });
+      }
+      payload.TacGiaNgoaiVien = undefined;
+    }
+
+    baiBao.TieuDe = payload.TieuDe;
+    baiBao.TomTat = payload.TomTat;
+    baiBao.LoaiHinh = payload.LoaiHinh ?? undefined;
+    baiBao.KhoiChuyenMon = payload.KhoiChuyenMon;
+    baiBao.SoThuTu = Number(payload.SoThuTu);
+    baiBao.TacGiaLoai = payload.TacGiaLoai || "noi-vien";
+    baiBao.TacGiaNgoaiVien = payload.TacGiaNgoaiVien || null;
+    baiBao.TacGiaChinhID = payload.TacGiaChinhID;
+    baiBao.NguoiThamDinhID = payload.NguoiThamDinhID || null;
+    baiBao.DongTacGiaIDs = Array.isArray(payload.DongTacGiaIDs)
+      ? payload.DongTacGiaIDs
+      : [];
+    baiBao.NoiDungChuyenDe = payload.NoiDungChuyenDe ?? null;
+    baiBao.NguonTaiLieuThamKhao = payload.NguonTaiLieuThamKhao ?? null;
+    baiBao.GhiChu = payload.GhiChu;
     baiBao.NguoiCapNhat = req.userId;
 
     await baiBao.save();
@@ -304,6 +366,7 @@ exports.update = async (req, res) => {
       .populate("NguoiTao", "HoTen Email")
       .populate("NguoiCapNhat", "HoTen Email")
       .populate("TacGiaChinhID", "Ten MaNhanVien")
+      .populate("NguoiThamDinhID", "Ten MaNhanVien")
       .populate("DongTacGiaIDs", "Ten MaNhanVien");
 
     res.json({
@@ -313,6 +376,14 @@ exports.update = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating article:", error);
+    if (error?.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: "Dữ liệu không hợp lệ khi cập nhật bài báo",
+        error: error.message,
+        details: error.errors,
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Lỗi server khi cập nhật bài báo",
@@ -378,32 +449,26 @@ exports.reorder = async (req, res) => {
       .select("_id")
       .lean();
     if (docs.length !== ids.length) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Tồn tại bài báo không thuộc tập san hoặc đã xóa",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Tồn tại bài báo không thuộc tập san hoặc đã xóa",
+      });
     }
 
     const setSo = new Set();
     for (const it of items) {
       const v = Number(it.SoThuTu);
       if (!Number.isInteger(v) || v <= 0) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Số thứ tự phải là số nguyên dương",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Số thứ tự phải là số nguyên dương",
+        });
       }
       if (setSo.has(v)) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Số thứ tự bị trùng trong danh sách gửi lên",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Số thứ tự bị trùng trong danh sách gửi lên",
+        });
       }
       setSo.add(v);
     }
@@ -428,12 +493,10 @@ exports.reorder = async (req, res) => {
     return res.json({ success: true, message: "Cập nhật thứ tự thành công" });
   } catch (error) {
     console.error("Error reordering articles:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Lỗi server khi sắp xếp bài báo",
-        error: error.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi sắp xếp bài báo",
+      error: error.message,
+    });
   }
 };

@@ -19,7 +19,10 @@ doanRaController.createDoanRa = catchAsync(async (req, res, next) => {
 // Lấy tất cả đoàn ra (không phân trang, không filter)
 doanRaController.getAllDoanRas = catchAsync(async (req, res, next) => {
   const doanRas = await DoanRa.find({ isDeleted: false })
-    
+    .populate(
+      "ThanhVien",
+      "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID"
+    )
     .sort({ NgayKyVanBan: -1 });
   sendResponse(res, 200, true, doanRas, null, "Lấy tất cả đoàn ra thành công");
 });
@@ -27,7 +30,10 @@ doanRaController.getAllDoanRas = catchAsync(async (req, res, next) => {
 // Lấy chi tiết đoàn ra
 doanRaController.getDoanRaById = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const doanRa = await DoanRa.findById(id).populate("NhanVienID", "HoTen");
+  const doanRa = await DoanRa.findById(id).populate(
+    "ThanhVien",
+    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID"
+  );
   if (!doanRa) {
     throw new AppError(
       404,
@@ -44,7 +50,10 @@ doanRaController.updateDoanRa = catchAsync(async (req, res, next) => {
   const doanRa = await DoanRa.findByIdAndUpdate(id, req.body, {
     new: true,
     runValidators: true,
-  }).populate("NhanVienID", "HoTen");
+  }).populate(
+    "ThanhVien",
+    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID"
+  );
   if (!doanRa) {
     throw new AppError(
       404,

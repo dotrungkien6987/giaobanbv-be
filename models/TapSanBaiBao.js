@@ -63,7 +63,7 @@ const tapSanBaiBaoSchema = new mongoose.Schema(
     // Dành cho Tập san Thông tin thuốc (TTT)
     NoiDungChuyenDe: {
       type: String,
-      enum: ["canh-giac-duoc", "tuong-tac-thuoc", "khuyen-cao-dieu-tri"],
+      enum: ["canh-giac-duoc", "tuong-tac-thuoc", "khuyen-cao-dieu-tri",`su-dung-thuoc-hop-ly`],
       default: null,
       index: true,
     },

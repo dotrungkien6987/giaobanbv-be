@@ -41,6 +41,42 @@ ctrl.count = catchAsync(async (req, res) => {
   return sendResponse(res, 200, true, { total }, null, "Đếm tệp thành công");
 });
 
+// Batch count: body { ownerType, field, ids: [] }
+ctrl.batchCount = catchAsync(async (req, res) => {
+  const { ownerType, field, ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length)
+    return sendResponse(res, 200, true, {}, null, "Không có id");
+  const result = await svc.batchCount(
+    ownerType,
+    field || "default",
+    ids.map(String),
+    req
+  );
+  return sendResponse(res, 200, true, result, null, "Batch đếm tệp thành công");
+});
+
+// Batch preview: body { ownerType, field, ids: [], limit }
+ctrl.batchPreview = catchAsync(async (req, res) => {
+  const { ownerType, field, ids, limit = 3 } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length)
+    return sendResponse(res, 200, true, {}, null, "Không có id");
+  const result = await svc.batchPreview(
+    ownerType,
+    field || "default",
+    ids.map(String),
+    Math.max(1, +limit) || 3,
+    req
+  );
+  return sendResponse(
+    res,
+    200,
+    true,
+    result,
+    null,
+    "Batch preview tệp thành công"
+  );
+});
+
 ctrl.deleteFile = catchAsync(async (req, res) => {
   const dto = await svc.softDelete(req.params.id, req);
   return sendResponse(res, 200, true, dto, null, "Xóa tệp thành công");

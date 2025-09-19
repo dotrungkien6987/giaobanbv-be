@@ -123,6 +123,65 @@ svc.count = async (ownerType, ownerId, field, req) => {
   return TepTin.countDocuments(query);
 };
 
+// Batch count many ownerIDs
+svc.batchCount = async (ownerType, field, ids, req) => {
+  if (!req.userId) throw new AppError(401, "Không xác thực người dùng");
+  const oType = String(ownerType || "").toLowerCase();
+  const f = String(field || "default").toLowerCase();
+  const out = {};
+  if (!oType || !Array.isArray(ids) || !ids.length) return out;
+  const cursor = await TepTin.aggregate([
+    {
+      $match: {
+        OwnerType: oType,
+        OwnerField: f,
+        TrangThai: "ACTIVE",
+        OwnerID: { $in: ids.map(String) },
+      },
+    },
+    { $group: { _id: "$OwnerID", total: { $sum: 1 } } },
+  ]);
+  cursor.forEach((r) => {
+    out[r._id] = r.total;
+  });
+  // Bảo đảm id nào không có tệp trả 0? → Frontend có thể coi undefined là 0.
+  return out; // { ownerId: count }
+};
+
+// Batch preview first N files per ownerID
+svc.batchPreview = async (ownerType, field, ids, limit, req) => {
+  if (!req.userId) throw new AppError(401, "Không xác thực người dùng");
+  const oType = String(ownerType || "").toLowerCase();
+  const f = String(field || "default").toLowerCase();
+  const lim = Math.max(1, Math.min(+limit || 3, 10));
+  const out = {};
+  if (!oType || !Array.isArray(ids) || !ids.length) return out;
+
+  // Lấy gọn bằng $match + $sort + $group giữ topN: dùng $setWindowFields (Mongo >=5) hoặc fallback truy vấn nhiều.
+  // Fallback dễ hiểu: query từng id (vì số ids thường nhỏ ở một trang) nhưng vẫn giảm số field trả về.
+  // Nếu ids lớn, có thể tối ưu bằng aggregate pipeline phức tạp hơn.
+  for (const ownerId of ids) {
+    const docs = await TepTin.find({
+      OwnerType: oType,
+      OwnerField: f,
+      OwnerID: String(ownerId),
+      TrangThai: "ACTIVE",
+    })
+      .sort({ NgayTaiLen: -1 })
+      .limit(lim)
+      .select("TenGoc TenFile LoaiFile KichThuoc OwnerID OwnerType OwnerField")
+      .lean();
+    out[String(ownerId)] = docs.map((d) => ({
+      _id: String(d._id),
+      TenGoc: d.TenGoc,
+      TenFile: d.TenFile,
+      LoaiFile: d.LoaiFile,
+      KichThuoc: d.KichThuoc,
+    }));
+  }
+  return out; // { ownerId: [ { _id, TenGoc, ... } ] }
+};
+
 svc.softDelete = async (fileId, req) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")

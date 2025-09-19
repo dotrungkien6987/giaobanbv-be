@@ -7,24 +7,22 @@ const doanVaoController = {};
 doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
   const {
     NgayKyVanBan,
-    NhanVienID,
     SoVanBanChoPhep,
     MucDichXuatCanh,
     ThoiGianVaoLamViec,
     BaoCao,
-    TaiLieuKemTheo,
+
     GhiChu,
     ThanhVien,
   } = req.body;
 
   const doanVao = await DoanVao.create({
     NgayKyVanBan,
-    NhanVienID,
     SoVanBanChoPhep,
     MucDichXuatCanh,
     ThoiGianVaoLamViec,
     BaoCao,
-    TaiLieuKemTheo,
+
     GhiChu,
     ThanhVien,
   });
@@ -63,7 +61,6 @@ doanVaoController.getDoanVaos = catchAsync(async (req, res, next) => {
   }
 
   const doanVaos = await DoanVao.find(filter)
-    .populate("NhanVienID", "HoTen")
     .sort({ NgayKyVanBan: -1 })
     .limit(options.limit * 1)
     .skip((options.page - 1) * options.limit);
@@ -85,16 +82,7 @@ doanVaoController.getDoanVaos = catchAsync(async (req, res, next) => {
 doanVaoController.getDoanVaoById = catchAsync(async (req, res, next) => {
   const { id } = req.params;
 
-  const doanVao = await DoanVao.findById(id)
-    .populate("NhanVienID", "HoTen KhoaID")
-    .populate({
-      path: "NhanVienID",
-      populate: {
-        path: "KhoaID",
-        select: "TenKhoa",
-      },
-    });
-
+  const doanVao = await DoanVao.findById(id);
   if (!doanVao) {
     throw new AppError(
       404,
@@ -121,7 +109,7 @@ doanVaoController.updateDoanVao = catchAsync(async (req, res, next) => {
   const doanVao = await DoanVao.findByIdAndUpdate(id, updateData, {
     new: true,
     runValidators: true,
-  }).populate("NhanVienID", "HoTen");
+  });
 
   if (!doanVao) {
     throw new AppError(

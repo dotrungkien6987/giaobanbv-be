@@ -23,6 +23,12 @@ router.get("/:ownerType/:ownerId/:field?/files", ctrl.list);
 // Count files
 router.get("/:ownerType/:ownerId/:field?/files/count", ctrl.count);
 
+// Batch endpoints
+// POST /api/attachments/batch-count { ownerType, field, ids: [] }
+router.post("/batch-count", ctrl.batchCount);
+// POST /api/attachments/batch-preview { ownerType, field, ids: [], limit? }
+router.post("/batch-preview", ctrl.batchPreview);
+
 // Stream by file id
 router.get("/files/:id/inline", ctrl.streamInline);
 router.get("/files/:id/download", ctrl.streamDownload);

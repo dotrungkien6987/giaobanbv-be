@@ -8,7 +8,7 @@ const { body } = require("express-validator");
 /**
  * @route POST /api/doanvao
  * @description Tạo mới thông tin đoàn vào
- * @body {NgayKyVanBan, NhanVienID, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianVaoLamViec, BaoCao, TaiLieuKemTheo, GhiChu, ThanhVien}
+ * @body {NgayKyVanBan, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianVaoLamViec, BaoCao, GhiChu, ThanhVien}
  * @access Login required
  */
 router.post(
@@ -19,10 +19,6 @@ router.post(
       .exists()
       .notEmpty()
       .isISO8601(),
-    body("NhanVienID", "Nhân viên ID là bắt buộc")
-      .exists()
-      .notEmpty()
-      .isMongoId(),
     body("ThanhVien", "Danh sách thành viên phải là mảng").optional().isArray(),
     body("ThanhVien.*.Ten", "Tên thành viên là bắt buộc")
       .if(body("ThanhVien").exists())
@@ -70,7 +66,7 @@ router.get(
  * @route PUT /api/doanvao/:id
  * @description Cập nhật thông tin đoàn vào
  * @params {id}
- * @body {NgayKyVanBan, NhanVienID, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianVaoLamViec, BaoCao, TaiLieuKemTheo, GhiChu, ThanhVien}
+ * @body {NgayKyVanBan, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianVaoLamViec, BaoCao, GhiChu, ThanhVien}
  * @access Login required
  */
 router.put(
@@ -80,9 +76,6 @@ router.put(
     body("NgayKyVanBan", "Ngày ký văn bản phải là ngày hợp lệ")
       .optional()
       .isISO8601(),
-    body("NhanVienID", "Nhân viên ID phải là MongoDB ID hợp lệ")
-      .optional()
-      .isMongoId(),
     body("ThanhVien", "Danh sách thành viên phải là mảng").optional().isArray(),
   ]),
   doanVaoController.updateDoanVao

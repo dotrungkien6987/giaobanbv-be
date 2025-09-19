@@ -3,12 +3,12 @@ const Schema = mongosee.Schema;
 const doanvaoSchema = Schema(
   {
     NgayKyVanBan: { type: Date, required: true },
-    NhanVienID: { type: Schema.ObjectId, required: true, ref: "NhanVien" },
+
     SoVanBanChoPhep: { type: String, default: "" },
     MucDichXuatCanh: { type: String, default: "" },
     ThoiGianVaoLamViec: { type: Date },
     BaoCao: { type: String },
-    TaiLieuKemTheo: { type: [String], default: [] },
+
     GhiChu: { type: String, default: "" },
     // Embedded BCChiTietBenhNhan
     ThanhVien: [
@@ -34,7 +34,6 @@ const doanvaoSchema = Schema(
 
 // Thêm index cho tìm kiếm
 doanvaoSchema.index({ NgayKyVanBan: -1 });
-doanvaoSchema.index({ NhanVienID: 1 });
 
 const DoanVao = mongosee.model("DoanVao", doanvaoSchema);
 module.exports = DoanVao;

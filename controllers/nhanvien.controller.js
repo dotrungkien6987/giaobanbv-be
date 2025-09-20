@@ -424,6 +424,19 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
       );
     }
 
+    // Chuẩn hóa cờ Đảng viên nếu có trong dữ liệu import
+    if (typeof nhanvien.isDangVien !== "boolean") {
+      const raw = nhanvien.isDangVien ?? nhanvien.DangVien;
+      if (raw !== undefined) {
+        const s = String(raw).trim().toLowerCase();
+        const truthy = ["1", "true", "x", "co", "có", "yes", "y"];
+        const falsy = ["0", "false", "khong", "không", "no", "n", ""];
+        if (truthy.includes(s)) nhanvien.isDangVien = true;
+        else if (falsy.includes(s)) nhanvien.isDangVien = false;
+        else nhanvien.isDangVien = Boolean(raw);
+      }
+    }
+
     // Tạo một đối tượng mới từ model để validate dữ liệu
     let newNhanVien = new NhanVien(nhanvien);
 

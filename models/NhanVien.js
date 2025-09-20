@@ -10,6 +10,8 @@ const nhanvienSchema = Schema(
     },
     // Cờ đánh dấu nhân viên đã nghỉ (không còn tính vào số liệu thống kê hoạt động)
     DaNghi: { type: Boolean, default: false },
+    // Cờ đánh dấu là Đảng viên
+    isDangVien: { type: Boolean, default: false },
     LyDoNghi: { type: String, default: "" },
     TinChiBanDau: { type: Number, required: false, default: 0 },
     MaNhanVien: { type: String, require: true, unique: true },

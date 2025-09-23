@@ -9,6 +9,7 @@ doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
     NgayKyVanBan,
     SoVanBanChoPhep,
     MucDichXuatCanh,
+    DonViGioiThieu,
     TuNgay,
     DenNgay,
     BaoCao,
@@ -21,6 +22,7 @@ doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
     NgayKyVanBan,
     SoVanBanChoPhep,
     MucDichXuatCanh,
+    DonViGioiThieu,
     TuNgay,
     DenNgay,
     BaoCao,
@@ -243,7 +245,7 @@ doanVaoController.getMembers = catchAsync(async (req, res, next) => {
 
   if (donViGioiThieu) {
     const regex = new RegExp(String(donViGioiThieu).trim(), "i");
-    pipeline.push({ $match: { "ThanhVien.DonViGioiThieu": regex } });
+    pipeline.push({ $match: { DonViGioiThieu: regex } });
   }
 
   if (search) {
@@ -281,6 +283,7 @@ doanVaoController.getMembers = catchAsync(async (req, res, next) => {
       MucDichXuatCanh: 1,
       TuNgay: 1,
       DenNgay: 1,
+      DonViGioiThieu: 1,
       BaoCao: 1,
       GhiChu: 1,
       EventDate: 1,

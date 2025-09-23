@@ -132,6 +132,8 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
     toDate,
     hasPassport,
     quocGiaDen,
+    mucDichXuatCanh,
+    nguonKinhPhi,
   } = req.query;
 
   const p = Math.max(parseInt(page, 10) || 1, 1);
@@ -183,6 +185,16 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
     pipeline.push({ $match: { QuocGiaDen: regex } });
   }
 
+  if (mucDichXuatCanh) {
+    const regex = new RegExp(String(mucDichXuatCanh).trim(), "i");
+    pipeline.push({ $match: { MucDichXuatCanh: regex } });
+  }
+
+  if (nguonKinhPhi) {
+    const regex = new RegExp(String(nguonKinhPhi).trim(), "i");
+    pipeline.push({ $match: { NguonKinhPhi: regex } });
+  }
+
   // Lookup thông tin nhân viên
   pipeline.push(
     {
@@ -194,6 +206,19 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
       },
     },
     { $unwind: { path: "$NV", preserveNullAndEmptyArrays: true } }
+  );
+
+  // Lookup TenKhoa from KhoaID (fallback if NV doesn't have denormalized TenKhoa)
+  pipeline.push(
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "NV.KhoaID",
+        foreignField: "_id",
+        as: "Khoa",
+      },
+    },
+    { $unwind: { path: "$Khoa", preserveNullAndEmptyArrays: true } }
   );
 
   if (search) {
@@ -224,6 +249,9 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
       GioiTinh: "$NV.GioiTinh",
       ChucVu: "$NV.ChucVu",
       KhoaID: "$NV.KhoaID",
+      TenKhoa: { $ifNull: ["$NV.TenKhoa", "$Khoa.TenKhoa"] },
+      TrinhDoChuyenMon: "$NV.TrinhDoChuyenMon",
+      isDangVien: "$NV.isDangVien",
 
       // Parent
       DoanId: "$_id",
@@ -271,4 +299,44 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
     null,
     "Danh sách thành viên Đoàn ra"
   );
+});
+
+// Distinct options for Autocomplete filters
+doanRaController.getOptions = catchAsync(async (req, res, next) => {
+  const agg = await DoanRa.aggregate([
+    { $match: { isDeleted: { $ne: true } } },
+    {
+      $group: {
+        _id: null,
+        MucDichXuatCanh: { $addToSet: "$MucDichXuatCanh" },
+        NguonKinhPhi: { $addToSet: "$NguonKinhPhi" },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        MucDichXuatCanh: {
+          $filter: {
+            input: "$MucDichXuatCanh",
+            as: "v",
+            cond: { $and: [{ $ne: ["$$v", null] }, { $ne: ["$$v", ""] }] },
+          },
+        },
+        NguonKinhPhi: {
+          $filter: {
+            input: "$NguonKinhPhi",
+            as: "v",
+            cond: { $and: [{ $ne: ["$$v", null] }, { $ne: ["$$v", ""] }] },
+          },
+        },
+      },
+    },
+  ]);
+  const options = agg?.[0] || { MucDichXuatCanh: [], NguonKinhPhi: [] };
+  // Sort alphabetically (case-insensitive)
+  const sortStr = (a, b) =>
+    String(a).localeCompare(String(b), "vi", { sensitivity: "base" });
+  options.MucDichXuatCanh = (options.MucDichXuatCanh || []).sort(sortStr);
+  options.NguonKinhPhi = (options.NguonKinhPhi || []).sort(sortStr);
+  return sendResponse(res, 200, true, options, null, "Tùy chọn lọc đoàn ra");
 });

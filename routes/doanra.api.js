@@ -63,6 +63,13 @@ router.get(
   doanRaController.getMembers
 );
 
+// Options for filters (Mục đích xuất cảnh, Nguồn kinh phí)
+router.get(
+  "/options",
+  authentication.loginRequired,
+  doanRaController.getOptions
+);
+
 router.get(
   "/:id",
   authentication.loginRequired,

@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const TapSan = require("./TapSan");
 
+// Helper: chuyển chuỗi rỗng/undefined -> null để tránh lỗi validate
+const toNullIfEmpty = (v) => (v === "" || v === undefined ? null : v);
+const toNullObjectId = (v) => (v ? v : null);
+
 const tapSanBaiBaoSchema = new mongoose.Schema(
   {
     TapSanId: {
@@ -19,16 +23,22 @@ const tapSanBaiBaoSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 2000,
+      default: null,
+      set: toNullIfEmpty,
     },
+    // LoaiHinh: free text (nullable), options provided by FE from DataFix.LoaiHinhYHTH
     LoaiHinh: {
       type: String,
-      enum: ["ky-thuat-moi", "nghien-cuu-khoa-hoc", "ca-lam-sang"],
       required: false,
+      default: null,
+      set: toNullIfEmpty,
     },
     KhoiChuyenMon: {
       type: String,
-      enum: ["noi", "ngoai", "dieu-duong", "phong-ban", "can-lam-sang"],
-      required: true,
+      enum: [null, "noi", "ngoai", "dieu-duong", "phong-ban", "can-lam-sang"],
+      required: false,
+      default: null,
+      set: toNullIfEmpty,
     },
     SoThuTu: { type: Number, required: true, min: 1, index: true },
     MaBaiBao: { type: String, required: true, index: true },
@@ -37,6 +47,8 @@ const tapSanBaiBaoSchema = new mongoose.Schema(
       ref: "NhanVien",
       required: false,
       index: true,
+      default: null,
+      set: toNullObjectId,
     },
     NguoiThamDinhID: {
       type: mongoose.Schema.Types.ObjectId,
@@ -44,6 +56,7 @@ const tapSanBaiBaoSchema = new mongoose.Schema(
       required: false,
       index: true,
       default: null,
+      set: toNullObjectId,
     },
     DongTacGiaIDs: [{ type: mongoose.Schema.Types.ObjectId, ref: "NhanVien" }],
     // Loại tác giả: noi-vien | ngoai-vien
@@ -59,24 +72,29 @@ const tapSanBaiBaoSchema = new mongoose.Schema(
       default: null,
       trim: true,
       maxlength: 500,
+      set: toNullIfEmpty,
     },
     // Dành cho Tập san Thông tin thuốc (TTT)
+    // NoiDungChuyenDe: free text (nullable), options provided by FE from DataFix.ChuyenDeTTT
     NoiDungChuyenDe: {
       type: String,
-      enum: ["canh-giac-duoc", "tuong-tac-thuoc", "khuyen-cao-dieu-tri",`su-dung-thuoc-hop-ly`],
       default: null,
       index: true,
+      set: toNullIfEmpty,
     },
     NguonTaiLieuThamKhao: {
       type: String,
       default: null,
       trim: true,
       maxlength: 1000,
+      set: toNullIfEmpty,
     },
     GhiChu: {
       type: String,
       trim: true,
       maxlength: 1000,
+      default: null,
+      set: toNullIfEmpty,
     },
     NguoiTao: {
       type: mongoose.Schema.Types.ObjectId,
@@ -86,6 +104,8 @@ const tapSanBaiBaoSchema = new mongoose.Schema(
     NguoiCapNhat: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
+      set: toNullObjectId,
     },
     isDeleted: {
       type: Boolean,
@@ -127,6 +147,46 @@ tapSanBaiBaoSchema.virtual("SoTepDinhKem", {
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
+
+// Chuẩn hóa dữ liệu khi cập nhật để cho phép null và tránh lỗi enum khi FE gửi rỗng
+tapSanBaiBaoSchema.pre("findOneAndUpdate", function (next) {
+  const update = this.getUpdate() || {};
+  const $set = update.$set || update;
+
+  const nullify = (k) => {
+    if (Object.prototype.hasOwnProperty.call($set, k)) {
+      if ($set[k] === "" || $set[k] === undefined) $set[k] = null;
+    }
+  };
+
+  [
+    "TomTat",
+    "LoaiHinh",
+    "KhoiChuyenMon",
+    "TacGiaNgoaiVien",
+    "NoiDungChuyenDe",
+    "NguonTaiLieuThamKhao",
+    "GhiChu",
+  ].forEach(nullify);
+
+  ["TacGiaChinhID", "NguoiThamDinhID", "NguoiCapNhat"].forEach((k) => {
+    if (Object.prototype.hasOwnProperty.call($set, k)) {
+      if (!$set[k]) $set[k] = null;
+    }
+  });
+
+  if (
+    Object.prototype.hasOwnProperty.call($set, "DongTacGiaIDs") &&
+    !Array.isArray($set.DongTacGiaIDs)
+  ) {
+    $set.DongTacGiaIDs = [];
+  }
+
+  if (update.$set) update.$set = $set;
+  else Object.assign(update, $set);
+  this.setUpdate(update);
+  next();
+});
 tapSanBaiBaoSchema.pre("validate", async function (next) {
   try {
     const ts = await TapSan.findById(this.TapSanId).lean();
@@ -140,9 +200,9 @@ tapSanBaiBaoSchema.pre("validate", async function (next) {
       // For TTT: LoaiHinh not used; NoiDungChuyenDe optional; NguonTaiLieuThamKhao optional
       this.LoaiHinh = undefined;
     } else if (isYHTH) {
-      // For YHTH: LoaiHinh optional; clear TTT-only fields
+      // For YHTH: LoaiHinh optional; clear TTT-only field NoiDungChuyenDe
       this.NoiDungChuyenDe = null;
-      this.NguonTaiLieuThamKhao = null;
+      // Allow NguonTaiLieuThamKhao for YHTH as requested (do not clear)
     }
 
     // Author source validation

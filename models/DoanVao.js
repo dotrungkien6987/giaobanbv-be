@@ -6,7 +6,9 @@ const doanvaoSchema = Schema(
 
     SoVanBanChoPhep: { type: String, default: "" },
     MucDichXuatCanh: { type: String, default: "" },
-    ThoiGianVaoLamViec: { type: Date },
+    // Thời gian vào làm việc: lưu phẳng 2 trường
+    TuNgay: { type: Date },
+    DenNgay: { type: Date },
     BaoCao: { type: String },
 
     GhiChu: { type: String, default: "" },
@@ -23,6 +25,7 @@ const doanvaoSchema = Schema(
         DonViCongTac: { type: String, default: "" },
         QuocTich: { type: String, default: "" },
         DonViGioiThieu: { type: String, default: "" },
+        SoHoChieu: { type: String, default: "" },
       },
       { _id: false },
     ],
@@ -34,6 +37,7 @@ const doanvaoSchema = Schema(
 
 // Thêm index cho tìm kiếm
 doanvaoSchema.index({ NgayKyVanBan: -1 });
+doanvaoSchema.index({ TuNgay: -1 });
 
 const DoanVao = mongosee.model("DoanVao", doanvaoSchema);
 module.exports = DoanVao;

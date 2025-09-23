@@ -32,6 +32,7 @@ const nhanvienSchema = Schema(
     ChucVu: { type: String, default: "" },
 
     CMND: { type: String, default: "" },
+    SoHoChieu: { type: String, default: "" },
     SoDienThoai: { type: String, default: "" },
     Email: { type: String, default: "" },
     GioiTinh: {
@@ -48,6 +49,7 @@ const nhanvienSchema = Schema(
 nhanvienSchema.index({ LoaiChuyenMonID: 1 });
 nhanvienSchema.index({ KhoaID: 1, DaNghi: 1 });
 nhanvienSchema.index({ DaNghi: 1, isDeleted: 1 });
+nhanvienSchema.index({ SoHoChieu: 1 }, { sparse: true });
 
 // Helper truy vấn nhân viên đang làm việc (active)
 nhanvienSchema.statics.findDangLamViec = function (filter = {}) {

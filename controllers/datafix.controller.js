@@ -11,6 +11,7 @@ datafixController.getDataFix = catchAsync(async (req, res, next) => {
 
   // Thêm index vào từng item trong các mảng
   const addIndexToItems = (array) => {
+    if (!Array.isArray(array)) return [];
     return array.map((item, index) => ({
       ...item,
       index: index + 1,
@@ -28,6 +29,11 @@ datafixController.getDataFix = catchAsync(async (req, res, next) => {
     item.DonVi = addIndexToItems(item.DonVi);
     item.ChucDanh = addIndexToItems(item.ChucDanh);
     item.ChucVu = addIndexToItems(item.ChucVu);
+    // New fields
+    item.LoaiHinhYHTH = addIndexToItems(item.LoaiHinhYHTH);
+    item.ChuyenDeTTT = addIndexToItems(item.ChuyenDeTTT);
+    item.MucDichXuatCanh = addIndexToItems(item.MucDichXuatCanh);
+    item.DonViGioiThieu = addIndexToItems(item.DonViGioiThieu);
     item.TrinhDoChuyenMon = addIndexToItems(item.TrinhDoChuyenMon);
     item.NguonKinhPhi = addIndexToItems(item.NguonKinhPhi);
     item.NoiDaoTao = addIndexToItems(item.NoiDaoTao);
@@ -74,6 +80,13 @@ datafixController.insertOrUpdateDataFix = catchAsync(async (req, res, next) => {
   datafixUpdate.DonVi = addIndexToItems(datafixUpdate.DonVi);
   datafixUpdate.ChucDanh = addIndexToItems(datafixUpdate.ChucDanh);
   datafixUpdate.ChucVu = addIndexToItems(datafixUpdate.ChucVu);
+  // New fields
+  datafixUpdate.LoaiHinhYHTH = addIndexToItems(datafixUpdate.LoaiHinhYHTH);
+  datafixUpdate.ChuyenDeTTT = addIndexToItems(datafixUpdate.ChuyenDeTTT);
+  datafixUpdate.MucDichXuatCanh = addIndexToItems(
+    datafixUpdate.MucDichXuatCanh
+  );
+  datafixUpdate.DonViGioiThieu = addIndexToItems(datafixUpdate.DonViGioiThieu);
   datafixUpdate.TrinhDoChuyenMon = addIndexToItems(
     datafixUpdate.TrinhDoChuyenMon
   );

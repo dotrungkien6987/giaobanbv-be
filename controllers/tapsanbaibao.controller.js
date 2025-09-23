@@ -146,10 +146,10 @@ exports.create = async (req, res) => {
     }
 
     // Base validations
-    if (!body.TieuDe || !body.KhoiChuyenMon || !body.SoThuTu) {
+    if (!body.TieuDe || !body.SoThuTu) {
       return res.status(400).json({
         success: false,
-        message: "Thiếu dữ liệu bắt buộc (Tiêu đề, Khối chuyên môn, Số thứ tự)",
+        message: "Thiếu dữ liệu bắt buộc (Tiêu đề, Số thứ tự)",
       });
     }
     if (!Number.isInteger(Number(body.SoThuTu)) || Number(body.SoThuTu) <= 0) {
@@ -165,9 +165,9 @@ exports.create = async (req, res) => {
       // TTT: LoaiHinh ignored; NoiDungChuyenDe và NguonTaiLieuThamKhao đều tùy chọn
       delete payload.LoaiHinh;
     } else if (isYHTH) {
-      // YHTH: LoaiHinh optional; clear TTT-only fields
+      // YHTH: LoaiHinh optional; clear TTT-only field
       payload.NoiDungChuyenDe = undefined;
-      payload.NguonTaiLieuThamKhao = undefined;
+      // Cho phép NguonTaiLieuThamKhao cho YHTH (không xóa)
     }
     // Normalize optional enum fields: treat empty string/null as undefined
     if (!payload.LoaiHinh) delete payload.LoaiHinh;
@@ -241,11 +241,15 @@ exports.create = async (req, res) => {
   } catch (error) {
     console.error("Error creating article:", error);
     if (error?.name === "ValidationError") {
+      const fieldErrors = {};
+      for (const [field, err] of Object.entries(error.errors || {})) {
+        fieldErrors[field] = err.message || `${field} không hợp lệ`;
+      }
       return res.status(400).json({
         success: false,
         message: "Dữ liệu không hợp lệ khi tạo bài báo",
         error: error.message,
-        details: error.errors,
+        fieldErrors,
       });
     }
     res.status(500).json({
@@ -271,10 +275,10 @@ exports.update = async (req, res) => {
     }
 
     // Base validation
-    if (!body.TieuDe || !body.KhoiChuyenMon || !body.SoThuTu) {
+    if (!body.TieuDe || !body.SoThuTu) {
       return res.status(400).json({
         success: false,
-        message: "Thiếu dữ liệu bắt buộc (Tiêu đề, Khối chuyên môn, Số thứ tự)",
+        message: "Thiếu dữ liệu bắt buộc (Tiêu đề, Số thứ tự)",
       });
     }
     if (!Number.isInteger(Number(body.SoThuTu)) || Number(body.SoThuTu) <= 0) {
@@ -309,7 +313,7 @@ exports.update = async (req, res) => {
       delete payload.LoaiHinh;
     } else if (isYHTH) {
       payload.NoiDungChuyenDe = undefined;
-      payload.NguonTaiLieuThamKhao = undefined;
+      // Cho phép NguonTaiLieuThamKhao cho YHTH (không xóa)
     }
     // Normalize optional enum fields: treat empty string/null as undefined
     if (!payload.LoaiHinh) delete payload.LoaiHinh;
@@ -345,7 +349,7 @@ exports.update = async (req, res) => {
     baiBao.TieuDe = payload.TieuDe;
     baiBao.TomTat = payload.TomTat;
     baiBao.LoaiHinh = payload.LoaiHinh ?? undefined;
-    baiBao.KhoiChuyenMon = payload.KhoiChuyenMon;
+    baiBao.KhoiChuyenMon = payload.KhoiChuyenMon ?? null;
     baiBao.SoThuTu = Number(payload.SoThuTu);
     baiBao.TacGiaLoai = payload.TacGiaLoai || "noi-vien";
     baiBao.TacGiaNgoaiVien = payload.TacGiaNgoaiVien || null;
@@ -377,11 +381,15 @@ exports.update = async (req, res) => {
   } catch (error) {
     console.error("Error updating article:", error);
     if (error?.name === "ValidationError") {
+      const fieldErrors = {};
+      for (const [field, err] of Object.entries(error.errors || {})) {
+        fieldErrors[field] = err.message || `${field} không hợp lệ`;
+      }
       return res.status(400).json({
         success: false,
         message: "Dữ liệu không hợp lệ khi cập nhật bài báo",
         error: error.message,
-        details: error.errors,
+        fieldErrors,
       });
     }
     res.status(500).json({

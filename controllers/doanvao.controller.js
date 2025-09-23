@@ -9,7 +9,8 @@ doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
     NgayKyVanBan,
     SoVanBanChoPhep,
     MucDichXuatCanh,
-    ThoiGianVaoLamViec,
+    TuNgay,
+    DenNgay,
     BaoCao,
 
     GhiChu,
@@ -20,7 +21,8 @@ doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
     NgayKyVanBan,
     SoVanBanChoPhep,
     MucDichXuatCanh,
-    ThoiGianVaoLamViec,
+    TuNgay,
+    DenNgay,
     BaoCao,
 
     GhiChu,
@@ -180,3 +182,138 @@ doanVaoController.getDoanVaoStats = catchAsync(async (req, res, next) => {
 });
 
 module.exports = doanVaoController;
+/**
+ * Danh sách thành viên Đoàn vào (server-side pagination)
+ * Query: page, limit, search, fromDate, toDate, hasPassport
+ */
+doanVaoController.getMembers = catchAsync(async (req, res, next) => {
+  const {
+    page = 1,
+    limit = 20,
+    search = "",
+    fromDate,
+    toDate,
+    hasPassport,
+    donViGioiThieu,
+  } = req.query;
+
+  const p = Math.max(parseInt(page, 10) || 1, 1);
+  const l = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+
+  const match = { isDeleted: { $ne: true } };
+  const dateRange = {};
+  if (fromDate) dateRange.$gte = new Date(fromDate);
+  if (toDate) dateRange.$lte = new Date(toDate);
+  if (Object.keys(dateRange).length) {
+    match.$or = [
+      { TuNgay: dateRange },
+      { DenNgay: dateRange },
+      { NgayKyVanBan: dateRange },
+    ];
+  }
+
+  const pipeline = [
+    { $match: match },
+    {
+      $addFields: {
+        EventDate: {
+          $ifNull: ["$TuNgay", { $ifNull: ["$NgayKyVanBan", "$createdAt"] }],
+        },
+      },
+    },
+    { $unwind: "$ThanhVien" },
+  ];
+
+  if (hasPassport === "true") {
+    pipeline.push({
+      $match: { "ThanhVien.SoHoChieu": { $nin: [null, "", undefined] } },
+    });
+  }
+  if (hasPassport === "false") {
+    pipeline.push({
+      $match: {
+        $or: [
+          { "ThanhVien.SoHoChieu": "" },
+          { "ThanhVien.SoHoChieu": null },
+          { "ThanhVien.SoHoChieu": { $exists: false } },
+        ],
+      },
+    });
+  }
+
+  if (donViGioiThieu) {
+    const regex = new RegExp(String(donViGioiThieu).trim(), "i");
+    pipeline.push({ $match: { "ThanhVien.DonViGioiThieu": regex } });
+  }
+
+  if (search) {
+    const regex = new RegExp(search.trim(), "i");
+    pipeline.push({
+      $match: {
+        $or: [
+          { "ThanhVien.Ten": regex },
+          { "ThanhVien.DonViCongTac": regex },
+          { "ThanhVien.QuocTich": regex },
+          { "ThanhVien.ChucVu": regex },
+          { "ThanhVien.SoHoChieu": regex },
+          { MucDichXuatCanh: regex },
+          { SoVanBanChoPhep: regex },
+        ],
+      },
+    });
+  }
+
+  pipeline.push({
+    $project: {
+      // Member fields (embedded)
+      Ten: "$ThanhVien.Ten",
+      NgaySinh: "$ThanhVien.NgaySinh",
+      GioiTinh: "$ThanhVien.GioiTinh",
+      ChucVu: "$ThanhVien.ChucVu",
+      DonViCongTac: "$ThanhVien.DonViCongTac",
+      QuocTich: "$ThanhVien.QuocTich",
+      SoHoChieu: "$ThanhVien.SoHoChieu",
+
+      // Parent DoanVao fields
+      DoanId: "$_id",
+      NgayKyVanBan: 1,
+      SoVanBanChoPhep: 1,
+      MucDichXuatCanh: 1,
+      TuNgay: 1,
+      DenNgay: 1,
+      BaoCao: 1,
+      GhiChu: 1,
+      EventDate: 1,
+      createdAt: 1,
+    },
+  });
+
+  const facet = [
+    {
+      $facet: {
+        items: [
+          { $sort: { EventDate: -1, _id: -1 } },
+          { $skip: (p - 1) * l },
+          { $limit: l },
+        ],
+        total: [{ $count: "count" }],
+      },
+    },
+    {
+      $project: {
+        items: 1,
+        total: { $ifNull: [{ $arrayElemAt: ["$total.count", 0] }, 0] },
+      },
+    },
+  ];
+
+  const [result] = await DoanVao.aggregate([...pipeline, ...facet]);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { items: result.items, total: result.total, page: p, limit: l },
+    null,
+    "Danh sách thành viên Đoàn vào"
+  );
+});

@@ -8,7 +8,7 @@ const { body } = require("express-validator");
 /**
  * @route POST /api/doanra
  * @description Tạo mới thông tin đoàn ra
- * @body {NgayKyVanBan, ThanhVien, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
+ * @body {NgayKyVanBan, ThanhVien, SoVanBanChoPhep, MucDichXuatCanh, TuNgay, DenNgay, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
  * @access Login required
  */
 router.post(
@@ -24,9 +24,8 @@ router.post(
     //   .isArray({ min: 1 }),
     // body("ThanhVien.*", "Mỗi thành viên phải là MongoDB ID hợp lệ").isMongoId(),
     body("QuocGiaDen", "Quốc gia đến là bắt buộc").exists().notEmpty(),
-    body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")
-      .optional()
-      .isISO8601(),
+    body("TuNgay", "Từ ngày phải là ngày hợp lệ").optional().isISO8601(),
+    body("DenNgay", "Đến ngày phải là ngày hợp lệ").optional().isISO8601(),
   ]),
   doanRaController.createDoanRa
 );
@@ -52,6 +51,18 @@ router.get("/", authentication.loginRequired, doanRaController.getAllDoanRas);
  * @params {id}
  * @access Login required
  */
+/**
+ * @route GET /api/doanra/members
+ * @description Danh sách thành viên Đoàn ra (server-side)
+ * @query {page, limit, search, fromDate, toDate, hasPassport}
+ * @access Login required
+ */
+router.get(
+  "/members",
+  authentication.loginRequired,
+  doanRaController.getMembers
+);
+
 router.get(
   "/:id",
   authentication.loginRequired,
@@ -62,7 +73,7 @@ router.get(
  * @route PUT /api/doanra/:id
  * @description Cập nhật thông tin đoàn ra
  * @params {id}
- * @body {NgayKyVanBan, ThanhVien, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianXuatCanh, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
+ * @body {NgayKyVanBan, ThanhVien, SoVanBanChoPhep, MucDichXuatCanh, TuNgay, DenNgay, NguonKinhPhi, QuocGiaDen, BaoCao, TaiLieuKemTheo, GhiChu}
  * @access Login required
  */
 router.put(
@@ -75,12 +86,9 @@ router.put(
     body("ThanhVien", "Danh sách thành viên phải là mảng")
       .optional()
       .isArray({ min: 1 }),
-    body("ThanhVien.*", "Mỗi thành viên phải là MongoDB ID hợp lệ")
-      .optional()
-      .isMongoId(),
-    body("ThoiGianXuatCanh", "Thời gian xuất cảnh phải là ngày hợp lệ")
-      .optional()
-      .isISO8601(),
+
+    body("TuNgay", "Từ ngày phải là ngày hợp lệ").optional().isISO8601(),
+    body("DenNgay", "Đến ngày phải là ngày hợp lệ").optional().isISO8601(),
   ]),
   doanRaController.updateDoanRa
 );

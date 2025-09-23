@@ -15,12 +15,16 @@ const datafixSchema = Schema({
   DonVi: [{ DonVi: { type: String, required: true }, _id: false }],
   ChucDanh: [{ ChucDanh: { type: String, required: true }, _id: false }],
   ChucVu: [{ ChucVu: { type: String, required: true }, _id: false }],
+  LoaiHinhYHTH: [{ LoaiHinhYHTH: { type: String, required: true }, _id: false }],
+  ChuyenDeTTT: [{ ChuyenDeTTT: { type: String, required: true }, _id: false }],
+  MucDichXuatCanh: [{ MucDichXuatCanh: { type: String, required: true }, _id: false }],
+  DonViGioiThieu: [{ DonViGioiThieu: { type: String, required: true }, _id: false }],
   TrinhDoChuyenMon: [
     {
       TrinhDoChuyenMon: { type: String, required: true },
       QuyDoi1: { type: String, required: false, default: "" },
       QuyDoi2: { type: String, required: false, default: "" },
-      _id: false,
+      _id: false, 
     },
   ],
   NguonKinhPhi: [

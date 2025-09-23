@@ -37,6 +37,28 @@ router.get(
   dashboardController.getLopDaoTaoCountByYear
 );
 
+// New dashboard aggregates
+router.get(
+  "/doanra-by-year",
+  authentication.loginRequired,
+  dashboardController.getDoanRaByYear
+);
+router.get(
+  "/doanvao-by-year",
+  authentication.loginRequired,
+  dashboardController.getDoanVaoByYear
+);
+router.get(
+  "/tapsan-by-year",
+  authentication.loginRequired,
+  dashboardController.getTapSanByYear
+);
+router.get(
+  "/tapsan-baibao-by-year",
+  authentication.loginRequired,
+  dashboardController.getTapSanBaiBaoByYear
+);
+
 router.delete(
   "/delbyngay",
   authentication.loginRequired,

@@ -1,16 +1,36 @@
 const { sendResponse, AppError, catchAsync } = require("../helpers/utils");
 const DoanRa = require("../models/DoanRa");
+const NhanVien = require("../models/NhanVien");
 
 const doanRaController = {};
 
 // Tạo mới đoàn ra
 doanRaController.createDoanRa = catchAsync(async (req, res, next) => {
-  const doanRa = await DoanRa.create(req.body);
+  const payload = req.body || {};
+  const doanRa = await DoanRa.create(payload);
+
+  // Đồng bộ SoHoChieu về NhanVien khi có
+  const updates = Array.isArray(doanRa.ThanhVien)
+    ? doanRa.ThanhVien.filter((m) => m?.NhanVienId && m?.SoHoChieu).map(
+        (m) => ({
+          updateOne: {
+            filter: { _id: m.NhanVienId },
+            update: { $set: { SoHoChieu: m.SoHoChieu } },
+          },
+        })
+      )
+    : [];
+  if (updates.length) await NhanVien.bulkWrite(updates, { ordered: false });
+
+  const populated = await DoanRa.findById(doanRa._id).populate(
+    "ThanhVien.NhanVienId",
+    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID SoHoChieu"
+  );
   sendResponse(
     res,
     200,
     true,
-    doanRa,
+    populated || doanRa,
     null,
     "Tạo thông tin đoàn ra thành công"
   );
@@ -20,8 +40,8 @@ doanRaController.createDoanRa = catchAsync(async (req, res, next) => {
 doanRaController.getAllDoanRas = catchAsync(async (req, res, next) => {
   const doanRas = await DoanRa.find({ isDeleted: false })
     .populate(
-      "ThanhVien",
-      "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID"
+      "ThanhVien.NhanVienId",
+      "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID SoHoChieu"
     )
     .sort({ NgayKyVanBan: -1 });
   sendResponse(res, 200, true, doanRas, null, "Lấy tất cả đoàn ra thành công");
@@ -31,8 +51,8 @@ doanRaController.getAllDoanRas = catchAsync(async (req, res, next) => {
 doanRaController.getDoanRaById = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const doanRa = await DoanRa.findById(id).populate(
-    "ThanhVien",
-    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID"
+    "ThanhVien.NhanVienId",
+    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID SoHoChieu"
   );
   if (!doanRa) {
     throw new AppError(
@@ -47,12 +67,13 @@ doanRaController.getDoanRaById = catchAsync(async (req, res, next) => {
 // Cập nhật đoàn ra
 doanRaController.updateDoanRa = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const doanRa = await DoanRa.findByIdAndUpdate(id, req.body, {
+  const payload = req.body || {};
+  const doanRa = await DoanRa.findByIdAndUpdate(id, payload, {
     new: true,
     runValidators: true,
   }).populate(
-    "ThanhVien",
-    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID"
+    "ThanhVien.NhanVienId",
+    "HoTen Ten MaNhanVien MaNV username KhoaID TenKhoa ChucDanh ChucDanhID ChucVu ChucVuID SoHoChieu"
   );
   if (!doanRa) {
     throw new AppError(
@@ -61,6 +82,19 @@ doanRaController.updateDoanRa = catchAsync(async (req, res, next) => {
       "Update DoanRa Error"
     );
   }
+  // Đồng bộ SoHoChieu về NhanVien khi có
+  const updates = Array.isArray(doanRa.ThanhVien)
+    ? doanRa.ThanhVien.filter((m) => m?.NhanVienId && m?.SoHoChieu).map(
+        (m) => ({
+          updateOne: {
+            filter: { _id: m.NhanVienId },
+            update: { $set: { SoHoChieu: m.SoHoChieu } },
+          },
+        })
+      )
+    : [];
+  if (updates.length) await NhanVien.bulkWrite(updates, { ordered: false });
+
   sendResponse(res, 200, true, doanRa, null, "Cập nhật đoàn ra thành công");
 });
 
@@ -85,3 +119,156 @@ doanRaController.deleteDoanRa = catchAsync(async (req, res, next) => {
 // (Bỏ các hàm thống kê)
 
 module.exports = doanRaController;
+/**
+ * Danh sách thành viên Đoàn ra (server-side pagination)
+ * Query: page, limit, search, fromDate, toDate, hasPassport
+ */
+doanRaController.getMembers = catchAsync(async (req, res, next) => {
+  const {
+    page = 1,
+    limit = 20,
+    search = "",
+    fromDate,
+    toDate,
+    hasPassport,
+    quocGiaDen,
+  } = req.query;
+
+  const p = Math.max(parseInt(page, 10) || 1, 1);
+  const l = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+
+  const match = { isDeleted: { $ne: true } };
+  const dateRange = {};
+  if (fromDate) dateRange.$gte = new Date(fromDate);
+  if (toDate) dateRange.$lte = new Date(toDate);
+  if (Object.keys(dateRange).length) {
+    match.$or = [
+      { TuNgay: dateRange },
+      { DenNgay: dateRange },
+      { NgayKyVanBan: dateRange },
+    ];
+  }
+
+  const pipeline = [
+    { $match: match },
+    {
+      $addFields: {
+        EventDate: {
+          $ifNull: ["$TuNgay", { $ifNull: ["$NgayKyVanBan", "$createdAt"] }],
+        },
+      },
+    },
+    { $unwind: "$ThanhVien" },
+  ];
+
+  if (hasPassport === "true") {
+    pipeline.push({
+      $match: { "ThanhVien.SoHoChieu": { $nin: [null, "", undefined] } },
+    });
+  }
+  if (hasPassport === "false") {
+    pipeline.push({
+      $match: {
+        $or: [
+          { "ThanhVien.SoHoChieu": "" },
+          { "ThanhVien.SoHoChieu": null },
+          { "ThanhVien.SoHoChieu": { $exists: false } },
+        ],
+      },
+    });
+  }
+
+  if (quocGiaDen) {
+    const regex = new RegExp(String(quocGiaDen).trim(), "i");
+    pipeline.push({ $match: { QuocGiaDen: regex } });
+  }
+
+  // Lookup thông tin nhân viên
+  pipeline.push(
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "ThanhVien.NhanVienId",
+        foreignField: "_id",
+        as: "NV",
+      },
+    },
+    { $unwind: { path: "$NV", preserveNullAndEmptyArrays: true } }
+  );
+
+  if (search) {
+    const regex = new RegExp(search.trim(), "i");
+    pipeline.push({
+      $match: {
+        $or: [
+          { "NV.Ten": regex },
+          { "NV.ChucVu": regex },
+          { "NV.SoHoChieu": regex },
+          { "ThanhVien.SoHoChieu": regex },
+          { QuocGiaDen: regex },
+          { SoVanBanChoPhep: regex },
+          { MucDichXuatCanh: regex },
+        ],
+      },
+    });
+  }
+
+  // Project trường cần thiết
+  pipeline.push({
+    $project: {
+      // Member level
+      MemberId: "$ThanhVien.NhanVienId",
+      SoHoChieu: { $ifNull: ["$ThanhVien.SoHoChieu", "$NV.SoHoChieu"] },
+      Ten: "$NV.Ten",
+      NgaySinh: "$NV.NgaySinh",
+      GioiTinh: "$NV.GioiTinh",
+      ChucVu: "$NV.ChucVu",
+      KhoaID: "$NV.KhoaID",
+
+      // Parent
+      DoanId: "$_id",
+      NgayKyVanBan: 1,
+      SoVanBanChoPhep: 1,
+      MucDichXuatCanh: 1,
+      TuNgay: 1,
+      DenNgay: 1,
+      NguonKinhPhi: 1,
+      QuocGiaDen: 1,
+      BaoCao: 1,
+      TaiLieuKemTheo: 1,
+      GhiChu: 1,
+      EventDate: 1,
+      createdAt: 1,
+    },
+  });
+
+  // Facet for pagination
+  const facet = [
+    {
+      $facet: {
+        items: [
+          { $sort: { EventDate: -1, _id: -1 } },
+          { $skip: (p - 1) * l },
+          { $limit: l },
+        ],
+        total: [{ $count: "count" }],
+      },
+    },
+    {
+      $project: {
+        items: 1,
+        total: { $ifNull: [{ $arrayElemAt: ["$total.count", 0] }, 0] },
+      },
+    },
+  ];
+
+  const [result] = await DoanRa.aggregate([...pipeline, ...facet]);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { items: result.items, total: result.total, page: p, limit: l },
+    null,
+    "Danh sách thành viên Đoàn ra"
+  );
+});

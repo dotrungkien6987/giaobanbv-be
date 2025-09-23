@@ -2,6 +2,10 @@ const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const DashBoard = require("../models/DashBoard");
 const LopDaoTao = require("../models/LopDaoTao");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
+const DoanRa = require("../models/DoanRa");
+const DoanVao = require("../models/DoanVao");
+const TapSan = require("../models/TapSan");
+const TapSanBaiBao = require("../models/TapSanBaiBao");
 
 const dashboardController = {};
 const moment = require("moment-timezone");
@@ -408,6 +412,226 @@ dashboardController.getLopDaoTaoCountByYear = catchAsync(
       { data, filters: { fromYear, toYear, onlyCompleted, tz } },
       null,
       "Thống kê số lớp theo năm và mã hình thức thành công"
+    );
+  }
+);
+
+// Đoàn Ra theo năm: HoSo (số hồ sơ) + ThanhVien (tổng thành viên)
+dashboardController.getDoanRaByYear = catchAsync(async (req, res, next) => {
+  const tz = req.query.tz || "Asia/Ho_Chi_Minh";
+  const toInt = (v, def = null) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : def;
+  };
+  const fromYear = toInt(req.query.fromYear, null);
+  const toYear = toInt(req.query.toYear, null);
+
+  const base = [
+    { $match: { isDeleted: { $ne: true } } },
+    {
+      $addFields: {
+        eventDate: {
+          $ifNull: ["$TuNgay", { $ifNull: ["$NgayKyVanBan", "$createdAt"] }],
+        },
+        memberCount: { $size: { $ifNull: ["$ThanhVien", []] } },
+      },
+    },
+  ];
+  if (fromYear || toYear) {
+    const range = {};
+    if (fromYear) range.$gte = new Date(Date.UTC(fromYear, 0, 1, 0, 0, 0, 0));
+    if (toYear)
+      range.$lte = new Date(Date.UTC(toYear, 11, 31, 23, 59, 59, 999));
+    base.push({ $match: { eventDate: range } });
+  }
+  base.push({
+    $addFields: {
+      yearStr: {
+        $dateToString: { date: "$eventDate", format: "%Y", timezone: tz },
+      },
+    },
+  });
+
+  const pipelineHoSo = [
+    ...base,
+    { $group: { _id: "$yearStr", count: { $sum: 1 } } },
+    { $project: { _id: 0, Key: "HoSo", year: { $toInt: "$_id" }, count: 1 } },
+    { $sort: { year: 1 } },
+  ];
+  const pipelineThanhVien = [
+    ...base,
+    { $group: { _id: "$yearStr", count: { $sum: "$memberCount" } } },
+    {
+      $project: {
+        _id: 0,
+        Key: "ThanhVien",
+        year: { $toInt: "$_id" },
+        count: 1,
+      },
+    },
+    { $sort: { year: 1 } },
+  ];
+
+  const [hoso, tv] = await Promise.all([
+    DoanRa.aggregate(pipelineHoSo),
+    DoanRa.aggregate(pipelineThanhVien),
+  ]);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { data: [...hoso, ...tv] },
+    null,
+    "Thống kê Đoàn Ra theo năm"
+  );
+});
+
+// Đoàn Vào theo năm: HoSo + ThanhVien
+dashboardController.getDoanVaoByYear = catchAsync(async (req, res, next) => {
+  const tz = req.query.tz || "Asia/Ho_Chi_Minh";
+  const toInt = (v, def = null) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : def;
+  };
+  const fromYear = toInt(req.query.fromYear, null);
+  const toYear = toInt(req.query.toYear, null);
+
+  const base = [
+    { $match: { isDeleted: { $ne: true } } },
+    {
+      $addFields: {
+        eventDate: {
+          $ifNull: ["$TuNgay", { $ifNull: ["$NgayKyVanBan", "$createdAt"] }],
+        },
+        memberCount: { $size: { $ifNull: ["$ThanhVien", []] } },
+      },
+    },
+  ];
+  if (fromYear || toYear) {
+    const range = {};
+    if (fromYear) range.$gte = new Date(Date.UTC(fromYear, 0, 1, 0, 0, 0, 0));
+    if (toYear)
+      range.$lte = new Date(Date.UTC(toYear, 11, 31, 23, 59, 59, 999));
+    base.push({ $match: { eventDate: range } });
+  }
+  base.push({
+    $addFields: {
+      yearStr: {
+        $dateToString: { date: "$eventDate", format: "%Y", timezone: tz },
+      },
+    },
+  });
+
+  const pipelineHoSo = [
+    ...base,
+    { $group: { _id: "$yearStr", count: { $sum: 1 } } },
+    { $project: { _id: 0, Key: "HoSo", year: { $toInt: "$_id" }, count: 1 } },
+    { $sort: { year: 1 } },
+  ];
+  const pipelineThanhVien = [
+    ...base,
+    { $group: { _id: "$yearStr", count: { $sum: "$memberCount" } } },
+    {
+      $project: {
+        _id: 0,
+        Key: "ThanhVien",
+        year: { $toInt: "$_id" },
+        count: 1,
+      },
+    },
+    { $sort: { year: 1 } },
+  ];
+
+  const [hoso, tv] = await Promise.all([
+    DoanVao.aggregate(pipelineHoSo),
+    DoanVao.aggregate(pipelineThanhVien),
+  ]);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { data: [...hoso, ...tv] },
+    null,
+    "Thống kê Đoàn Vào theo năm"
+  );
+});
+
+// Tạp san theo năm, tách theo Loại (ví dụ: TTT, YHTH)
+dashboardController.getTapSanByYear = catchAsync(async (req, res, next) => {
+  const toInt = (v, def = null) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : def;
+  };
+  const fromYear = toInt(req.query.fromYear, null);
+  const toYear = toInt(req.query.toYear, null);
+
+  const match = { isDeleted: { $ne: true } };
+  if (fromYear != null || toYear != null) {
+    match.NamXuatBan = {};
+    if (fromYear != null) match.NamXuatBan.$gte = String(fromYear);
+    if (toYear != null) match.NamXuatBan.$lte = String(toYear);
+  }
+
+  const data = await TapSan.aggregate([
+    { $match: match },
+    { $addFields: { year: { $toInt: "$NamXuatBan" }, Key: "$Loai" } },
+    { $group: { _id: { year: "$year", Key: "$Key" }, count: { $sum: 1 } } },
+    { $project: { _id: 0, Key: "$_id.Key", year: "$_id.year", count: 1 } },
+    { $sort: { year: 1, Key: 1 } },
+  ]);
+  return sendResponse(
+    res,
+    200,
+    true,
+    { data },
+    null,
+    "Thống kê Tạp san theo năm"
+  );
+});
+
+// Bài báo theo năm, tách theo Loại Tạp san (TTT/YHTH)
+dashboardController.getTapSanBaiBaoByYear = catchAsync(
+  async (req, res, next) => {
+    const toInt = (v, def = null) => {
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : def;
+    };
+    const fromYear = toInt(req.query.fromYear, null);
+    const toYear = toInt(req.query.toYear, null);
+
+    const pipeline = [
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $lookup: {
+          from: "tapsans",
+          localField: "TapSanId",
+          foreignField: "_id",
+          as: "ts",
+        },
+      },
+      { $unwind: "$ts" },
+      { $addFields: { year: { $toInt: "$ts.NamXuatBan" }, Key: "$ts.Loai" } },
+    ];
+    if (fromYear != null || toYear != null) {
+      const yMatch = {};
+      if (fromYear != null) yMatch.$gte = fromYear;
+      if (toYear != null) yMatch.$lte = toYear;
+      pipeline.push({ $match: { year: yMatch } });
+    }
+    pipeline.push(
+      { $group: { _id: { year: "$year", Key: "$Key" }, count: { $sum: 1 } } },
+      { $project: { _id: 0, Key: "$_id.Key", year: "$_id.year", count: 1 } },
+      { $sort: { year: 1, Key: 1 } }
+    );
+
+    const data = await TapSanBaiBao.aggregate(pipeline);
+    return sendResponse(
+      res,
+      200,
+      true,
+      { data },
+      null,
+      "Thống kê Bài báo theo năm"
     );
   }
 );

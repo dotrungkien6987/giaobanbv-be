@@ -12,7 +12,7 @@ doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
     DonViGioiThieu,
     TuNgay,
     DenNgay,
-    BaoCao,
+    CoBaoCao,
 
     GhiChu,
     ThanhVien,
@@ -25,7 +25,7 @@ doanVaoController.createDoanVao = catchAsync(async (req, res, next) => {
     DonViGioiThieu,
     TuNgay,
     DenNgay,
-    BaoCao,
+    CoBaoCao,
 
     GhiChu,
     ThanhVien,
@@ -227,17 +227,19 @@ doanVaoController.getMembers = catchAsync(async (req, res, next) => {
   ];
 
   if (hasPassport === "true") {
+    // Có hộ chiếu: bất kỳ giá trị chứa ký tự không phải khoảng trắng
     pipeline.push({
-      $match: { "ThanhVien.SoHoChieu": { $nin: [null, "", undefined] } },
+      $match: { "ThanhVien.SoHoChieu": { $regex: /\S/ } },
     });
   }
   if (hasPassport === "false") {
+    // Chưa có hộ chiếu: null/không tồn tại/chuỗi rỗng hoặc chỉ khoảng trắng
     pipeline.push({
       $match: {
         $or: [
-          { "ThanhVien.SoHoChieu": "" },
-          { "ThanhVien.SoHoChieu": null },
           { "ThanhVien.SoHoChieu": { $exists: false } },
+          { "ThanhVien.SoHoChieu": null },
+          { "ThanhVien.SoHoChieu": { $regex: /^\s*$/ } },
         ],
       },
     });
@@ -284,7 +286,7 @@ doanVaoController.getMembers = catchAsync(async (req, res, next) => {
       TuNgay: 1,
       DenNgay: 1,
       DonViGioiThieu: 1,
-      BaoCao: 1,
+      CoBaoCao: 1,
       GhiChu: 1,
       EventDate: 1,
       createdAt: 1,

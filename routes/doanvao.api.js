@@ -8,7 +8,7 @@ const { body } = require("express-validator");
 /**
  * @route POST /api/doanvao
  * @description Tạo mới thông tin đoàn vào
- * @body {NgayKyVanBan, SoVanBanChoPhep, MucDichXuatCanh, TuNgay, DenNgay, BaoCao, GhiChu, ThanhVien}
+ * @body {NgayKyVanBan, SoVanBanChoPhep, MucDichXuatCanh, TuNgay, DenNgay, CoBaoCao, GhiChu, ThanhVien}
  * @access Login required
  */
 router.post(
@@ -78,7 +78,7 @@ router.get(
  * @route PUT /api/doanvao/:id
  * @description Cập nhật thông tin đoàn vào
  * @params {id}
- * @body {NgayKyVanBan, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianVaoLamViec, BaoCao, GhiChu, ThanhVien}
+ * @body {NgayKyVanBan, SoVanBanChoPhep, MucDichXuatCanh, ThoiGianVaoLamViec, CoBaoCao, GhiChu, ThanhVien}
  * @access Login required
  */
 router.put(

@@ -1033,7 +1033,11 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       })
       .populate({
         path: "NhanVienID",
-        match: { isDeleted: false, DaNghi: false },
+        // Đồng bộ tiêu chí active: bao gồm cả trường hợp DaNghi chưa tồn tại (undefined)
+        match: {
+          isDeleted: false,
+          $or: [{ DaNghi: false }, { DaNghi: { $exists: false } }],
+        },
         select: "KhoaID SoCCHN isDeleted DaNghi",
         populate: { path: "KhoaID" },
       });
@@ -1055,7 +1059,11 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       })
       .populate({
         path: "NhanVienID",
-        match: { isDeleted: false, DaNghi: false },
+        // Đồng bộ tiêu chí active: bao gồm cả trường hợp DaNghi chưa tồn tại (undefined)
+        match: {
+          isDeleted: false,
+          $or: [{ DaNghi: false }, { DaNghi: { $exists: false } }],
+        },
         select: "KhoaID SoCCHN isDeleted DaNghi",
         populate: { path: "KhoaID" },
       });
@@ -1067,7 +1075,11 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     }
 
     // 3. Bổ sung toàn bộ nhân viên active (đảm bảo không bỏ sót)
-    const allNhanVien = await NhanVien.find({ isDeleted: false, DaNghi: false })
+    // Đồng bộ tiêu chí active với getCoCauNguonNhanLuc: coi DaNghi undefined là đang làm
+    const allNhanVien = await NhanVien.find({
+      isDeleted: false,
+      $or: [{ DaNghi: false }, { DaNghi: { $exists: false } }],
+    })
       .select("KhoaID SoCCHN isDeleted DaNghi")
       .populate("KhoaID");
     for (const nv of allNhanVien) pushOrAccumulate(nv, 0);
@@ -1085,9 +1097,10 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       if (nhanVienList.length === 0) continue;
 
       const totalNhanVien = nhanVienList.length;
-      const countSoCCHN = nhanVienList.filter(
-        (v) => v.nhanVien.SoCCHN && v.nhanVien.SoCCHN.trim() !== ""
-      ).length;
+      const countSoCCHN = nhanVienList.filter((v) => {
+        const so = v?.nhanVien?.SoCCHN;
+        return so && so.toString().trim() !== "";
+      }).length;
       const countDatTrue = nhanVienList.filter(
         (v) =>
           KhuyenCao &&
@@ -1115,9 +1128,10 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     );
     if (orphanList.length > 0) {
       const totalNhanVien = orphanList.length;
-      const countSoCCHN = orphanList.filter(
-        (v) => v.nhanVien.SoCCHN && v.nhanVien.SoCCHN.trim() !== ""
-      ).length;
+      const countSoCCHN = orphanList.filter((v) => {
+        const so = v?.nhanVien?.SoCCHN;
+        return so && so.toString().trim() !== "";
+      }).length;
       const countDatTrue = orphanList.filter(
         (v) =>
           KhuyenCao &&

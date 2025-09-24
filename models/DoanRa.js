@@ -6,6 +6,8 @@ const ThanhVienSchema = new Schema(
   {
     NhanVienId: { type: Schema.ObjectId, ref: "NhanVien", required: true },
     SoHoChieu: { type: String, default: "" },
+    // Thành viên có nộp báo cáo hay không
+    CoBaoCao: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -21,7 +23,6 @@ const doanraSchema = Schema(
     DenNgay: { type: Date },
     NguonKinhPhi: { type: String, default: "" },
     QuocGiaDen: { type: String },
-    BaoCao: { type: String },
     TaiLieuKemTheo: { type: [String], default: [] },
     GhiChu: { type: String, default: "" },
     isDeleted: { type: Boolean, default: false, select: false },

@@ -244,6 +244,7 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
       // Member level
       MemberId: "$ThanhVien.NhanVienId",
       SoHoChieu: { $ifNull: ["$ThanhVien.SoHoChieu", "$NV.SoHoChieu"] },
+      CoBaoCao: { $ifNull: ["$ThanhVien.CoBaoCao", false] },
       Ten: "$NV.Ten",
       NgaySinh: "$NV.NgaySinh",
       GioiTinh: "$NV.GioiTinh",
@@ -262,7 +263,6 @@ doanRaController.getMembers = catchAsync(async (req, res, next) => {
       DenNgay: 1,
       NguonKinhPhi: 1,
       QuocGiaDen: 1,
-      BaoCao: 1,
       TaiLieuKemTheo: 1,
       GhiChu: 1,
       EventDate: 1,

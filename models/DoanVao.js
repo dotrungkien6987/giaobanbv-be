@@ -11,7 +11,8 @@ const doanvaoSchema = Schema(
     // Thời gian vào làm việc: lưu phẳng 2 trường
     TuNgay: { type: Date },
     DenNgay: { type: Date },
-    BaoCao: { type: String },
+    // Đã nộp báo cáo? (thuộc về Đoàn vào, áp dụng cho toàn bộ thành viên)
+    CoBaoCao: { type: Boolean, default: false },
 
     GhiChu: { type: String, default: "" },
     // Embedded BCChiTietBenhNhan

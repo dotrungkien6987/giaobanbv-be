@@ -6,6 +6,7 @@ const quanLyNhanVienRoutes = require("./quanlynhanvien.api");
 const giaoNhiemVuRoutes = require("./giaoNhiemVu.api");
 const congViecRoutes = require("./congViec.api");
 const filesRoutes = require("./files.api");
+const fileAdminRoutes = require("./fileAdmin.api");
 const quanLyNhanVienRelationRoutes = require("./quanLyNhanVien.routes");
 const nhomViecUserRoutes = require("./nhomViecUser.routes");
 const colorConfigRoutes = require("./colorConfig.api");
@@ -17,6 +18,7 @@ router.use("/quanlynhanvien", quanLyNhanVienRelationRoutes); // Routes cho quan 
 router.use("/nhom-viec-user", nhomViecUserRoutes); // Routes cho nhóm việc user
 router.use("/", congViecRoutes); // Routes cho công việc
 router.use("/", filesRoutes); // Routes cho tệp tin
+router.use("/admin", fileAdminRoutes); // Admin routes cho tệp tin
 router.use("/", colorConfigRoutes); // Routes cho cấu hình màu
 
 module.exports = router;

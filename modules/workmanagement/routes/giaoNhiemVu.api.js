@@ -30,4 +30,10 @@ router.delete("/assignments/:assignmentId", ctrl.unassignById);
 // Gỡ gán theo cặp
 router.delete("/assignments", ctrl.unassignByPair);
 
+// Batch update assignments for single employee
+router.put(
+  "/nhan-vien/:employeeId/assignments",
+  ctrl.batchUpdateEmployeeAssignments
+);
+
 module.exports = router;

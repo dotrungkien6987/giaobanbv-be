@@ -293,6 +293,140 @@ service.unassignByPair = async (req, employeeId, dutyId) => {
   return { _id: item._id };
 };
 
+// ==================== NEW: Batch update for single employee ====================
+service.batchUpdateEmployeeAssignments = async (req, employeeId, dutyIds) => {
+  const user = await getCurrentUser(req);
+  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
+
+  // Validate input
+  if (!Array.isArray(dutyIds)) {
+    throw new AppError(400, "dutyIds phải là mảng");
+  }
+
+  // Get employee info
+  const emp = await NhanVien.findById(employeeId).select("_id KhoaID");
+  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
+
+  // Get all duties của khoa này
+  const allDuties = await NhiemVuThuongQuy.find({
+    KhoaID: emp.KhoaID,
+    TrangThaiHoatDong: true,
+    isDeleted: false,
+  }).select("_id");
+
+  const validDutyIds = allDuties.map((d) => d._id.toString());
+  const requestedDutyIds = dutyIds.map((id) => id.toString());
+
+  // Filter chỉ những nhiệm vụ hợp lệ
+  const dutyIdsToAssign = requestedDutyIds.filter((id) =>
+    validDutyIds.includes(id)
+  );
+
+  // ✅ IMPORTANT: Remove duplicates from input array
+  const uniqueDutyIdsToAssign = [...new Set(dutyIdsToAssign)];
+
+  // Get current assignments (active only)
+  const currentAssignments = await NhanVienNhiemVu.find({
+    NhanVienID: toObjectId(employeeId),
+    isDeleted: false,
+    TrangThaiHoatDong: true,
+  }).select("_id NhiemVuThuongQuyID");
+
+  const currentDutyIds = currentAssignments.map((a) =>
+    a.NhiemVuThuongQuyID.toString()
+  );
+
+  // Calculate diff (using unique array)
+  const toAdd = uniqueDutyIdsToAssign.filter(
+    (id) => !currentDutyIds.includes(id)
+  );
+  const toRemove = currentDutyIds.filter(
+    (id) => !uniqueDutyIdsToAssign.includes(id)
+  );
+  const unchanged = uniqueDutyIdsToAssign.filter((id) =>
+    currentDutyIds.includes(id)
+  );
+
+  const now = new Date();
+  let addedCount = 0;
+  let removedCount = 0;
+  let restoredCount = 0;
+
+  // Add new assignments (hoặc restore nếu đã tồn tại bị xóa)
+  for (const dutyId of toAdd) {
+    // Bước 1: Cố gắng RESTORE (nếu record đang bị xóa mềm)
+    const restoreRes = await NhanVienNhiemVu.updateOne(
+      {
+        NhanVienID: toObjectId(employeeId),
+        NhiemVuThuongQuyID: toObjectId(dutyId),
+        isDeleted: true,
+      },
+      {
+        $set: {
+          TrangThaiHoatDong: true,
+          isDeleted: false,
+          NgayGan: now,
+          NguoiGanID: user.NhanVienID || null,
+        },
+      }
+    );
+
+    if (restoreRes.matchedCount && restoreRes.matchedCount > 0) {
+      restoredCount++;
+      continue; // sang duty tiếp theo
+    }
+
+    // Bước 2: Nếu không có record để restore, thực hiện UPSERT (atomic)
+    const upsertRes = await NhanVienNhiemVu.updateOne(
+      {
+        NhanVienID: toObjectId(employeeId),
+        NhiemVuThuongQuyID: toObjectId(dutyId),
+      },
+      {
+        $set: {
+          TrangThaiHoatDong: true,
+          isDeleted: false,
+          NgayGan: now,
+          NguoiGanID: user.NhanVienID || null,
+        },
+      },
+      { upsert: true }
+    );
+
+    if (upsertRes.upsertedCount && upsertRes.upsertedCount > 0) {
+      addedCount++;
+    } else if (upsertRes.matchedCount && upsertRes.matchedCount > 0) {
+      // Đã tồn tại và được cập nhật (trường hợp hiếm khi concurrent), coi như giữ nguyên
+      // Không tăng restoredCount vì không chắc trạng thái trước đó
+    }
+  }
+
+  // Remove assignments (soft delete)
+  for (const dutyId of toRemove) {
+    const assignment = currentAssignments.find(
+      (a) => a.NhiemVuThuongQuyID.toString() === dutyId
+    );
+    if (assignment) {
+      assignment.isDeleted = true;
+      assignment.TrangThaiHoatDong = false;
+      await assignment.save();
+      removedCount++;
+    }
+  }
+
+  // Unchanged: không làm gì cả (giữ nguyên NgayGan)
+
+  return {
+    success: true,
+    added: addedCount,
+    removed: removedCount,
+    restored: restoredCount,
+    unchanged: unchanged.length,
+    total: uniqueDutyIdsToAssign.length,
+    message: `Thêm: ${addedCount}, Khôi phục: ${restoredCount}, Xóa: ${removedCount}, Giữ nguyên: ${unchanged.length}`,
+  };
+};
+
 module.exports = service;
 service.getAssignmentTotals = async (req, nhanVienIds, selectedOnly) => {
   const user = await getCurrentUser(req);

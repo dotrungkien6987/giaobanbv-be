@@ -93,13 +93,24 @@ ctrl.unassignByPair = catchAsync(async (req, res) => {
     NhanVienID,
     NhiemVuThuongQuyID
   );
+  return sendResponse(res, 200, true, data, null, "Gỡ gán nhiệm vụ thành công");
+});
+
+ctrl.batchUpdateEmployeeAssignments = catchAsync(async (req, res) => {
+  const { employeeId } = req.params;
+  const { dutyIds } = req.body;
+  const data = await service.batchUpdateEmployeeAssignments(
+    req,
+    employeeId,
+    dutyIds
+  );
   return sendResponse(
     res,
     200,
     true,
     data,
     null,
-    "Gỡ gán nhiệm vụ theo cặp thành công"
+    "Cập nhật nhiệm vụ thành công"
   );
 });
 

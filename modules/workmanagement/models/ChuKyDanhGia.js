@@ -8,11 +8,18 @@ const chuKyDanhGiaSchema = Schema(
       required: true,
       trim: true,
       maxlength: 255,
+      // Example: "Tháng 1/2025", "Tháng 2/2025"
     },
-    LoaiChuKy: {
-      type: String,
-      enum: ["HANG_THANG", "QUY", "NAM", "TUY_CHINH"],
-      default: "HANG_THANG",
+    Thang: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 12,
+    },
+    Nam: {
+      type: Number,
+      required: true,
+      min: 2020,
     },
     NgayBatDau: {
       type: Date,
@@ -22,10 +29,9 @@ const chuKyDanhGiaSchema = Schema(
       type: Date,
       required: true,
     },
-    TrangThai: {
-      type: String,
-      enum: ["CHUAN_BI", "DANG_HOAT_DONG", "DANH_GIA", "HOAN_THANH"],
-      default: "CHUAN_BI",
+    isDong: {
+      type: Boolean,
+      default: false, // false = đang mở, true = đã đóng
     },
     MoTa: {
       type: String,
@@ -35,6 +41,10 @@ const chuKyDanhGiaSchema = Schema(
       type: Schema.ObjectId,
       ref: "NhanVien",
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -42,11 +52,10 @@ const chuKyDanhGiaSchema = Schema(
   }
 );
 
-// Indexes
-chuKyDanhGiaSchema.index({ NgayBatDau: 1, NgayKetThuc: 1 });
-chuKyDanhGiaSchema.index({ TrangThai: 1 });
-chuKyDanhGiaSchema.index({ LoaiChuKy: 1 });
-chuKyDanhGiaSchema.index({ TenChuKy: 1 });
+// Indexes đơn giản
+chuKyDanhGiaSchema.index({ Thang: 1, Nam: 1 });
+chuKyDanhGiaSchema.index({ isDong: 1 });
+chuKyDanhGiaSchema.index({ isDeleted: 1 });
 
 // Virtual for evaluations in this cycle
 chuKyDanhGiaSchema.virtual("DanhSachDanhGia", {
@@ -55,55 +64,11 @@ chuKyDanhGiaSchema.virtual("DanhSachDanhGia", {
   foreignField: "ChuKyID",
 });
 
-// Methods
-chuKyDanhGiaSchema.methods.dangHoatDong = function () {
-  const hienTai = new Date();
-  return (
-    this.TrangThai === "DANG_HOAT_DONG" &&
-    this.NgayBatDau <= hienTai &&
-    this.NgayKetThuc >= hienTai
-  );
-};
-
-chuKyDanhGiaSchema.methods.daHoanThanh = function () {
-  return this.TrangThai === "HOAN_THANH";
-};
-
-chuKyDanhGiaSchema.methods.coTheSua = function () {
-  return ["CHUAN_BI", "DANG_HOAT_DONG"].includes(this.TrangThai);
-};
-
-// Static methods
-chuKyDanhGiaSchema.statics.layChuKyHoatDong = function () {
-  return this.findOne({
-    TrangThai: "DANG_HOAT_DONG",
-    NgayBatDau: { $lte: new Date() },
-    NgayKetThuc: { $gte: new Date() },
+// Static method đơn giản
+chuKyDanhGiaSchema.statics.layChuKyDangMo = function () {
+  return this.findOne({ isDong: false, isDeleted: false }).sort({
+    NgayBatDau: -1,
   });
-};
-
-chuKyDanhGiaSchema.statics.timTheoTrangThai = function (trangThai) {
-  return this.find({ TrangThai: trangThai })
-    .populate("NguoiTaoID", "HoTen MaNhanVien")
-    .sort({ NgayBatDau: -1 });
-};
-
-chuKyDanhGiaSchema.statics.timTheoKhoangThoiGian = function (tuNgay, denNgay) {
-  return this.find({
-    $or: [
-      { NgayBatDau: { $gte: tuNgay, $lte: denNgay } },
-      { NgayKetThuc: { $gte: tuNgay, $lte: denNgay } },
-      { NgayBatDau: { $lte: tuNgay }, NgayKetThuc: { $gte: denNgay } },
-    ],
-  }).sort({ NgayBatDau: -1 });
-};
-
-chuKyDanhGiaSchema.statics.layChuKyHienTai = function () {
-  const hienTai = new Date();
-  return this.findOne({
-    NgayBatDau: { $lte: hienTai },
-    NgayKetThuc: { $gte: hienTai },
-  }).sort({ NgayBatDau: -1 });
 };
 
 // Validation
@@ -113,6 +78,12 @@ chuKyDanhGiaSchema.pre("save", function (next) {
     error.name = "ValidationError";
     return next(error);
   }
+
+  // Auto-generate TenChuKy nếu chưa có
+  if (!this.TenChuKy) {
+    this.TenChuKy = `Tháng ${this.Thang}/${this.Nam}`;
+  }
+
   next();
 });
 

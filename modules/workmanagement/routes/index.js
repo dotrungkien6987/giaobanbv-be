@@ -10,12 +10,18 @@ const fileAdminRoutes = require("./fileAdmin.api");
 const quanLyNhanVienRelationRoutes = require("./quanLyNhanVien.routes");
 const nhomViecUserRoutes = require("./nhomViecUser.routes");
 const colorConfigRoutes = require("./colorConfig.api");
+const kpiRoutes = require("./kpi.api");
+const tieuChiDanhGiaRoutes = require("./tieuChiDanhGia.api");
+const chuKyDanhGiaRoutes = require("./chuKyDanhGia.api");
 
 // Sử dụng các routes
 router.use("/quan-ly-nhan-vien", quanLyNhanVienRoutes);
 router.use("/giao-nhiem-vu", giaoNhiemVuRoutes);
 router.use("/quanlynhanvien", quanLyNhanVienRelationRoutes); // Routes cho quan hệ quản lý
 router.use("/nhom-viec-user", nhomViecUserRoutes); // Routes cho nhóm việc user
+router.use("/kpi", kpiRoutes); // Routes cho hệ thống KPI
+router.use("/tieu-chi-danh-gia", tieuChiDanhGiaRoutes); // Routes cho tiêu chí đánh giá
+router.use("/chu-ky-danh-gia", chuKyDanhGiaRoutes); // Routes cho chu kỳ đánh giá
 router.use("/", congViecRoutes); // Routes cho công việc
 router.use("/", filesRoutes); // Routes cho tệp tin
 router.use("/admin", fileAdminRoutes); // Admin routes cho tệp tin

@@ -36,38 +36,7 @@ Quản lý thông tin các phòng ban trong bệnh viện.
 - **1-N** với chính nó (PhongBanChaID): Cấu trúc cây phòng ban
 - **1-N** với ViTriCongViec: Mỗi phòng ban có nhiều vị trí công việc
 
----
 
-## 2. VITRICONGVIEC (JOB POSITION) SCHEMA
-
-### Mục đích
-
-Định nghĩa các vị trí công việc cụ thể trong từng phòng ban.
-
-### Cấu trúc dữ liệu
-
-```javascript
-{
-  TenViTri: String,           // Tên vị trí (VD: "Bác sĩ khám bệnh")
-  MaViTri: String,            // Mã định danh vị trí (VD: "BS_KB_01")
-  PhongBanID: ObjectId,       // Thuộc phòng ban nào (ref: PhongBan)
-  MoTaCongViec: String,       // Mô tả chi tiết công việc phải làm
-  YeuCauKyNang: String,       // Yêu cầu về kỹ năng, kinh nghiệm
-  TrangThaiTuyenDung: String, // "ACTIVE", "INACTIVE", "RECRUITING"
-  MucLuongCoBan: Number,      // Mức lương cơ bản (nếu có)
-  SoLuongCanTuyen: Number,    // Số lượng người cần tuyển cho vị trí này
-  CapBac: String,             // Cấp bậc trong hệ thống (VD: "Nhân viên", "Trưởng nhóm")
-  GhiChu: String              // Ghi chú bổ sung
-}
-```
-
-### Quan hệ
-
-- **N-1** với PhongBan: Nhiều vị trí thuộc 1 phòng ban
-- **1-N** với NhanVienQuanLy: 1 vị trí có thể có nhiều nhân viên
-- **1-N** với NhiemVuThuongQuy: 1 vị trí có nhiều nhiệm vụ thường quy
-
----
 
 ## 3. NHANVIENQUANLY (EMPLOYEE) SCHEMA
 

@@ -35,6 +35,10 @@ const tieuChiDanhGiaSchema = Schema(
       type: Boolean,
       default: true,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -46,6 +50,7 @@ const tieuChiDanhGiaSchema = Schema(
 tieuChiDanhGiaSchema.index({ TenTieuChi: 1 });
 tieuChiDanhGiaSchema.index({ LoaiTieuChi: 1 });
 tieuChiDanhGiaSchema.index({ TrangThaiHoatDong: 1 });
+tieuChiDanhGiaSchema.index({ isDeleted: 1 });
 
 // Virtual for positions using this criteria
 tieuChiDanhGiaSchema.virtual("ViTriSuDung", {
@@ -61,17 +66,23 @@ tieuChiDanhGiaSchema.methods.kiemTraDiem = function (diem) {
 
 // Static methods
 tieuChiDanhGiaSchema.statics.layDanhSachHoatDong = function () {
-  return this.find({ TrangThaiHoatDong: true }).sort({ TenTieuChi: 1 });
+  return this.find({ TrangThaiHoatDong: true, isDeleted: false }).sort({
+    TenTieuChi: 1,
+  });
 };
 
 tieuChiDanhGiaSchema.statics.timTheoLoai = function (loai) {
-  return this.find({ LoaiTieuChi: loai, TrangThaiHoatDong: true }).sort({
+  return this.find({
+    LoaiTieuChi: loai,
+    TrangThaiHoatDong: true,
+    isDeleted: false,
+  }).sort({
     TenTieuChi: 1,
   });
 };
 
 tieuChiDanhGiaSchema.statics.layTieuChiMacDinh = function () {
-  return this.find({ TrangThaiHoatDong: true }).select(
+  return this.find({ TrangThaiHoatDong: true, isDeleted: false }).select(
     "TenTieuChi TrongSoMacDinh LoaiTieuChi GiaTriMin GiaTriMax"
   );
 };

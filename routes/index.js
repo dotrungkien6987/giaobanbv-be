@@ -37,6 +37,10 @@ router.use("/dashboard", dashboardApi);
 const khuyencaokhoaApi = require("./khuyencaokhoa.api");
 router.use("/khuyencaokhoa", khuyencaokhoaApi);
 
+// Khuyến cáo khoa bình quân bệnh án
+const khuyenCaoKhoaBQBAApi = require("./khuyencaokhoa.bqba.api");
+router.use("/khuyen-cao-khoa-bqba", khuyenCaoKhoaBQBAApi);
+
 const daotaoApi = require("./daotao.api");
 router.use("/daotao", daotaoApi);
 

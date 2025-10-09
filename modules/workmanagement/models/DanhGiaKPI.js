@@ -4,46 +4,55 @@ const Schema = mongoose.Schema;
 const danhGiaKPISchema = Schema(
   {
     ChuKyID: {
-      type: Schema.ObjectId,
+      type: Schema.Types.ObjectId,
       required: true,
       ref: "ChuKyDanhGia",
     },
     NhanVienID: {
-      type: Schema.ObjectId,
+      type: Schema.Types.ObjectId,
       required: true,
       ref: "NhanVien",
     },
     NguoiDanhGiaID: {
-      type: Schema.ObjectId,
+      type: Schema.Types.ObjectId,
       required: true,
       ref: "NhanVien",
     },
-    TongDiem: {
+
+    // Tổng điểm KPI (tự động tính từ DanhGiaNhiemVuThuongQuy)
+    TongDiemKPI: {
       type: Number,
-      min: 0,
       default: 0,
-    },
-    DiemChuanHoa: {
-      type: Number,
       min: 0,
-      max: 10,
-      default: 0,
     },
+
+    // Trạng thái chỉ có 2: CHUA_DUYET | DA_DUYET
     TrangThai: {
       type: String,
-      enum: ["NHAP", "DA_NOP", "DUYET", "TU_CHOI"],
-      default: "NHAP",
+      enum: ["CHUA_DUYET", "DA_DUYET"],
+      default: "CHUA_DUYET",
     },
+
+    // Nhận xét của người đánh giá
     NhanXetNguoiDanhGia: {
       type: String,
       maxlength: 2000,
     },
+
+    // Phản hồi từ nhân viên (optional)
     PhanHoiNhanVien: {
       type: String,
       maxlength: 2000,
     },
-    ThoiGianDuyet: {
+
+    // Thời gian duyệt
+    NgayDuyet: {
       type: Date,
+    },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -58,9 +67,10 @@ danhGiaKPISchema.index({ ChuKyID: 1 });
 danhGiaKPISchema.index({ NhanVienID: 1 });
 danhGiaKPISchema.index({ NguoiDanhGiaID: 1 });
 danhGiaKPISchema.index({ TrangThai: 1 });
-danhGiaKPISchema.index({ DiemChuanHoa: -1 });
+danhGiaKPISchema.index({ TongDiemKPI: -1 });
+danhGiaKPISchema.index({ isDeleted: 1 });
 
-// Virtual for routine duty evaluations
+// Virtual: Danh sách đánh giá nhiệm vụ con
 danhGiaKPISchema.virtual("DanhSachDanhGiaNhiemVu", {
   ref: "DanhGiaNhiemVuThuongQuy",
   localField: "_id",
@@ -68,66 +78,102 @@ danhGiaKPISchema.virtual("DanhSachDanhGiaNhiemVu", {
 });
 
 // Methods
-danhGiaKPISchema.methods.tinhTongDiem = async function () {
+danhGiaKPISchema.methods.tinhTongDiemKPI = async function () {
   const DanhGiaNhiemVuThuongQuy = mongoose.model("DanhGiaNhiemVuThuongQuy");
+
   const danhGiaNhiemVu = await DanhGiaNhiemVuThuongQuy.find({
     DanhGiaKPIID: this._id,
+    isDeleted: false,
   });
 
-  this.TongDiem = danhGiaNhiemVu.reduce(
-    (tong, nhiemVu) => tong + (nhiemVu.DiemCuoi || 0),
+  this.TongDiemKPI = danhGiaNhiemVu.reduce(
+    (sum, item) => sum + (item.DiemNhiemVu || 0),
     0
   );
-  this.DiemChuanHoa = Math.min(this.TongDiem / 10, 10);
 
-  return this.save();
+  await this.save();
+  return this.TongDiemKPI;
 };
 
-danhGiaKPISchema.methods.nopBai = function () {
-  this.TrangThai = "DA_NOP";
-  return this.save();
+danhGiaKPISchema.methods.duyet = async function (nhanXet) {
+  if (this.TrangThai === "DA_DUYET") {
+    throw new Error("Đánh giá KPI đã được duyệt");
+  }
+
+  this.TrangThai = "DA_DUYET";
+  this.NgayDuyet = new Date();
+  if (nhanXet) {
+    this.NhanXetNguoiDanhGia = nhanXet;
+  }
+
+  await this.save();
+  return this;
 };
 
-danhGiaKPISchema.methods.duyet = function () {
-  this.TrangThai = "DUYET";
-  this.ThoiGianDuyet = new Date();
-  return this.save();
-};
+danhGiaKPISchema.methods.huyDuyet = async function () {
+  this.TrangThai = "CHUA_DUYET";
+  this.NgayDuyet = null;
 
-danhGiaKPISchema.methods.tuChoi = function () {
-  this.TrangThai = "TU_CHOI";
-  this.ThoiGianDuyet = null;
-  return this.save();
+  await this.save();
+  return this;
 };
 
 danhGiaKPISchema.methods.coTheSua = function () {
-  return ["NHAP", "TU_CHOI"].includes(this.TrangThai);
+  return this.TrangThai === "CHUA_DUYET" && !this.isDeleted;
 };
 
 // Static methods
-danhGiaKPISchema.statics.timTheoChuKy = function (chuKyId) {
-  return this.find({ ChuKyID: chuKyId })
+danhGiaKPISchema.statics.timTheoChuKy = function (chuKyId, options = {}) {
+  const { page = 1, limit = 20, trangThai } = options;
+
+  const query = {
+    ChuKyID: chuKyId,
+    isDeleted: false,
+  };
+
+  if (trangThai) {
+    query.TrangThai = trangThai;
+  }
+
+  return this.find(query)
     .populate("NhanVienID", "HoTen MaNhanVien")
-    .populate("NguoiDanhGiaID", "HoTen MaNhanVien")
-    .sort({ DiemChuanHoa: -1 });
+    .populate("NguoiDanhGiaID", "HoTen UserName")
+    .populate("ChuKyID", "TenChuKy NgayBatDau NgayKetThuc")
+    .sort({ TongDiemKPI: -1, createdAt: -1 })
+    .limit(limit)
+    .skip((page - 1) * limit);
 };
 
 danhGiaKPISchema.statics.timTheoNhanVien = function (nhanVienId) {
-  return this.find({ NhanVienID: nhanVienId })
-    .populate("ChuKyID", "TenChuKy NgayBatDau NgayKetThuc")
-    .populate("NguoiDanhGiaID", "HoTen MaNhanVien")
+  return this.find({
+    NhanVienID: nhanVienId,
+    isDeleted: false,
+  })
+    .populate("ChuKyID", "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy")
+    .populate("NguoiDanhGiaID", "HoTen")
     .sort({ createdAt: -1 });
 };
 
 danhGiaKPISchema.statics.layTopNhanVien = function (chuKyId, soLuong = 10) {
   return this.find({
     ChuKyID: chuKyId,
-    TrangThai: "DUYET",
+    TrangThai: "DA_DUYET",
+    isDeleted: false,
   })
     .populate("NhanVienID", "HoTen MaNhanVien")
-    .sort({ DiemChuanHoa: -1 })
+    .sort({ TongDiemKPI: -1 })
     .limit(soLuong);
 };
+
+// Pre-save validation
+danhGiaKPISchema.pre("save", function (next) {
+  // Validation: Ngày duyệt chỉ có khi trạng thái DA_DUYET
+  if (this.TrangThai !== "DA_DUYET") {
+    this.NgayDuyet = null;
+  }
+
+  next();
+});
 
 const DanhGiaKPI = mongoose.model("DanhGiaKPI", danhGiaKPISchema);
 module.exports = DanhGiaKPI;

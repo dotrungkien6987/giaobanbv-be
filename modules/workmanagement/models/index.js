@@ -29,14 +29,18 @@ const {
 // Notification System
 const QuyTacThongBao = require("./QuyTacThongBao");
 
-// Evaluation Criteria
+// Evaluation Criteria (Legacy - keeping for backward compatibility)
 const EvaluationCriteria = require("./EvaluationCriteria");
-
-// Evaluation Cycles and KPI
 const EvaluationCycle = require("./EvaluationCycle");
 const KpiEvaluation = require("./KpiEvaluation");
 const RoutineDutyEvaluation = require("./RoutineDutyEvaluation");
 const CriteriaScore = require("./CriteriaScore");
+
+// KPI System (New Vietnamese models)
+const TieuChiDanhGia = require("./TieuChiDanhGia");
+const ChuKyDanhGia = require("./ChuKyDanhGia");
+const DanhGiaKPI = require("./DanhGiaKPI");
+const DanhGiaNhiemVuThuongQuy = require("./DanhGiaNhiemVuThuongQuy");
 
 // Tasks and Assignments (legacy AssignedTask đã gỡ bỏ)
 const NhomViecUser = require("./NhomViecUser");
@@ -75,12 +79,18 @@ module.exports = {
   // Notification System
   QuyTacThongBao,
 
-  // Evaluation
+  // Evaluation (Legacy - keeping for backward compatibility)
   EvaluationCriteria,
   EvaluationCycle,
   KpiEvaluation,
   RoutineDutyEvaluation,
   CriteriaScore,
+
+  // KPI System (New Vietnamese models)
+  TieuChiDanhGia,
+  ChuKyDanhGia,
+  DanhGiaKPI,
+  DanhGiaNhiemVuThuongQuy,
 
   // Tasks
   NhomViecUser,

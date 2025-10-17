@@ -2,6 +2,21 @@ var express = require("express");
 var router = express.Router();
 
 const quanLyNhanVienController = require("../controllers/quanLyNhanVienController");
+const authentication = require("../../../middlewares/authentication");
+const { validateQuanLy } = require("../middlewares/validateQuanLy");
+
+/**
+ * @route GET /api/workmanagement/quan-ly-nhan-vien/nhan-vien-duoc-quan-ly
+ * @description Lấy danh sách nhân viên mà current user được phép quản lý (dùng cho KPI/Giao việc)
+ * @query LoaiQuanLy - "KPI" hoặc "Giao_Viec" (default: "KPI")
+ * @access Private (cần authentication + validateQuanLy middleware)
+ */
+router.get(
+  "/nhan-vien-duoc-quan-ly",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  quanLyNhanVienController.getNhanVienDuocQuanLyByCurrentUser
+);
 
 /**
  * @route GET /api/workmanagement/quan-ly-nhan-vien/giaoviec/:nhanVienId

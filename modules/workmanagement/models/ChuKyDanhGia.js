@@ -41,6 +41,42 @@ const chuKyDanhGiaSchema = Schema(
       type: Schema.ObjectId,
       ref: "NhanVien",
     },
+    // Cấu hình tiêu chí đánh giá cho chu kỳ này
+    TieuChiCauHinh: [
+      {
+        TenTieuChi: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        LoaiTieuChi: {
+          type: String,
+          enum: ["TANG_DIEM", "GIAM_DIEM"],
+          required: true,
+        },
+        GiaTriMin: {
+          type: Number,
+          default: 0,
+        },
+        GiaTriMax: {
+          type: Number,
+          default: 100,
+        },
+        DonVi: {
+          type: String,
+          default: "%",
+          trim: true,
+        },
+        ThuTu: {
+          type: Number,
+          default: 0,
+        },
+        GhiChu: {
+          type: String,
+          maxlength: 500,
+        },
+      },
+    ],
     isDeleted: {
       type: Boolean,
       default: false,

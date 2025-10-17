@@ -15,6 +15,28 @@ router.get(
 );
 
 /**
+ * @route GET /api/workmanagement/chu-ky-danh-gia/auto-select
+ * @desc Tự động chọn chu kỳ phù hợp (ngày hiện tại + 5 ngày)
+ * @access Private
+ */
+router.get(
+  "/auto-select",
+  authentication.loginRequired,
+  chuKyDanhGiaController.autoSelect
+);
+
+/**
+ * @route GET /api/workmanagement/chu-ky-danh-gia/previous-criteria
+ * @desc Lấy tiêu chí từ chu kỳ trước gần nhất
+ * @access Private/Admin
+ */
+router.get(
+  "/previous-criteria",
+  authentication.adminRequired,
+  chuKyDanhGiaController.getPreviousCriteria
+);
+
+/**
  * @route GET /api/workmanagement/chu-ky-danh-gia/dang-mo
  * @desc Lấy chu kỳ đánh giá đang mở
  * @access Private

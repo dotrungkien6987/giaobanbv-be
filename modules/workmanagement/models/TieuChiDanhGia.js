@@ -24,12 +24,13 @@ const tieuChiDanhGiaSchema = Schema(
     },
     GiaTriMax: {
       type: Number,
-      default: 10,
+      default: 100,
     },
-    TrongSoMacDinh: {
-      type: Number,
-      min: 0,
-      default: 1.0,
+    DonVi: {
+      type: String,
+      default: "%",
+      trim: true,
+      maxlength: 50,
     },
     TrangThaiHoatDong: {
       type: Boolean,
@@ -83,7 +84,7 @@ tieuChiDanhGiaSchema.statics.timTheoLoai = function (loai) {
 
 tieuChiDanhGiaSchema.statics.layTieuChiMacDinh = function () {
   return this.find({ TrangThaiHoatDong: true, isDeleted: false }).select(
-    "TenTieuChi TrongSoMacDinh LoaiTieuChi GiaTriMin GiaTriMax"
+    "TenTieuChi LoaiTieuChi GiaTriMin GiaTriMax DonVi"
   );
 };
 

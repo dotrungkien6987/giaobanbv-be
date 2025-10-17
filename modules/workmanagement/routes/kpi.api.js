@@ -2,13 +2,56 @@ const express = require("express");
 const router = express.Router();
 const kpiController = require("../controllers/kpi.controller");
 const authentication = require("../../../middlewares/authentication");
+const { validateQuanLy } = require("../middlewares/validateQuanLy");
+
+/**
+ * @route GET /api/workmanagement/kpi
+ * @desc Lấy danh sách tất cả đánh giá KPI (với filter)
+ * @access Private
+ * @query ChuKyDanhGiaID, NhanVienID, TrangThai
+ */
+router.get(
+  "/",
+  authentication.loginRequired,
+  kpiController.layDanhSachDanhGiaKPI
+);
+
+/**
+ * @route GET /api/workmanagement/kpi/dashboard/:chuKyId
+ * @desc Dashboard tổng quan - Danh sách nhân viên + điểm KPI
+ * @access Private (Manager)
+ */
+router.get(
+  "/dashboard/:chuKyId",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.getDashboard
+);
+
+/**
+ * @route GET /api/workmanagement/kpi/cham-diem
+ * @desc Lấy hoặc tạo đánh giá KPI (V2 - Auto-create)
+ * @access Private (Manager)
+ * @query chuKyId, nhanVienId
+ */
+router.get(
+  "/cham-diem",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.getChamDiemDetail
+);
 
 /**
  * @route POST /api/workmanagement/kpi
  * @desc Tạo đánh giá KPI mới
  * @access Private (Manager)
  */
-router.post("/", authentication.loginRequired, kpiController.taoDanhGiaKPI);
+router.post(
+  "/",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.taoDanhGiaKPI
+);
 
 /**
  * @route GET /api/workmanagement/kpi/:id
@@ -62,7 +105,21 @@ router.get(
 router.put(
   "/nhiem-vu/:nhiemVuId",
   authentication.loginRequired,
+  validateQuanLy("KPI"),
   kpiController.chamDiemNhiemVu
+);
+
+/**
+ * @route POST /api/workmanagement/kpi/reset-criteria
+ * @desc Đồng bộ lại tiêu chí từ ChuKy.TieuChiCauHinh (soft merge - giữ điểm cũ)
+ * @access Private (Manager)
+ * @body { danhGiaKPIId }
+ */
+router.post(
+  "/reset-criteria",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.resetCriteria
 );
 
 /**

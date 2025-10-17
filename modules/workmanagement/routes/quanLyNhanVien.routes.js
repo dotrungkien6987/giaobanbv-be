@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const quanLyNhanVienController = require("../controllers/quanLyNhanVien.controller");
+const quanLyNhanVienController = require("../controllers/quanLyNhanVienController");
 
 // Routes cho quản lý nhân viên
 router.get(

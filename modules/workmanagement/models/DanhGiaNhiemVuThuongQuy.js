@@ -33,29 +33,44 @@ const danhGiaNhiemVuThuongQuySchema = Schema(
     // Chi tiết điểm từng tiêu chí
     ChiTietDiem: [
       {
-        TieuChiID: {
-          type: Schema.Types.ObjectId,
-          ref: "TieuChiDanhGia",
-          required: true,
-        },
+        // Không còn reference TieuChiID - self-contained
         TenTieuChi: {
           type: String,
           required: true,
-        },
-        DiemDat: {
-          type: Number,
-          required: true,
-        },
-        TrongSo: {
-          type: Number,
-          required: true,
-          min: 0,
-          default: 1.0,
         },
         LoaiTieuChi: {
           type: String,
           enum: ["TANG_DIEM", "GIAM_DIEM"],
           required: true,
+        },
+        // ✅ Giá trị user nhập (0 - GiaTriMax)
+        DiemDat: {
+          type: Number,
+          required: true,
+          default: 0,
+        },
+        // ✅ Giá trị min/max (copy từ ChuKy.TieuChiCauHinh)
+        GiaTriMin: {
+          type: Number,
+          required: true,
+          default: 0,
+        },
+        GiaTriMax: {
+          type: Number,
+          required: true,
+          default: 100,
+        },
+        DonVi: {
+          type: String,
+          default: "%",
+        },
+        ThuTu: {
+          type: Number,
+          default: 0,
+        },
+        GhiChu: {
+          type: String,
+          default: "",
         },
         _id: false,
       },
@@ -107,19 +122,19 @@ danhGiaNhiemVuThuongQuySchema.index({ isDeleted: 1 });
 // Pre-save: Tính toán tự động
 danhGiaNhiemVuThuongQuySchema.pre("save", function (next) {
   if (this.isModified("ChiTietDiem") || this.isModified("MucDoKho")) {
-    // Tính tổng điểm tiêu chí
+    // Tính tổng điểm tiêu chí (DiemDat / 100, không dùng TrongSo)
     const diemTang = this.ChiTietDiem.filter(
       (item) => item.LoaiTieuChi === "TANG_DIEM"
-    ).reduce((sum, item) => sum + item.DiemDat * item.TrongSo, 0);
+    ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
 
     const diemGiam = this.ChiTietDiem.filter(
       (item) => item.LoaiTieuChi === "GIAM_DIEM"
-    ).reduce((sum, item) => sum + item.DiemDat * item.TrongSo, 0);
+    ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
 
     this.TongDiemTieuChi = diemTang - diemGiam;
 
-    // Tính điểm nhiệm vụ
-    this.DiemNhiemVu = (this.MucDoKho * this.TongDiemTieuChi) / 100;
+    // Tính điểm nhiệm vụ = MucDoKho × TongDiemTieuChi
+    this.DiemNhiemVu = this.MucDoKho * this.TongDiemTieuChi;
   }
 
   next();
@@ -159,26 +174,13 @@ danhGiaNhiemVuThuongQuySchema.methods.chamDiem = async function (
   mucDoKho,
   ghiChu
 ) {
-  // Validate điểm với TieuChiDanhGia
-  const TieuChiDanhGia = mongoose.model("TieuChiDanhGia");
-
+  // Validate điểm (self-contained, no need to query TieuChiDanhGia)
   for (const item of chiTietDiem) {
-    const tieuChi = await TieuChiDanhGia.findById(item.TieuChiID);
-
-    if (!tieuChi) {
-      throw new Error(`Tiêu chí ${item.TieuChiID} không tồn tại`);
-    }
-
-    if (item.DiemDat < tieuChi.GiaTriMin || item.DiemDat > tieuChi.GiaTriMax) {
+    if (item.DiemDat < item.GiaTriMin || item.DiemDat > item.GiaTriMax) {
       throw new Error(
-        `Điểm "${tieuChi.TenTieuChi}" phải từ ${tieuChi.GiaTriMin} đến ${tieuChi.GiaTriMax}`
+        `Điểm "${item.TenTieuChi}" phải từ ${item.GiaTriMin} đến ${item.GiaTriMax}`
       );
     }
-
-    // Thêm thông tin từ TieuChiDanhGia
-    item.LoaiTieuChi = tieuChi.LoaiTieuChi;
-    item.TrongSo = item.TrongSo || tieuChi.TrongSoMacDinh;
-    item.TenTieuChi = tieuChi.TenTieuChi;
   }
 
   this.ChiTietDiem = chiTietDiem;
@@ -209,16 +211,15 @@ danhGiaNhiemVuThuongQuySchema.methods.coTheSua = function () {
 danhGiaNhiemVuThuongQuySchema.statics.layDanhSachTheoDanhGiaKPI = function (
   danhGiaKPIId
 ) {
-  return this.find({
-    DanhGiaKPIID: danhGiaKPIId,
-    isDeleted: false,
-  })
-    .populate("NhiemVuThuongQuyID", "TenNhiemVu MoTa MucDoKho")
-    .populate({
-      path: "ChiTietDiem.TieuChiID",
-      select: "TenTieuChi LoaiTieuChi GiaTriMin GiaTriMax",
+  return (
+    this.find({
+      DanhGiaKPIID: danhGiaKPIId,
+      isDeleted: false,
     })
-    .sort({ createdAt: 1 });
+      .populate("NhiemVuThuongQuyID", "TenNhiemVu MoTa MucDoKho")
+      // No longer populate TieuChiID - ChiTietDiem is self-contained
+      .sort({ createdAt: 1 })
+  );
 };
 
 danhGiaNhiemVuThuongQuySchema.statics.tinhSoCongViecLienQuan = async function (

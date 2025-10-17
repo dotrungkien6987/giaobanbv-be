@@ -23,11 +23,25 @@ authentication.loginRequired = async (req, res, next) => {
       throw new AppError(401, "Token is invalid", "Authentication Error");
     }
     req.userId = payload._id;
-    // Keep a lightweight user existence check but do NOT touch NhanVienID at all.
-    const user = await User.findById(req.userId).select("_id");
+
+    // ✅ FIX: Populate full user info including NhanVienID and PhanQuyen
+    const user = await User.findById(req.userId)
+      .select("UserName Email PhanQuyen NhanVienID KhoaID")
+      .lean();
     if (!user) {
       throw new AppError(401, "User không tồn tại", "Authentication Error");
     }
+
+    // ✅ Set đầy đủ thông tin vào req.user
+    req.user = {
+      userId: user._id.toString(),
+      UserName: user.UserName,
+      Email: user.Email,
+      PhanQuyen: user.PhanQuyen,
+      NhanVienID: user.NhanVienID ? user.NhanVienID.toString() : null,
+      KhoaID: user.KhoaID ? user.KhoaID.toString() : null,
+    };
+
     next();
   } catch (error) {
     next(error);

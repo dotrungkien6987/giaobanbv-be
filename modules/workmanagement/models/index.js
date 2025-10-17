@@ -37,7 +37,7 @@ const RoutineDutyEvaluation = require("./RoutineDutyEvaluation");
 const CriteriaScore = require("./CriteriaScore");
 
 // KPI System (New Vietnamese models)
-const TieuChiDanhGia = require("./TieuChiDanhGia");
+// TieuChiDanhGia deprecated - now using ChuKy.TieuChiCauHinh
 const ChuKyDanhGia = require("./ChuKyDanhGia");
 const DanhGiaKPI = require("./DanhGiaKPI");
 const DanhGiaNhiemVuThuongQuy = require("./DanhGiaNhiemVuThuongQuy");
@@ -87,7 +87,7 @@ module.exports = {
   CriteriaScore,
 
   // KPI System (New Vietnamese models)
-  TieuChiDanhGia,
+  // TieuChiDanhGia removed - now using ChuKy.TieuChiCauHinh
   ChuKyDanhGia,
   DanhGiaKPI,
   DanhGiaNhiemVuThuongQuy,

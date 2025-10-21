@@ -53,6 +53,63 @@ router.post(
   kpiController.taoDanhGiaKPI
 );
 
+// ============================================================================
+// ✅ CRITERIA-BASED KPI EVALUATION ROUTES (for v2 component)
+//  Đặt TRƯỚC route động '/:id' để tránh bị match nhầm 'cham-diem-tieu-chi' là :id
+// ============================================================================
+
+/**
+ * @route GET /api/workmanagement/kpi/cham-diem-tieu-chi
+ * @desc Lấy chi tiết đánh giá KPI với tiêu chí (for v2 UI)
+ * @access Private (Manager)
+ * @query chuKyId (required), nhanVienId (required)
+ */
+router.get(
+  "/cham-diem-tieu-chi",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.getChamDiemTieuChi
+);
+
+/**
+ * @route POST /api/workmanagement/kpi/duyet-kpi-tieu-chi/:danhGiaKPIId
+ * @desc Duyệt KPI với điểm tiêu chí (for v2 UI)
+ * @access Private (Manager)
+ * @body { nhiemVuList: [{ NhiemVuThuongQuyID, MucDoKho, ChiTietDiem }] }
+ */
+router.post(
+  "/duyet-kpi-tieu-chi/:danhGiaKPIId",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.duyetKPITieuChi
+);
+
+/**
+ * @route POST /api/workmanagement/kpi/luu-tat-ca/:danhGiaKPIId
+ * @desc Lưu tất cả nhiệm vụ (không duyệt) - Batch upsert
+ * @access Private (Manager)
+ * @body { nhiemVuList: [{ NhiemVuThuongQuyID, MucDoKho, ChiTietDiem }] }
+ */
+router.post(
+  "/luu-tat-ca/:danhGiaKPIId",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.luuTatCaNhiemVu
+);
+
+/**
+ * ✅ NEW: Hủy duyệt KPI
+ * @route POST /api/workmanagement/kpi/huy-duyet-kpi/:danhGiaKPIId
+ * @desc Undo KPI approval (Admin hoặc Manager trong 7 ngày)
+ * @access Private
+ * @body { lyDo: String (required) }
+ */
+router.post(
+  "/huy-duyet-kpi/:danhGiaKPIId",
+  authentication.loginRequired,
+  kpiController.huyDuyetKPI
+);
+
 /**
  * @route GET /api/workmanagement/kpi/:id
  * @desc Lấy chi tiết đánh giá KPI
@@ -164,6 +221,48 @@ router.delete(
   "/:id",
   authentication.loginRequired,
   kpiController.xoaDanhGiaKPI
+);
+
+// ============================================================================
+// ✅ NEW KPI EVALUATION ROUTES - SIMPLIFIED FLOW
+// ============================================================================
+
+/**
+ * @route GET /api/workmanagement/kpi/nhan-vien/:NhanVienID/nhiem-vu
+ * @desc Lấy danh sách nhiệm vụ để đánh giá (theo chu kỳ)
+ * @access Private (Manager)
+ * @query chuKyId (required)
+ */
+router.get(
+  "/nhan-vien/:NhanVienID/nhiem-vu",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.getTasksForEvaluation
+);
+
+/**
+ * @route POST /api/workmanagement/kpi/nhan-vien/:NhanVienID/danh-gia
+ * @desc Lưu đánh giá nhiệm vụ (batch upsert)
+ * @access Private (Manager)
+ */
+router.post(
+  "/nhan-vien/:NhanVienID/danh-gia",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.saveEvaluation
+);
+
+/**
+ * @route GET /api/workmanagement/kpi/nhan-vien/:NhanVienID/diem-kpi
+ * @desc Tính điểm KPI cho nhân viên (theo chu kỳ)
+ * @access Private (Manager)
+ * @query chuKyId (required)
+ */
+router.get(
+  "/nhan-vien/:NhanVienID/diem-kpi",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.calculateKPIForEmployee
 );
 
 module.exports = router;

@@ -62,8 +62,13 @@ ctrl.getAssignmentTotals = catchAsync(async (req, res) => {
 });
 
 ctrl.assignOne = catchAsync(async (req, res) => {
-  const { NhanVienID, NhiemVuThuongQuyID } = req.body;
-  const data = await service.assignOne(req, NhanVienID, NhiemVuThuongQuyID);
+  const { NhanVienID, NhiemVuThuongQuyID, MucDoKho } = req.body;
+  const data = await service.assignOne(
+    req,
+    NhanVienID,
+    NhiemVuThuongQuyID,
+    MucDoKho
+  );
   return sendResponse(res, 201, true, data, null, "Gán nhiệm vụ thành công");
 });
 
@@ -111,6 +116,80 @@ ctrl.batchUpdateEmployeeAssignments = catchAsync(async (req, res) => {
     data,
     null,
     "Cập nhật nhiệm vụ thành công"
+  );
+});
+
+// ============================================================================
+// 🚀 NEW: Cycle-based assignment controllers
+// ============================================================================
+
+ctrl.getAssignmentsByCycle = catchAsync(async (req, res) => {
+  const { employeeId } = req.params;
+  const { chuKyId } = req.query;
+  const data = await service.getAssignmentsByCycle(req, employeeId, chuKyId);
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Lấy danh sách nhiệm vụ theo chu kỳ thành công"
+  );
+});
+
+ctrl.batchUpdateCycleAssignments = catchAsync(async (req, res) => {
+  const { employeeId } = req.params;
+  const { chuKyId, tasks } = req.body;
+  const data = await service.batchUpdateCycleAssignments(
+    req,
+    employeeId,
+    chuKyId,
+    tasks
+  );
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Cập nhật nhiệm vụ theo chu kỳ thành công"
+  );
+});
+
+ctrl.copyFromPreviousCycle = catchAsync(async (req, res) => {
+  const { employeeId } = req.params;
+  const { fromChuKyId, toChuKyId } = req.body;
+  const data = await service.copyFromPreviousCycle(
+    req,
+    employeeId,
+    fromChuKyId,
+    toChuKyId
+  );
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    `Đã copy ${data.copiedCount} nhiệm vụ từ chu kỳ trước`
+  );
+});
+
+/**
+ * 🆕 GET EMPLOYEES WITH CYCLE ASSIGNMENT STATS
+ * GET /api/workmanagement/giao-nhiem-vu/employees-with-cycle-stats?chuKyId=xxx
+ * Purpose: For CycleAssignmentListPage
+ */
+ctrl.getEmployeesWithCycleStats = catchAsync(async (req, res) => {
+  const { chuKyId } = req.query;
+  const data = await service.getEmployeesWithCycleStats(req, chuKyId);
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Lấy danh sách nhân viên với thống kê phân công thành công"
   );
 });
 

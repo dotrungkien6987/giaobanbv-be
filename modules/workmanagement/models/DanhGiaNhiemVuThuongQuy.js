@@ -1,110 +1,150 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
+/**
+ * ✅ RESTORED ORIGINAL MODEL + ChuKyDanhGiaID
+ *
+ * Purpose: Đánh giá nhiệm vụ thường quy theo tiêu chí và chu kỳ
+ *
+ * Key Features:
+ * - ChiTietDiem: Embedded array lưu điểm từng tiêu chí (TANG_DIEM/GIAM_DIEM)
+ * - TongDiemTieuChi: Auto-calculated từ ChiTietDiem
+ * - DiemNhiemVu: Auto-calculated = MucDoKho × TongDiemTieuChi
+ * - DanhGiaKPIID: Link to parent KPI evaluation
+ * - ChuKyDanhGiaID: Link to cycle (NEW - for filtering)
+ */
+
+const chiTietDiemSchema = new Schema(
+  {
+    TenTieuChi: {
+      type: String,
+      required: true,
+    },
+    LoaiTieuChi: {
+      type: String,
+      enum: ["TANG_DIEM", "GIAM_DIEM"],
+      required: true,
+    },
+    DiemDat: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    GiaTriMin: {
+      type: Number,
+      default: 0,
+    },
+    GiaTriMax: {
+      type: Number,
+      required: true,
+    },
+    DonVi: {
+      type: String,
+      default: "",
+    },
+    MoTa: {
+      type: String,
+      default: "",
+    },
+    ThuTu: {
+      type: Number,
+      default: 0,
+    },
+    GhiChu: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
+
 const danhGiaNhiemVuThuongQuySchema = Schema(
   {
+    // Link to parent KPI evaluation
     DanhGiaKPIID: {
       type: Schema.Types.ObjectId,
-      required: true,
       ref: "DanhGiaKPI",
+      required: true,
       index: true,
     },
 
+    // Nhiệm vụ thường quy
     NhiemVuThuongQuyID: {
       type: Schema.Types.ObjectId,
       required: true,
       ref: "NhiemVuThuongQuy",
+      index: true,
     },
 
+    // Nhân viên được đánh giá
     NhanVienID: {
       type: Schema.Types.ObjectId,
       required: true,
       ref: "NhanVien",
+      index: true,
     },
 
-    // Mức độ khó (lấy từ NhiemVuThuongQuy, có thể điều chỉnh)
+    // ✅ NEW: Chu kỳ đánh giá (for cycle-based filtering)
+    ChuKyDanhGiaID: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: "ChuKyDanhGia",
+      index: true,
+    },
+
+    // Độ khó nhiệm vụ (1-10, from assignment or template)
     MucDoKho: {
       type: Number,
       required: true,
       min: 1,
       max: 10,
+      default: 5,
     },
 
     // Chi tiết điểm từng tiêu chí
-    ChiTietDiem: [
-      {
-        // Không còn reference TieuChiID - self-contained
-        TenTieuChi: {
-          type: String,
-          required: true,
-        },
-        LoaiTieuChi: {
-          type: String,
-          enum: ["TANG_DIEM", "GIAM_DIEM"],
-          required: true,
-        },
-        // ✅ Giá trị user nhập (0 - GiaTriMax)
-        DiemDat: {
-          type: Number,
-          required: true,
-          default: 0,
-        },
-        // ✅ Giá trị min/max (copy từ ChuKy.TieuChiCauHinh)
-        GiaTriMin: {
-          type: Number,
-          required: true,
-          default: 0,
-        },
-        GiaTriMax: {
-          type: Number,
-          required: true,
-          default: 100,
-        },
-        DonVi: {
-          type: String,
-          default: "%",
-        },
-        ThuTu: {
-          type: Number,
-          default: 0,
-        },
-        GhiChu: {
-          type: String,
-          default: "",
-        },
-        _id: false,
-      },
-    ],
+    ChiTietDiem: [chiTietDiemSchema],
 
-    // Tổng điểm tiêu chí (tự động tính)
-    // = Σ(TANG_DIEM) - Σ(GIAM_DIEM)
+    // Tổng điểm tiêu chí (auto-calculated)
     TongDiemTieuChi: {
       type: Number,
       default: 0,
     },
 
-    // Điểm nhiệm vụ cuối cùng (tự động tính)
-    // = MucDoKho × TongDiemTieuChi / 100
+    // Điểm nhiệm vụ (auto-calculated = MucDoKho × TongDiemTieuChi)
     DiemNhiemVu: {
       type: Number,
       default: 0,
     },
 
-    // Số công việc liên quan (tham khảo)
-    SoCongViecLienQuan: {
-      type: Number,
-      default: 0,
+    // Trạng thái phê duyệt
+    TrangThai: {
+      type: String,
+      enum: ["Chua_Duyet", "Da_Duyet"],
+      default: "Chua_Duyet",
     },
 
-    // Ghi chú của người đánh giá
+    // Ghi chú
     GhiChu: {
       type: String,
-      maxlength: 1000,
+      default: "",
     },
 
+    // Ngày phê duyệt
+    NgayDuyet: {
+      type: Date,
+    },
+
+    // Người phê duyệt
+    NguoiDuyetID: {
+      type: Schema.Types.ObjectId,
+      ref: "NhanVien",
+    },
+
+    // Soft delete
     isDeleted: {
       type: Boolean,
       default: false,
+      index: true,
     },
   },
   {
@@ -113,134 +153,122 @@ const danhGiaNhiemVuThuongQuySchema = Schema(
   }
 );
 
-// Indexes
-danhGiaNhiemVuThuongQuySchema.index({ DanhGiaKPIID: 1 });
-danhGiaNhiemVuThuongQuySchema.index({ NhiemVuThuongQuyID: 1 });
-danhGiaNhiemVuThuongQuySchema.index({ NhanVienID: 1 });
-danhGiaNhiemVuThuongQuySchema.index({ isDeleted: 1 });
-
-// Pre-save: Tính toán tự động
+// ✅ PRE-SAVE HOOK: Auto-calculate scores
 danhGiaNhiemVuThuongQuySchema.pre("save", function (next) {
-  if (this.isModified("ChiTietDiem") || this.isModified("MucDoKho")) {
-    // Tính tổng điểm tiêu chí (DiemDat / 100, không dùng TrongSo)
-    const diemTang = this.ChiTietDiem.filter(
-      (item) => item.LoaiTieuChi === "TANG_DIEM"
-    ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
+  try {
+    // Calculate TongDiemTieuChi from ChiTietDiem
+    if (this.ChiTietDiem && this.ChiTietDiem.length > 0) {
+      const diemTang = this.ChiTietDiem.filter(
+        (item) => item.LoaiTieuChi === "TANG_DIEM"
+      ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
 
-    const diemGiam = this.ChiTietDiem.filter(
-      (item) => item.LoaiTieuChi === "GIAM_DIEM"
-    ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
+      const diemGiam = this.ChiTietDiem.filter(
+        (item) => item.LoaiTieuChi === "GIAM_DIEM"
+      ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
 
-    this.TongDiemTieuChi = diemTang - diemGiam;
+      this.TongDiemTieuChi = diemTang - diemGiam;
+    } else {
+      this.TongDiemTieuChi = 0;
+    }
 
-    // Tính điểm nhiệm vụ = MucDoKho × TongDiemTieuChi
+    // Calculate DiemNhiemVu = MucDoKho × TongDiemTieuChi
     this.DiemNhiemVu = this.MucDoKho * this.TongDiemTieuChi;
-  }
 
-  next();
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
-// Post-save: Cập nhật tổng điểm KPI
+// ✅ POST-SAVE HOOK: Update parent DanhGiaKPI.TongDiemKPI
 danhGiaNhiemVuThuongQuySchema.post("save", async function (doc) {
   try {
     const DanhGiaKPI = mongoose.model("DanhGiaKPI");
-    const danhGiaKPI = await DanhGiaKPI.findById(doc.DanhGiaKPIID);
 
-    if (danhGiaKPI) {
-      await danhGiaKPI.tinhTongDiemKPI();
-    }
+    // Recalculate total KPI score from all related task evaluations
+    const allEvaluations = await mongoose
+      .model("DanhGiaNhiemVuThuongQuy")
+      .find({
+        DanhGiaKPIID: doc.DanhGiaKPIID,
+        isDeleted: { $ne: true },
+      });
+
+    const tongDiemKPI = allEvaluations.reduce(
+      (sum, item) => sum + (item.DiemNhiemVu || 0),
+      0
+    );
+
+    // Update parent DanhGiaKPI
+    await DanhGiaKPI.findByIdAndUpdate(doc.DanhGiaKPIID, {
+      TongDiemKPI: tongDiemKPI,
+    });
   } catch (error) {
-    console.error("Error updating TongDiemKPI:", error);
+    console.error("Error updating parent DanhGiaKPI:", error);
   }
 });
 
-// Post-remove: Cập nhật tổng điểm KPI khi xóa
-danhGiaNhiemVuThuongQuySchema.post("remove", async function (doc) {
-  try {
-    const DanhGiaKPI = mongoose.model("DanhGiaKPI");
-    const danhGiaKPI = await DanhGiaKPI.findById(doc.DanhGiaKPIID);
-
-    if (danhGiaKPI) {
-      await danhGiaKPI.tinhTongDiemKPI();
-    }
-  } catch (error) {
-    console.error("Error updating TongDiemKPI after remove:", error);
+// ✅ UNIQUE INDEX: 1 đánh giá cho 1 nhiệm vụ/nhân viên/chu kỳ
+danhGiaNhiemVuThuongQuySchema.index(
+  {
+    NhanVienID: 1,
+    NhiemVuThuongQuyID: 1,
+    ChuKyDanhGiaID: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: { isDeleted: { $ne: true } },
+    name: "unique_evaluation_per_cycle",
   }
+);
+
+// ✅ QUERY PERFORMANCE INDEXES
+danhGiaNhiemVuThuongQuySchema.index({
+  DanhGiaKPIID: 1,
+});
+danhGiaNhiemVuThuongQuySchema.index({
+  NhanVienID: 1,
+  ChuKyDanhGiaID: 1,
+});
+danhGiaNhiemVuThuongQuySchema.index({
+  ChuKyDanhGiaID: 1,
 });
 
-// Methods
-danhGiaNhiemVuThuongQuySchema.methods.chamDiem = async function (
-  chiTietDiem,
-  mucDoKho,
-  ghiChu
-) {
-  // Validate điểm (self-contained, no need to query TieuChiDanhGia)
-  for (const item of chiTietDiem) {
-    if (item.DiemDat < item.GiaTriMin || item.DiemDat > item.GiaTriMax) {
-      throw new Error(
-        `Điểm "${item.TenTieuChi}" phải từ ${item.GiaTriMin} đến ${item.GiaTriMax}`
-      );
-    }
-  }
-
+// ✅ METHODS: Chấm điểm
+danhGiaNhiemVuThuongQuySchema.methods.chamDiem = function (chiTietDiem) {
   this.ChiTietDiem = chiTietDiem;
-
-  if (mucDoKho !== undefined) {
-    if (mucDoKho < 1 || mucDoKho > 10) {
-      throw new Error("Mức độ khó phải từ 1-10");
-    }
-    this.MucDoKho = mucDoKho;
-  }
-
-  if (ghiChu !== undefined) {
-    this.GhiChu = ghiChu;
-  }
-
-  await this.save();
-  return this;
+  return this.save();
 };
 
+// ✅ METHODS: Kiểm tra có thể sửa
 danhGiaNhiemVuThuongQuySchema.methods.coTheSua = function () {
-  // Chỉ sửa được khi DanhGiaKPI chưa duyệt
-  return this.populated("DanhGiaKPIID")
-    ? this.DanhGiaKPIID.TrangThai === "CHUA_DUYET"
-    : true;
+  return this.TrangThai === "Chua_Duyet";
 };
 
-// Static methods
+// ✅ STATICS: Lấy danh sách theo DanhGiaKPIID
 danhGiaNhiemVuThuongQuySchema.statics.layDanhSachTheoDanhGiaKPI = function (
   danhGiaKPIId
 ) {
-  return (
-    this.find({
-      DanhGiaKPIID: danhGiaKPIId,
-      isDeleted: false,
-    })
-      .populate("NhiemVuThuongQuyID", "TenNhiemVu MoTa MucDoKho")
-      // No longer populate TieuChiID - ChiTietDiem is self-contained
-      .sort({ createdAt: 1 })
-  );
+  return this.find({
+    DanhGiaKPIID: danhGiaKPIId,
+    isDeleted: { $ne: true },
+  })
+    .populate("NhiemVuThuongQuyID")
+    .populate("NhanVienID")
+    .populate("ChuKyDanhGiaID");
 };
 
+// ✅ STATICS: Tính số công việc liên quan
 danhGiaNhiemVuThuongQuySchema.statics.tinhSoCongViecLienQuan = async function (
-  nhanVienNhiemVuId,
-  tuNgay,
-  denNgay
+  danhGiaKPIId
 ) {
-  const CongViec = mongoose.model("CongViec");
-
-  const count = await CongViec.countDocuments({
-    NhanVienNhiemVuID: nhanVienNhiemVuId,
-    createdAt: { $gte: tuNgay, $lte: denNgay },
-    isDeleted: false,
+  const count = await this.countDocuments({
+    DanhGiaKPIID: danhGiaKPIId,
+    isDeleted: { $ne: true },
   });
-
   return count;
 };
 
-const DanhGiaNhiemVuThuongQuy = mongoose.model(
+module.exports = mongoose.model(
   "DanhGiaNhiemVuThuongQuy",
   danhGiaNhiemVuThuongQuySchema
 );
-
-module.exports = DanhGiaNhiemVuThuongQuy;

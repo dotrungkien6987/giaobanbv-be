@@ -36,4 +36,29 @@ router.put(
   ctrl.batchUpdateEmployeeAssignments
 );
 
+// ============================================================================
+// 🚀 NEW: Cycle-based assignment routes
+// ============================================================================
+
+// 🆕 Get employees with cycle stats (for list view)
+// GET /api/workmanagement/giao-nhiem-vu/employees-with-cycle-stats?chuKyId=xxx
+router.get("/employees-with-cycle-stats", ctrl.getEmployeesWithCycleStats);
+
+// Get assignments by employee and cycle (with available duties)
+// GET /api/workmanagement/giao-nhiem-vu/nhan-vien/:employeeId/by-cycle?chuKyId=xxx
+router.get("/nhan-vien/:employeeId/by-cycle", ctrl.getAssignmentsByCycle);
+
+// Batch update cycle assignments
+// PUT /api/workmanagement/giao-nhiem-vu/nhan-vien/:employeeId/cycle-assignments
+// Body: { chuKyId, tasks: [{ NhiemVuThuongQuyID, MucDoKho }] }
+router.put(
+  "/nhan-vien/:employeeId/cycle-assignments",
+  ctrl.batchUpdateCycleAssignments
+);
+
+// Copy from previous cycle
+// POST /api/workmanagement/giao-nhiem-vu/nhan-vien/:employeeId/copy-cycle
+// Body: { fromChuKyId, toChuKyId }
+router.post("/nhan-vien/:employeeId/copy-cycle", ctrl.copyFromPreviousCycle);
+
 module.exports = router;

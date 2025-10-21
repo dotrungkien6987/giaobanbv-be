@@ -21,13 +21,13 @@ const nhiemVuThuongQuySchema = Schema(
       ref: "Khoa",
       description: "Khoa chịu trách nhiệm chính cho nhiệm vụ này",
     },
-    MucDoKho: {
+    MucDoKhoDefault: {
       type: Number,
       min: 0.0,
       max: 10.0,
       default: 1.0,
       description:
-        "Mức độ khó của nhiệm vụ (1.0-10.0), cho phép 1 chữ số thập phân",
+        "Độ khó mặc định của nhiệm vụ (1.0-10.0) - dùng làm tham khảo khi gán cho nhân viên",
     },
     TrangThaiHoatDong: {
       type: Boolean,
@@ -61,7 +61,7 @@ nhiemVuThuongQuySchema.index({
   TrangThaiHoatDong: 1,
   isDeleted: 1,
 });
-nhiemVuThuongQuySchema.index({ MucDoKho: 1 });
+nhiemVuThuongQuySchema.index({ MucDoKhoDefault: 1 });
 
 // Virtual for employees assigned to this duty
 nhiemVuThuongQuySchema.virtual("DanhSachNhanVien", {
@@ -119,8 +119,8 @@ nhiemVuThuongQuySchema.statics.layTheoMucDoKho = function (minLevel, maxLevel) {
   return this.find({
     TrangThaiHoatDong: true,
     isDeleted: false,
-    MucDoKho: { $gte: minLevel, $lte: maxLevel },
-  }).sort({ MucDoKho: 1, TenNhiemVu: 1 });
+    MucDoKhoDefault: { $gte: minLevel, $lte: maxLevel },
+  }).sort({ MucDoKhoDefault: 1, TenNhiemVu: 1 });
 };
 
 nhiemVuThuongQuySchema.statics.layDanhSachDaXoa = function () {

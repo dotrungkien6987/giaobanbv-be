@@ -15,7 +15,31 @@ const nhanVienNhiemVuSchema = Schema(
       ref: "NhiemVuThuongQuy",
       description: "ID của nhiệm vụ thường quy được gán",
     },
-    
+
+    // ✅ NEW: Gán theo chu kỳ (null = vĩnh viễn, backward compatible)
+    ChuKyDanhGiaID: {
+      type: Schema.Types.ObjectId,
+      ref: "ChuKyDanhGia",
+      default: null,
+      index: true,
+      description: "Chu kỳ đánh giá (null = gán vĩnh viễn)",
+    },
+
+    // ✅ NEW: Độ khó thực tế (user nhập manually khi gán)
+    MucDoKho: {
+      type: Number,
+      required: false, // Tạm thời optional để không break existing data
+      min: 1.0,
+      max: 10.0,
+      validate: {
+        validator: (v) => v === undefined || Math.round(v * 10) === v * 10,
+        message:
+          "MucDoKho phải là số từ 1.0-10.0 với tối đa 1 chữ số thập phân (VD: 5.5, 7.2)",
+      },
+      description:
+        "Độ khó thực tế cho nhân viên này (user nhập manually khi gán)",
+    },
+
     TrangThaiHoatDong: {
       type: Boolean,
       default: true,
@@ -36,7 +60,6 @@ const nhanVienNhiemVuSchema = Schema(
       ref: "NhanVien",
       description: "ID của người thực hiện việc gán nhiệm vụ",
     },
-  
   },
   {
     timestamps: true,
@@ -47,12 +70,29 @@ const nhanVienNhiemVuSchema = Schema(
 );
 
 // Indexes
+// ❌ OLD unique index - WILL BE DROPPED MANUALLY
+// nhanVienNhiemVuSchema.index(
+//   { NhanVienID: 1, NhiemVuThuongQuyID: 1 },
+//   { unique: true }
+// );
+
+// ✅ NEW: Non-unique for query performance (backward compatible)
+nhanVienNhiemVuSchema.index({ NhanVienID: 1, NhiemVuThuongQuyID: 1 });
+
+// ✅ NEW: Unique composite index with cycle
+// Một nhiệm vụ chỉ được gán 1 lần cho 1 nhân viên trong 1 chu kỳ
 nhanVienNhiemVuSchema.index(
-  { NhanVienID: 1, NhiemVuThuongQuyID: 1 },
-  { unique: true }
+  { NhanVienID: 1, NhiemVuThuongQuyID: 1, ChuKyDanhGiaID: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { isDeleted: { $ne: true } },
+    name: "unique_assignment_per_cycle",
+  }
 );
+
 nhanVienNhiemVuSchema.index({ NhanVienID: 1 });
 nhanVienNhiemVuSchema.index({ NhiemVuThuongQuyID: 1 });
+nhanVienNhiemVuSchema.index({ ChuKyDanhGiaID: 1 }); // ✅ NEW
 nhanVienNhiemVuSchema.index({ TrangThaiHoatDong: 1 });
 nhanVienNhiemVuSchema.index({ isDeleted: 1 });
 nhanVienNhiemVuSchema.index({
@@ -80,7 +120,7 @@ nhanVienNhiemVuSchema.methods.toJSON = function () {
 nhanVienNhiemVuSchema.methods.xoaMem = function () {
   this.isDeleted = true;
   this.TrangThaiHoatDong = false;
-  
+
   return this.save();
 };
 

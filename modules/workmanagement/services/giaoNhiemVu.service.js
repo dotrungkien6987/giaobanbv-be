@@ -124,10 +124,24 @@ async function ensureSameKhoa(employeeId, dutyId) {
     throw new AppError(400, "Nhiệm vụ và nhân viên phải cùng KhoaID");
 }
 
-service.assignOne = async (req, employeeId, dutyId) => {
+service.assignOne = async (req, employeeId, dutyId, mucDoKho = null) => {
   const user = await getCurrentUser(req);
   if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
   await ensureSameKhoa(employeeId, dutyId);
+
+  // ✅ SLICE 1: Validate MucDoKho if provided
+  if (mucDoKho !== null && mucDoKho !== undefined) {
+    if (typeof mucDoKho !== "number" || mucDoKho < 1.0 || mucDoKho > 10.0) {
+      throw new AppError(400, "MucDoKho phải là số từ 1.0 đến 10.0");
+    }
+    // Validate max 1 decimal place
+    if (Math.round(mucDoKho * 10) !== mucDoKho * 10) {
+      throw new AppError(
+        400,
+        "MucDoKho chỉ cho phép tối đa 1 chữ số thập phân (VD: 5.5, 7.2)"
+      );
+    }
+  }
 
   // Kiểm tra xem đã có assignment bị xóa (soft delete) hay chưa
   // Lưu ý: model có pre(/^find/) tự loại bỏ isDeleted=true nếu không chỉ định
@@ -140,6 +154,11 @@ service.assignOne = async (req, employeeId, dutyId) => {
 
   let result;
 
+  // Optional cycle id from request body
+  const chuKyId = req.body?.ChuKyDanhGiaID
+    ? toObjectId(req.body.ChuKyDanhGiaID)
+    : undefined;
+
   if (existingAssignment) {
     if (!existingAssignment.isDeleted && existingAssignment.TrangThaiHoatDong) {
       // Đã tồn tại và đang hoạt động -> báo lỗi trùng lặp
@@ -151,20 +170,42 @@ service.assignOne = async (req, employeeId, dutyId) => {
       existingAssignment.NgayGan = new Date(); // Cập nhật thời gian gán mới
       existingAssignment.NguoiGanID = user.NhanVienID || null; // Cập nhật người gán
 
+      // ✅ SLICE 1: Update MucDoKho if provided
+      if (mucDoKho !== null && mucDoKho !== undefined) {
+        existingAssignment.MucDoKho = mucDoKho;
+      }
+
+      // 🆕 If cycle provided, attach to assignment
+      if (chuKyId) {
+        existingAssignment.ChuKyDanhGiaID = chuKyId;
+      }
+
       await existingAssignment.save();
       result = existingAssignment;
     }
   } else {
     // Chưa có assignment nào -> tạo mới
     try {
-      result = await NhanVienNhiemVu.create({
+      const assignmentData = {
         NhanVienID: toObjectId(employeeId),
         NhiemVuThuongQuyID: toObjectId(dutyId),
         TrangThaiHoatDong: true,
         isDeleted: false,
         NgayGan: new Date(),
         NguoiGanID: user.NhanVienID || null,
-      });
+      };
+
+      // ✅ SLICE 1: Add MucDoKho if provided
+      if (mucDoKho !== null && mucDoKho !== undefined) {
+        assignmentData.MucDoKho = mucDoKho;
+      }
+
+      // 🆕 Attach cycle id if provided
+      if (chuKyId) {
+        assignmentData.ChuKyDanhGiaID = chuKyId;
+      }
+
+      result = await NhanVienNhiemVu.create(assignmentData);
     } catch (err) {
       if (err?.code === 11000) {
         // Race condition: assignment được tạo bởi request khác trong lúc này
@@ -211,6 +252,9 @@ service.bulkAssign = async (req, employeeIds, dutyIds) => {
   }
 
   const now = new Date();
+  const chuKyId = req.body?.ChuKyDanhGiaID
+    ? toObjectId(req.body.ChuKyDanhGiaID)
+    : undefined;
   const ops = [];
   for (const eid of employeeIds) {
     for (const did of dutyIds) {
@@ -230,12 +274,14 @@ service.bulkAssign = async (req, employeeIds, dutyIds) => {
             $setOnInsert: {
               NhanVienID: toObjectId(eid),
               NhiemVuThuongQuyID: toObjectId(did),
+              ...(chuKyId ? { ChuKyDanhGiaID: chuKyId } : {}),
             },
             $set: {
               TrangThaiHoatDong: true,
               isDeleted: false,
               NgayGan: now, // Cập nhật thời gian gán (cho cả tạo mới và khôi phục)
               NguoiGanID: user.NhanVienID || null, // Cập nhật người gán
+              ...(chuKyId ? { ChuKyDanhGiaID: chuKyId } : {}),
             },
           },
           upsert: true,
@@ -425,6 +471,359 @@ service.batchUpdateEmployeeAssignments = async (req, employeeId, dutyIds) => {
     total: uniqueDutyIdsToAssign.length,
     message: `Thêm: ${addedCount}, Khôi phục: ${restoredCount}, Xóa: ${removedCount}, Giữ nguyên: ${unchanged.length}`,
   };
+};
+
+// ============================================================================
+// 🚀 NEW: Cycle-based assignment management (Option 2: Two-column layout)
+// ============================================================================
+
+/**
+ * Get assignments by employee and cycle
+ * Returns both assigned tasks and available tasks for the cycle
+ */
+service.getAssignmentsByCycle = async (req, employeeId, chuKyId = null) => {
+  const user = await getCurrentUser(req);
+  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
+
+  // Get employee's department
+  const emp = await NhanVien.findById(employeeId).populate({
+    path: "KhoaID",
+    select: "_id TenKhoa",
+  });
+  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
+
+  // Build assignment filter
+  const assignmentFilter = {
+    NhanVienID: toObjectId(employeeId),
+    isDeleted: false,
+    TrangThaiHoatDong: true,
+  };
+
+  // If chuKyId provided, filter by cycle; otherwise get permanent assignments (null)
+  if (chuKyId) {
+    assignmentFilter.ChuKyDanhGiaID = toObjectId(chuKyId);
+  } else {
+    assignmentFilter.ChuKyDanhGiaID = null;
+  }
+
+  // Get assigned tasks for this cycle
+  const assignedTasks = await NhanVienNhiemVu.find(assignmentFilter)
+    .populate({
+      path: "NhiemVuThuongQuyID",
+      populate: { path: "KhoaID", select: "_id TenKhoa" },
+    })
+    .populate({
+      path: "ChuKyDanhGiaID",
+      select: "_id TenChuKy TuNgay DenNgay",
+    })
+    .sort({ createdAt: -1 });
+
+  // Get all active duties from the same department
+  const allDuties = await NhiemVuThuongQuy.find({
+    KhoaID: emp.KhoaID,
+    TrangThaiHoatDong: true,
+    isDeleted: false,
+  })
+    .populate({ path: "KhoaID", select: "_id TenKhoa" })
+    .sort({ TenNhiemVu: 1 });
+
+  // Extract assigned duty IDs
+  const assignedDutyIds = assignedTasks.map((a) =>
+    a.NhiemVuThuongQuyID._id.toString()
+  );
+
+  // Filter available duties (not yet assigned in this cycle)
+  const availableDuties = allDuties.filter(
+    (d) => !assignedDutyIds.includes(d._id.toString())
+  );
+
+  return {
+    assignedTasks,
+    availableDuties,
+    employee: {
+      _id: emp._id,
+      Ten: emp.Ten,
+      MaNhanVien: emp.MaNhanVien,
+      KhoaID: emp.KhoaID,
+    },
+  };
+};
+
+/**
+ * Batch update assignments for a cycle
+ * - Add new assignments with difficulty
+ * - Update existing assignments' difficulty
+ * - Remove assignments not in the list
+ */
+service.batchUpdateCycleAssignments = async (
+  req,
+  employeeId,
+  chuKyId,
+  tasks
+) => {
+  const user = await getCurrentUser(req);
+  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
+
+  // Validate employee and department
+  const emp = await NhanVien.findById(employeeId);
+  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
+
+  // Validate tasks array
+  if (!Array.isArray(tasks)) {
+    throw new AppError(400, "tasks phải là mảng");
+  }
+
+  // Validate no duplicate duties in the same cycle
+  const dutyIds = tasks.map((t) => t.NhiemVuThuongQuyID);
+  const uniqueDutyIds = new Set(dutyIds);
+  if (dutyIds.length !== uniqueDutyIds.size) {
+    throw new AppError(400, "Không được gán trùng nhiệm vụ trong cùng chu kỳ");
+  }
+
+  // Validate all duties exist and belong to same department
+  for (const task of tasks) {
+    const duty = await NhiemVuThuongQuy.findById(task.NhiemVuThuongQuyID);
+    if (!duty) {
+      throw new AppError(
+        404,
+        `Nhiệm vụ ${task.NhiemVuThuongQuyID} không tồn tại`
+      );
+    }
+    if (duty.KhoaID.toString() !== emp.KhoaID.toString()) {
+      throw new AppError(
+        400,
+        `Nhiệm vụ ${duty.TenNhiemVu} không thuộc khoa ${emp.KhoaID.TenKhoa}`
+      );
+    }
+
+    // Validate MucDoKho
+    if (task.MucDoKho !== null && task.MucDoKho !== undefined) {
+      if (
+        typeof task.MucDoKho !== "number" ||
+        task.MucDoKho < 1.0 ||
+        task.MucDoKho > 10.0
+      ) {
+        throw new AppError(400, "MucDoKho phải là số từ 1.0 đến 10.0");
+      }
+      if (Math.round(task.MucDoKho * 10) !== task.MucDoKho * 10) {
+        throw new AppError(
+          400,
+          "MucDoKho chỉ cho phép tối đa 1 chữ số thập phân"
+        );
+      }
+    }
+  }
+
+  // Get current assignments for this cycle
+  const currentAssignments = await NhanVienNhiemVu.find({
+    NhanVienID: toObjectId(employeeId),
+    ChuKyDanhGiaID: chuKyId ? toObjectId(chuKyId) : null,
+    isDeleted: false,
+  });
+
+  const currentDutyIds = currentAssignments.map((a) =>
+    a.NhiemVuThuongQuyID.toString()
+  );
+  const newDutyIds = tasks.map((t) => t.NhiemVuThuongQuyID);
+
+  // Determine which to add, update, remove
+  const toAdd = tasks.filter(
+    (t) => !currentDutyIds.includes(t.NhiemVuThuongQuyID)
+  );
+  const toUpdate = tasks.filter((t) =>
+    currentDutyIds.includes(t.NhiemVuThuongQuyID)
+  );
+  const toRemove = currentAssignments.filter(
+    (a) => !newDutyIds.includes(a.NhiemVuThuongQuyID.toString())
+  );
+
+  // Execute operations
+  const operations = [];
+
+  // Add new assignments
+  for (const task of toAdd) {
+    const assignmentData = {
+      NhanVienID: toObjectId(employeeId),
+      NhiemVuThuongQuyID: toObjectId(task.NhiemVuThuongQuyID),
+      ChuKyDanhGiaID: chuKyId ? toObjectId(chuKyId) : null,
+      MucDoKho: task.MucDoKho,
+      TrangThaiHoatDong: true,
+      isDeleted: false,
+      NgayGan: new Date(),
+      NguoiGanID: user.NhanVienID || null,
+    };
+    operations.push(NhanVienNhiemVu.create(assignmentData));
+  }
+
+  // Update existing assignments
+  for (const task of toUpdate) {
+    const existing = currentAssignments.find(
+      (a) => a.NhiemVuThuongQuyID.toString() === task.NhiemVuThuongQuyID
+    );
+    if (existing) {
+      existing.MucDoKho = task.MucDoKho;
+      operations.push(existing.save());
+    }
+  }
+
+  // Hard delete removed assignments
+  for (const assignment of toRemove) {
+    operations.push(NhanVienNhiemVu.findByIdAndDelete(assignment._id));
+  }
+
+  await Promise.all(operations);
+
+  // Return updated list
+  return await service.getAssignmentsByCycle(req, employeeId, chuKyId);
+};
+
+/**
+ * Copy assignments from previous cycle to new cycle
+ * Copies both duties and their difficulty levels
+ */
+service.copyFromPreviousCycle = async (
+  req,
+  employeeId,
+  fromChuKyId,
+  toChuKyId
+) => {
+  const user = await getCurrentUser(req);
+  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
+
+  // Validate employee
+  const emp = await NhanVien.findById(employeeId);
+  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
+
+  // Get assignments from previous cycle
+  const previousAssignments = await NhanVienNhiemVu.find({
+    NhanVienID: toObjectId(employeeId),
+    ChuKyDanhGiaID: toObjectId(fromChuKyId),
+    isDeleted: false,
+    TrangThaiHoatDong: true,
+  });
+
+  if (previousAssignments.length === 0) {
+    throw new AppError(404, "Không tìm thấy nhiệm vụ nào từ chu kỳ trước");
+  }
+
+  // Check if target cycle already has assignments
+  const existingInTarget = await NhanVienNhiemVu.find({
+    NhanVienID: toObjectId(employeeId),
+    ChuKyDanhGiaID: toObjectId(toChuKyId),
+    isDeleted: false,
+  });
+
+  if (existingInTarget.length > 0) {
+    throw new AppError(
+      409,
+      "Chu kỳ đích đã có nhiệm vụ được gán. Vui lòng xóa trước khi copy."
+    );
+  }
+
+  // Copy assignments
+  const newAssignments = previousAssignments.map((a) => ({
+    NhanVienID: a.NhanVienID,
+    NhiemVuThuongQuyID: a.NhiemVuThuongQuyID,
+    ChuKyDanhGiaID: toObjectId(toChuKyId),
+    MucDoKho: a.MucDoKho, // Copy difficulty level
+    TrangThaiHoatDong: true,
+    isDeleted: false,
+    NgayGan: new Date(),
+    NguoiGanID: user.NhanVienID || null,
+  }));
+
+  await NhanVienNhiemVu.insertMany(newAssignments);
+
+  return {
+    copiedCount: newAssignments.length,
+    fromCycle: fromChuKyId,
+    toCycle: toChuKyId,
+  };
+};
+
+/**
+ * 🆕 GET MANAGED EMPLOYEES WITH CYCLE ASSIGNMENT STATS
+ * Purpose: For CycleAssignmentListPage - shows all managed employees with assignment progress
+ * Returns: Array of { employee, assignedCount, totalDuties }
+ */
+service.getEmployeesWithCycleStats = async (req, chuKyId) => {
+  const user = await getCurrentUser(req);
+  const userNhanVienId = user.NhanVienID?.toString();
+
+  if (!userNhanVienId) {
+    throw new AppError(403, "Tài khoản không gắn NhanVienID");
+  }
+
+  // Get all employees managed by current user (for KPI or both types)
+  const managedRelations = await QuanLyNhanVien.find({
+    NhanVienQuanLy: toObjectId(userNhanVienId),
+    isDeleted: false,
+    LoaiQuanLy: { $in: ["KPI", "Giao_Viec"] }, // Manager can assign tasks if they manage KPI
+  })
+    .populate({
+      path: "NhanVienDuocQuanLy",
+      select: "_id Ten MaNhanVien KhoaID",
+      populate: { path: "KhoaID", select: "_id TenKhoa" },
+    })
+    .sort({ createdAt: -1 });
+
+  // Build result array with stats for each employee
+  const employeesWithStats = await Promise.all(
+    managedRelations.map(async (relation) => {
+      const employee = relation.NhanVienDuocQuanLy;
+
+      if (!employee) return null; // Skip if employee not found
+
+      // Count assigned tasks for this cycle
+      const assignmentFilter = {
+        NhanVienID: employee._id,
+        isDeleted: false,
+        TrangThaiHoatDong: true,
+      };
+
+      if (chuKyId) {
+        assignmentFilter.ChuKyDanhGiaID = toObjectId(chuKyId);
+      } else {
+        assignmentFilter.ChuKyDanhGiaID = null; // Permanent assignments
+      }
+
+      const assignedCount = await NhanVienNhiemVu.countDocuments(
+        assignmentFilter
+      );
+
+      // 🆕 Calculate total difficulty (sum of MucDoKho)
+      const assignedTasks = await NhanVienNhiemVu.find(assignmentFilter).select(
+        "MucDoKho"
+      );
+      const totalMucDoKho = assignedTasks.reduce(
+        (sum, task) => sum + (task.MucDoKho || 0),
+        0
+      );
+
+      // Count total available duties for employee's department
+      const totalDuties = await NhiemVuThuongQuy.countDocuments({
+        KhoaID: employee.KhoaID,
+        TrangThaiHoatDong: true,
+        isDeleted: false,
+      });
+
+      return {
+        employee: {
+          _id: employee._id,
+          Ten: employee.Ten,
+          MaNhanVien: employee.MaNhanVien,
+          KhoaID: employee.KhoaID,
+        },
+        assignedCount,
+        totalDuties,
+        totalMucDoKho, // 🆕 Added total difficulty
+        LoaiQuanLy: relation.LoaiQuanLy,
+      };
+    })
+  );
+
+  // Filter out null entries (employees not found)
+  return employeesWithStats.filter((item) => item !== null);
 };
 
 module.exports = service;

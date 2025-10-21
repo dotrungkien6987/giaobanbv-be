@@ -50,6 +50,63 @@ const danhGiaKPISchema = Schema(
       type: Date,
     },
 
+    // ✅ NEW: Người duyệt hiện tại (nếu đang ở trạng thái đã duyệt)
+    NguoiDuyet: {
+      type: Schema.Types.ObjectId,
+      ref: "NhanVien",
+      default: null,
+    },
+
+    // ✅ NEW: Lịch sử duyệt
+    LichSuDuyet: [
+      {
+        NguoiDuyet: {
+          type: Schema.Types.ObjectId,
+          ref: "NhanVien",
+        },
+        NgayDuyet: {
+          type: Date,
+          default: Date.now,
+        },
+        TongDiemLucDuyet: {
+          type: Number,
+          default: 0,
+        },
+        GhiChu: {
+          type: String,
+          maxlength: 1000,
+        },
+        _id: false,
+      },
+    ],
+
+    // ✅ NEW: Lịch sử hủy duyệt
+    LichSuHuyDuyet: [
+      {
+        NguoiHuyDuyet: {
+          type: Schema.Types.ObjectId,
+          ref: "NhanVien",
+        },
+        NgayHuyDuyet: {
+          type: Date,
+          default: Date.now,
+        },
+        LyDoHuyDuyet: {
+          type: String,
+          required: true,
+          maxlength: 500,
+        },
+        DiemTruocKhiHuy: {
+          type: Number,
+          default: 0,
+        },
+        NgayDuyetTruocDo: {
+          type: Date,
+        },
+        _id: false,
+      },
+    ],
+
     isDeleted: {
       type: Boolean,
       default: false,
@@ -66,6 +123,7 @@ danhGiaKPISchema.index({ ChuKyID: 1, NhanVienID: 1 }, { unique: true });
 danhGiaKPISchema.index({ ChuKyID: 1 });
 danhGiaKPISchema.index({ NhanVienID: 1 });
 danhGiaKPISchema.index({ NguoiDanhGiaID: 1 });
+danhGiaKPISchema.index({ NguoiDuyet: 1 });
 danhGiaKPISchema.index({ TrangThai: 1 });
 danhGiaKPISchema.index({ TongDiemKPI: -1 });
 danhGiaKPISchema.index({ isDeleted: 1 });
@@ -95,16 +153,28 @@ danhGiaKPISchema.methods.tinhTongDiemKPI = async function () {
   return this.TongDiemKPI;
 };
 
-danhGiaKPISchema.methods.duyet = async function (nhanXet) {
+danhGiaKPISchema.methods.duyet = async function (nhanXet, nguoiDuyetId) {
   if (this.TrangThai === "DA_DUYET") {
     throw new Error("Đánh giá KPI đã được duyệt");
   }
 
   this.TrangThai = "DA_DUYET";
   this.NgayDuyet = new Date();
+  if (nguoiDuyetId) {
+    this.NguoiDuyet = nguoiDuyetId;
+  }
   if (nhanXet) {
     this.NhanXetNguoiDanhGia = nhanXet;
   }
+
+  // Ghi lịch sử duyệt
+  this.LichSuDuyet = this.LichSuDuyet || [];
+  this.LichSuDuyet.push({
+    NguoiDuyet: nguoiDuyetId || this.NguoiDuyet || undefined,
+    NgayDuyet: this.NgayDuyet,
+    TongDiemLucDuyet: this.TongDiemKPI || 0,
+    GhiChu: nhanXet || undefined,
+  });
 
   await this.save();
   return this;
@@ -113,6 +183,7 @@ danhGiaKPISchema.methods.duyet = async function (nhanXet) {
 danhGiaKPISchema.methods.huyDuyet = async function () {
   this.TrangThai = "CHUA_DUYET";
   this.NgayDuyet = null;
+  this.NguoiDuyet = null;
 
   await this.save();
   return this;

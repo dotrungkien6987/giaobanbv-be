@@ -1727,6 +1727,7 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
   // ✅ SAVE: Each nhiemVu evaluation with criteria scores (skip validation - frontend handles it)
   let tongDiemKPI = 0;
   const savedNhiemVu = [];
+  const nhiemVuIdsWithScore = []; // ✅ Track nhiệm vụ có điểm > 0
 
   for (const nhiemVu of nhiemVuList) {
     // Skip tasks without ChiTietDiem
@@ -1740,21 +1741,30 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
       return sum + (tc.LoaiTieuChi === "GIAM_DIEM" ? -score : score);
     }, 0);
 
+    // ✅ NEW: Skip nhiệm vụ có tổng điểm = 0 (không lưu)
+    if (tongDiemTieuChi === 0) {
+      continue;
+    }
+
     // Calculate DiemNhiemVu = TongDiemTieuChi × MucDoKho
     const diemNhiemVu = tongDiemTieuChi * (nhiemVu.MucDoKho || 5);
+
+    const nhiemVuId =
+      nhiemVu.NhiemVuThuongQuyID._id || nhiemVu.NhiemVuThuongQuyID;
+
+    // ✅ Track nhiệm vụ có điểm
+    nhiemVuIdsWithScore.push(nhiemVuId.toString());
 
     // Upsert DanhGiaNhiemVuThuongQuy
     const savedEval = await DanhGiaNhiemVuThuongQuy.findOneAndUpdate(
       {
         NhanVienID: danhGiaKPI.NhanVienID,
-        NhiemVuThuongQuyID:
-          nhiemVu.NhiemVuThuongQuyID._id || nhiemVu.NhiemVuThuongQuyID,
+        NhiemVuThuongQuyID: nhiemVuId,
         ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
       },
       {
         NhanVienID: danhGiaKPI.NhanVienID,
-        NhiemVuThuongQuyID:
-          nhiemVu.NhiemVuThuongQuyID._id || nhiemVu.NhiemVuThuongQuyID,
+        NhiemVuThuongQuyID: nhiemVuId,
         ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
         MucDoKho: nhiemVu.MucDoKho,
         ChiTietDiem: nhiemVu.ChiTietDiem,
@@ -1771,6 +1781,33 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
 
     savedNhiemVu.push(savedEval);
     tongDiemKPI += diemNhiemVu;
+  }
+
+  // ✅ NEW: XÓA các nhiệm vụ có tổng điểm = 0 (user đã clear hết điểm)
+  // Lấy tất cả assignments trong chu kỳ
+  const allAssignments = await NhanVienNhiemVu.find({
+    NhanVienID: danhGiaKPI.NhanVienID,
+    ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+    isDeleted: false,
+  }).lean();
+
+  const allAssignmentIds = allAssignments.map((a) =>
+    a.NhiemVuThuongQuyID.toString()
+  );
+
+  // Tìm nhiệm vụ cần xóa: có trong assignments nhưng không có trong danh sách đã lưu
+  const nhiemVuIdsToDelete = allAssignmentIds.filter(
+    (id) => !nhiemVuIdsWithScore.includes(id)
+  );
+
+  let deletedCount = 0;
+  if (nhiemVuIdsToDelete.length > 0) {
+    const deleteResult = await DanhGiaNhiemVuThuongQuy.deleteMany({
+      NhanVienID: danhGiaKPI.NhanVienID,
+      ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+      NhiemVuThuongQuyID: { $in: nhiemVuIdsToDelete },
+    });
+    deletedCount = deleteResult.deletedCount || 0;
   }
 
   // ✅ UPDATE: DanhGiaKPI with total score (không duyệt)
@@ -1846,6 +1883,12 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
     .populate("NguoiDanhGiaID")
     .lean();
 
+  // ✅ Enhanced success message with deletion info
+  let message = `Đã lưu ${savedNhiemVu.length} nhiệm vụ thành công`;
+  if (deletedCount > 0) {
+    message += ` (xóa ${deletedCount} nhiệm vụ có điểm 0)`;
+  }
+
   return sendResponse(
     res,
     200,
@@ -1853,9 +1896,11 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
     {
       danhGiaKPI: danhGiaKPIPopulated,
       danhGiaNhiemVuList,
+      savedCount: savedNhiemVu.length,
+      deletedCount,
     },
     null,
-    `Đã lưu ${savedNhiemVu.length} nhiệm vụ thành công`
+    message
   );
 });
 

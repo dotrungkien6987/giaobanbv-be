@@ -40,6 +40,22 @@ const nhanVienNhiemVuSchema = Schema(
         "Độ khó thực tế cho nhân viên này (user nhập manually khi gán)",
     },
 
+    // ✅ NEW: Điểm nhân viên tự đánh giá
+    DiemTuDanhGia: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 100,
+      description: "Điểm nhân viên tự đánh giá (0-100%), null = chưa tự chấm",
+    },
+
+    // ✅ NEW: Thời gian nhân viên tự chấm
+    NgayTuCham: {
+      type: Date,
+      default: null,
+      description: "Thời điểm nhân viên tự chấm điểm",
+    },
+
     TrangThaiHoatDong: {
       type: Boolean,
       default: true,
@@ -120,6 +136,18 @@ nhanVienNhiemVuSchema.methods.toJSON = function () {
 nhanVienNhiemVuSchema.methods.xoaMem = function () {
   this.isDeleted = true;
   this.TrangThaiHoatDong = false;
+
+  return this.save();
+};
+
+// ✅ NEW: Nhân viên tự chấm điểm
+nhanVienNhiemVuSchema.methods.tuChamDiem = function (diem) {
+  if (diem < 0 || diem > 100) {
+    throw new Error("Điểm phải từ 0-100");
+  }
+
+  this.DiemTuDanhGia = diem;
+  this.NgayTuCham = new Date();
 
   return this.save();
 };

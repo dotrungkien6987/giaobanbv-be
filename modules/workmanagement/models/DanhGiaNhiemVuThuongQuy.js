@@ -2,16 +2,21 @@ const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
 /**
- * ✅ RESTORED ORIGINAL MODEL + ChuKyDanhGiaID
+ * ✅ V2: SIMPLIFIED MODEL - NO CALCULATED FIELDS
  *
  * Purpose: Đánh giá nhiệm vụ thường quy theo tiêu chí và chu kỳ
  *
  * Key Features:
  * - ChiTietDiem: Embedded array lưu điểm từng tiêu chí (TANG_DIEM/GIAM_DIEM)
- * - TongDiemTieuChi: Auto-calculated từ ChiTietDiem
- * - DiemNhiemVu: Auto-calculated = MucDoKho × TongDiemTieuChi
  * - DanhGiaKPIID: Link to parent KPI evaluation
- * - ChuKyDanhGiaID: Link to cycle (NEW - for filtering)
+ * - ChuKyDanhGiaID: Link to cycle (for filtering)
+ *
+ * V2 Changes:
+ * - ❌ REMOVED: TongDiemTieuChi (calculated field)
+ * - ❌ REMOVED: DiemNhiemVu (calculated field)
+ * - ❌ REMOVED: Pre-save hook (auto-calculate)
+ * - ❌ REMOVED: Post-save hook (update parent)
+ * - ✅ NEW: Tính điểm real-time ở frontend, snapshot khi duyệt
  */
 
 const chiTietDiemSchema = new Schema(
@@ -25,11 +30,23 @@ const chiTietDiemSchema = new Schema(
       enum: ["TANG_DIEM", "GIAM_DIEM"],
       required: true,
     },
+
+    // Điểm quản lý chấm (existing field - giữ nguyên ý nghĩa)
     DiemDat: {
       type: Number,
-      default: 0,
+      default: null,
       min: 0,
+      max: 100,
+      description: "Điểm quản lý chấm cho tiêu chí này",
     },
+
+    // ✅ NEW: Đánh dấu tiêu chí "Mức độ hoàn thành" (copy từ ChuKyDanhGia)
+    IsMucDoHoanThanh: {
+      type: Boolean,
+      default: false,
+      description: "true = Tiêu chí cho phép tự đánh giá",
+    },
+
     GiaTriMin: {
       type: Number,
       default: 0,
@@ -104,23 +121,15 @@ const danhGiaNhiemVuThuongQuySchema = Schema(
     // Chi tiết điểm từng tiêu chí
     ChiTietDiem: [chiTietDiemSchema],
 
-    // Tổng điểm tiêu chí (auto-calculated)
-    TongDiemTieuChi: {
-      type: Number,
-      default: 0,
-    },
-
-    // Điểm nhiệm vụ (auto-calculated = MucDoKho × TongDiemTieuChi)
-    DiemNhiemVu: {
-      type: Number,
-      default: 0,
-    },
+    // ❌ REMOVED: TongDiemTieuChi (calculated field - V2 không cần)
+    // ❌ REMOVED: DiemNhiemVu (calculated field - V2 không cần)
+    // → Tính real-time ở frontend, snapshot khi duyệt ở backend
 
     // Trạng thái phê duyệt
     TrangThai: {
       type: String,
-      enum: ["Chua_Duyet", "Da_Duyet"],
-      default: "Chua_Duyet",
+      enum: ["CHUA_DUYET", "DA_DUYET"], // ✅ SIMPLIFIED: Chỉ 2 trạng thái
+      default: "CHUA_DUYET",
     },
 
     // Ghi chú
@@ -153,59 +162,11 @@ const danhGiaNhiemVuThuongQuySchema = Schema(
   }
 );
 
-// ✅ PRE-SAVE HOOK: Auto-calculate scores
-danhGiaNhiemVuThuongQuySchema.pre("save", function (next) {
-  try {
-    // Calculate TongDiemTieuChi from ChiTietDiem
-    if (this.ChiTietDiem && this.ChiTietDiem.length > 0) {
-      const diemTang = this.ChiTietDiem.filter(
-        (item) => item.LoaiTieuChi === "TANG_DIEM"
-      ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
+// ❌ REMOVED: PRE-SAVE HOOK (tính TongDiemTieuChi, DiemNhiemVu)
+// → V2: Không cần calculated fields, tính khi duyệt
 
-      const diemGiam = this.ChiTietDiem.filter(
-        (item) => item.LoaiTieuChi === "GIAM_DIEM"
-      ).reduce((sum, item) => sum + (item.DiemDat || 0) / 100, 0);
-
-      this.TongDiemTieuChi = diemTang - diemGiam;
-    } else {
-      this.TongDiemTieuChi = 0;
-    }
-
-    // Calculate DiemNhiemVu = MucDoKho × TongDiemTieuChi
-    this.DiemNhiemVu = this.MucDoKho * this.TongDiemTieuChi;
-
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-// ✅ POST-SAVE HOOK: Update parent DanhGiaKPI.TongDiemKPI
-danhGiaNhiemVuThuongQuySchema.post("save", async function (doc) {
-  try {
-    const DanhGiaKPI = mongoose.model("DanhGiaKPI");
-
-    // Recalculate total KPI score from all related task evaluations
-    const allEvaluations = await mongoose
-      .model("DanhGiaNhiemVuThuongQuy")
-      .find({
-        DanhGiaKPIID: doc.DanhGiaKPIID,
-        isDeleted: { $ne: true },
-      });
-
-    const tongDiemKPI = allEvaluations.reduce(
-      (sum, item) => sum + (item.DiemNhiemVu || 0),
-      0
-    );
-
-    // Update parent DanhGiaKPI
-    await DanhGiaKPI.findByIdAndUpdate(doc.DanhGiaKPIID, {
-      TongDiemKPI: tongDiemKPI,
-    });
-  } catch (error) {
-    console.error("Error updating parent DanhGiaKPI:", error);
-  }
-});
+// ❌ REMOVED: POST-SAVE HOOK (update parent DanhGiaKPI.TongDiemKPI)
+// → V2: TongDiemKPI chỉ tính khi duyệt (method duyet())
 
 // ✅ UNIQUE INDEX: 1 đánh giá cho 1 nhiệm vụ/nhân viên/chu kỳ
 danhGiaNhiemVuThuongQuySchema.index(
@@ -239,9 +200,83 @@ danhGiaNhiemVuThuongQuySchema.methods.chamDiem = function (chiTietDiem) {
   return this.save();
 };
 
-// ✅ METHODS: Kiểm tra có thể sửa
+// ✅ METHODS: Kiểm tra có thể chấm điểm
+danhGiaNhiemVuThuongQuySchema.methods.coTheChamDiem = function () {
+  return this.TrangThai === "CHUA_DUYET";
+};
+
+// ✅ METHODS: Kiểm tra có thể sửa (alias)
 danhGiaNhiemVuThuongQuySchema.methods.coTheSua = function () {
-  return this.TrangThai === "Chua_Duyet";
+  return this.TrangThai === "CHUA_DUYET";
+};
+
+// ✅ METHODS: Duyệt nhiệm vụ (tính điểm cuối cùng)
+danhGiaNhiemVuThuongQuySchema.methods.duyet = async function (nguoiDuyetId) {
+  if (this.TrangThai === "DA_DUYET") {
+    throw new Error("Nhiệm vụ đã được duyệt");
+  }
+
+  // ✅ LẤY DiemTuDanhGia từ NhanVienNhiemVu
+  const NhanVienNhiemVu = mongoose.model("NhanVienNhiemVu");
+  const assignment = await NhanVienNhiemVu.findOne({
+    NhanVienID: this.NhanVienID,
+    NhiemVuThuongQuyID: this.NhiemVuThuongQuyID,
+    ChuKyDanhGiaID: this.ChuKyDanhGiaID,
+    isDeleted: { $ne: true },
+  });
+
+  const diemTuDanhGia = assignment?.DiemTuDanhGia ?? 0;
+
+  // ✅ TÍNH ĐIỂM CUỐI CÙNG CHO TỪNG TIÊU CHÍ
+  let diemTangCong = 0;
+  let diemGiamTru = 0;
+
+  this.ChiTietDiem.forEach((tc) => {
+    let diemCuoiCung = 0;
+
+    if (tc.IsMucDoHoanThanh) {
+      // ✅ Tiêu chí "Mức độ hoàn thành" - Tính theo công thức
+      const diemQL = tc.DiemDat ?? 0; // DiemDat = điểm quản lý chấm
+
+      // Công thức: (DiemDat × 2 + DiemTuDanhGia) / 3
+      diemCuoiCung = (diemQL * 2 + diemTuDanhGia) / 3;
+    } else {
+      // ✅ Tiêu chí thường - Lấy trực tiếp DiemDat
+      diemCuoiCung = tc.DiemDat ?? 0;
+    }
+
+    // Cộng/trừ vào tổng điểm
+    if (tc.LoaiTieuChi === "TANG_DIEM") {
+      diemTangCong += diemCuoiCung / 100;
+    } else {
+      diemGiamTru += diemCuoiCung / 100;
+    }
+  });
+
+  // ✅ LƯU TỔNG ĐIỂM
+  this.TongDiemTieuChi = diemTangCong - diemGiamTru;
+  this.DiemNhiemVu = this.MucDoKho * this.TongDiemTieuChi;
+
+  // ✅ CHỐT TRẠNG THÁI
+  this.TrangThai = "DA_DUYET";
+  this.NgayDuyet = new Date();
+  this.NguoiDuyetID = nguoiDuyetId;
+
+  return this.save();
+};
+
+// ✅ METHODS: Hủy duyệt
+danhGiaNhiemVuThuongQuySchema.methods.huyDuyet = function (lyDo) {
+  if (this.TrangThai !== "DA_DUYET") {
+    throw new Error("Chỉ có thể hủy duyệt nhiệm vụ đã duyệt");
+  }
+
+  this.TrangThai = "CHUA_DUYET";
+  this.NgayDuyet = null;
+  this.NguoiDuyetID = null;
+  this.GhiChu = `${this.GhiChu}\n[Hủy duyệt: ${lyDo}]`;
+
+  return this.save();
 };
 
 // ✅ STATICS: Lấy danh sách theo DanhGiaKPIID

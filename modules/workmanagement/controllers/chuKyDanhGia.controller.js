@@ -111,7 +111,7 @@ chuKyDanhGiaController.taoChuKy = catchAsync(async (req, res, next) => {
     NgayBatDau,
     NgayKetThuc,
     MoTa,
-    TieuChiCauHinh,
+    TieuChiCauHinh = [],
   } = req.body;
 
   // Validate required fields
@@ -141,6 +141,28 @@ chuKyDanhGiaController.taoChuKy = catchAsync(async (req, res, next) => {
     throw new AppError(400, "Ngày kết thúc phải lớn hơn ngày bắt đầu");
   }
 
+  // ✅ AUTO-CREATE tiêu chí "Mức độ hoàn thành công việc" (FIXED)
+  const tieuChiMucDoHoanThanh = {
+    TenTieuChi: "Mức độ hoàn thành công việc",
+    LoaiTieuChi: "TANG_DIEM",
+    GiaTriMin: 0,
+    GiaTriMax: 100,
+    DonVi: "%",
+    ThuTu: 0, // Luôn hiển thị đầu tiên
+    GhiChu: "Tiêu chí cố định, nhân viên tự đánh giá",
+    IsMucDoHoanThanh: true,
+  };
+
+  // ✅ MERGE với các tiêu chí user tự tạo
+  const allTieuChi = [
+    tieuChiMucDoHoanThanh,
+    ...TieuChiCauHinh.map((tc, index) => ({
+      ...tc,
+      IsMucDoHoanThanh: false,
+      ThuTu: index + 1, // Bắt đầu từ 1
+    })),
+  ];
+
   const chuKyMoi = await ChuKyDanhGia.create({
     TenChuKy,
     Thang: parseInt(Thang),
@@ -148,7 +170,7 @@ chuKyDanhGiaController.taoChuKy = catchAsync(async (req, res, next) => {
     NgayBatDau: batDau,
     NgayKetThuc: ketThuc,
     MoTa,
-    TieuChiCauHinh: TieuChiCauHinh || [], // CRITICAL: Thêm tiêu chí cấu hình
+    TieuChiCauHinh: allTieuChi,
     NguoiTaoID: req.userId,
     isDong: false,
   });
@@ -224,9 +246,36 @@ chuKyDanhGiaController.capNhat = catchAsync(async (req, res, next) => {
   if (NgayKetThuc) chuKy.NgayKetThuc = ketThuc;
   if (MoTa !== undefined) chuKy.MoTa = MoTa;
 
-  // CRITICAL: Update TieuChiCauHinh
+  // ✅ UPDATE TieuChiCauHinh: Giữ tiêu chí FIXED + cập nhật user-defined
   if (Array.isArray(TieuChiCauHinh)) {
-    chuKy.TieuChiCauHinh = TieuChiCauHinh;
+    // Tìm tiêu chí FIXED hiện tại
+    const tieuChiFixed = chuKy.TieuChiCauHinh.find(
+      (tc) => tc.IsMucDoHoanThanh === true
+    );
+
+    if (!tieuChiFixed) {
+      throw new AppError(
+        500,
+        "Dữ liệu không hợp lệ: Thiếu tiêu chí 'Mức độ hoàn thành'"
+      );
+    }
+
+    // ✅ MERGE: Giữ tiêu chí FIXED + các tiêu chí user cập nhật
+    const tieuChiUserDefined = TieuChiCauHinh.filter(
+      (tc) => !tc.IsMucDoHoanThanh
+    ).map((tc, index) => ({
+      ...tc,
+      IsMucDoHoanThanh: false,
+      ThuTu: index + 1,
+    }));
+
+    chuKy.TieuChiCauHinh = [
+      {
+        ...tieuChiFixed.toObject(),
+        ThuTu: 0, // Luôn đầu tiên
+      },
+      ...tieuChiUserDefined,
+    ];
     chuKy.markModified("TieuChiCauHinh"); // Force Mongoose to detect changes
   }
 
@@ -363,7 +412,7 @@ chuKyDanhGiaController.xoa = catchAsync(async (req, res, next) => {
 
   // Quy tắc 2: Kiểm tra có bản đánh giá KPI nào không
   const soDanhGia = await DanhGiaKPI.countDocuments({
-    ChuKyID: id,
+    ChuKyDanhGiaID: id,
     isDeleted: { $ne: true },
   });
 

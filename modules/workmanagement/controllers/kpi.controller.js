@@ -25,7 +25,12 @@ const kpiController = {};
  * @access Private (Manager)
  */
 kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
-  const { ChuKyID, NhanVienID } = req.body;
+  const {
+    ChuKyDanhGiaID: _ChuKyDanhGiaID,
+    ChuKyID: _ChuKyID,
+    NhanVienID,
+  } = req.body;
+  const ChuKyDanhGiaID = _ChuKyDanhGiaID || _ChuKyID; // Back-compat aliasing
   const NguoiDanhGiaID = req.currentNhanVienID; // ✅ Fix: Từ validateQuanLy middleware
 
   // 1. Kiểm tra quyền chấm KPI
@@ -45,14 +50,14 @@ kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
   }
 
   // 2. Kiểm tra chu kỳ đánh giá
-  const chuKy = await ChuKyDanhGia.findById(ChuKyID);
+  const chuKy = await ChuKyDanhGia.findById(ChuKyDanhGiaID);
   if (!chuKy) {
     throw new AppError(404, "Chu kỳ đánh giá không tồn tại", "Not Found");
   }
 
   // 3. Kiểm tra đã tồn tại đánh giá chưa
   const existing = await DanhGiaKPI.findOne({
-    ChuKyID,
+    ChuKyDanhGiaID,
     NhanVienID,
     isDeleted: false,
   });
@@ -68,7 +73,7 @@ kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
   // 4. Lấy danh sách nhiệm vụ thường quy của nhân viên (CHỈ trong chu kỳ này)
   const danhSachNhiemVu = await NhanVienNhiemVu.find({
     NhanVienID,
-    ChuKyDanhGiaID: ChuKyID, // ✅ CHỈ lấy nhiệm vụ của chu kỳ đang đánh giá
+    ChuKyDanhGiaID: ChuKyDanhGiaID, // ✅ CHỈ lấy nhiệm vụ của chu kỳ đang đánh giá
     isDeleted: false,
   }).populate("NhiemVuThuongQuyID");
 
@@ -82,7 +87,7 @@ kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
 
   // 5. Tạo DanhGiaKPI
   const danhGiaKPI = await DanhGiaKPI.create({
-    ChuKyID,
+    ChuKyDanhGiaID,
     NhanVienID,
     NguoiDanhGiaID,
     TongDiemKPI: 0,
@@ -112,7 +117,10 @@ kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
 
   // 7. Populate trước khi trả về
   await danhGiaKPI.populate([
-    { path: "ChuKyID", select: "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy" },
+    {
+      path: "ChuKyDanhGiaID",
+      select: "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy",
+    },
     { path: "NhanVienID", select: "HoTen MaNhanVien" },
     { path: "NguoiDanhGiaID", select: "HoTen" },
   ]);
@@ -146,18 +154,21 @@ kpiController.layDanhSachDanhGiaKPI = catchAsync(async (req, res, next) => {
   // Build query
   const query = { isDeleted: false };
 
-  if (ChuKyDanhGiaID) query.ChuKyID = ChuKyDanhGiaID;
+  if (ChuKyDanhGiaID) query.ChuKyDanhGiaID = ChuKyDanhGiaID;
   if (NhanVienID) query.NhanVienID = NhanVienID;
   if (TrangThai) query.TrangThai = TrangThai;
 
   // Lấy danh sách
   const danhGiaKPIs = await DanhGiaKPI.find(query)
     .populate([
-      { path: "ChuKyID", select: "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy" },
-      { path: "NhanVienID", select: "HoTen MaNhanVien" },
-      { path: "NguoiDanhGiaID", select: "HoTen UserName" },
-      { path: "NguoiDuyet", select: "HoTen Ten MaNhanVien" },
-      { path: "LichSuDuyet.NguoiDuyet", select: "HoTen Ten MaNhanVien" },
+      {
+        path: "ChuKyDanhGiaID",
+        select: "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy",
+      },
+      { path: "NhanVienID", select: "Ten MaNhanVien Email" },
+      { path: "NguoiDanhGiaID", select: "Ten MaNhanVien Email" },
+      { path: "NguoiDuyet", select: "Ten MaNhanVien" },
+      { path: "LichSuDuyet.NguoiDuyet", select: "Ten MaNhanVien" },
     ])
     .sort({ createdAt: -1 });
 
@@ -183,11 +194,14 @@ kpiController.layChiTietDanhGiaKPI = catchAsync(async (req, res, next) => {
     _id: id,
     isDeleted: false,
   }).populate([
-    { path: "ChuKyID", select: "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy" },
-    { path: "NhanVienID", select: "HoTen MaNhanVien" },
-    { path: "NguoiDanhGiaID", select: "HoTen UserName" },
-    { path: "NguoiDuyet", select: "HoTen Ten MaNhanVien" },
-    { path: "LichSuDuyet.NguoiDuyet", select: "HoTen Ten MaNhanVien" },
+    {
+      path: "ChuKyDanhGiaID",
+      select: "TenChuKy NgayBatDau NgayKetThuc LoaiChuKy",
+    },
+    { path: "NhanVienID", select: "Ten MaNhanVien Email" },
+    { path: "NguoiDanhGiaID", select: "Ten MaNhanVien Email" },
+    { path: "NguoiDuyet", select: "Ten MaNhanVien" },
+    { path: "LichSuDuyet.NguoiDuyet", select: "Ten MaNhanVien" },
   ]);
 
   if (!danhGiaKPI) {
@@ -210,8 +224,42 @@ kpiController.layChiTietDanhGiaKPI = catchAsync(async (req, res, next) => {
   }
 
   // Lấy danh sách đánh giá nhiệm vụ
-  const danhGiaNhiemVu =
-    await DanhGiaNhiemVuThuongQuy.layDanhSachTheoDanhGiaKPI(id);
+  let danhGiaNhiemVu = await DanhGiaNhiemVuThuongQuy.layDanhSachTheoDanhGiaKPI(
+    id
+  );
+
+  // ✅ ENHANCEMENT: Load DiemTuDanhGia from NhanVienNhiemVu
+  // Get all NhiemVuThuongQuyIDs from evaluations
+  const nhiemVuIds = danhGiaNhiemVu.map((item) => item.NhiemVuThuongQuyID?._id);
+
+  // Load assignments with DiemTuDanhGia
+  const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
+  const assignments = await NhanVienNhiemVu.find({
+    NhiemVuThuongQuyID: { $in: nhiemVuIds },
+    NhanVienID: danhGiaKPI.NhanVienID._id,
+    ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID._id,
+    isDeleted: false,
+  })
+    .select("NhiemVuThuongQuyID DiemTuDanhGia")
+    .lean();
+
+  // Map assignments by NhiemVuThuongQuyID
+  const assignmentMap = assignments.reduce((acc, assignment) => {
+    acc[assignment.NhiemVuThuongQuyID.toString()] = assignment;
+    return acc;
+  }, {});
+
+  // Enhance danhGiaNhiemVu with DiemTuDanhGia
+  danhGiaNhiemVu = danhGiaNhiemVu.map((item) => {
+    const itemObj = item.toObject ? item.toObject() : item;
+    const nhiemVuId = itemObj.NhiemVuThuongQuyID?._id?.toString();
+    const assignment = assignmentMap[nhiemVuId];
+
+    return {
+      ...itemObj,
+      DiemTuDanhGia: assignment?.DiemTuDanhGia ?? 0,
+    };
+  });
 
   return sendResponse(
     res,
@@ -242,7 +290,7 @@ kpiController.layDanhSachKPITheoChuKy = catchAsync(async (req, res, next) => {
   });
 
   const total = await DanhGiaKPI.countDocuments({
-    ChuKyID: chuKyId,
+    ChuKyDanhGiaID: chuKyId,
     isDeleted: false,
     ...(trangThai && { TrangThai: trangThai }),
   });
@@ -443,7 +491,7 @@ kpiController.duyetDanhGiaKPI = catchAsync(async (req, res, next) => {
     _id: id,
     isDeleted: false,
   }).populate([
-    { path: "ChuKyID", select: "TenChuKy NgayBatDau NgayKetThuc" },
+    { path: "ChuKyDanhGiaID", select: "TenChuKy NgayBatDau NgayKetThuc" },
     { path: "NhanVienID", select: "HoTen MaNhanVien" },
     { path: "NguoiDanhGiaID", select: "HoTen" },
   ]);
@@ -543,27 +591,10 @@ kpiController.duyetDanhGiaKPI = catchAsync(async (req, res, next) => {
     );
   }
 
-  // ✅ FIX: Calculate scores for all tasks before approving
+  // ✅ NEW: Call duyet() on all tasks to calculate scores
+  // This applies formula for IsMucDoHoanThanh criteria: (DiemQuanLy × 2 + DiemTuDanhGia) / 3
   for (const nv of danhGiaNhiemVu) {
-    // Calculate TongDiemTieuChi (sum of TANG_DIEM - GIAM_DIEM)
-    let tongDiemTieuChi = 0;
-    for (const tc of nv.ChiTietDiem || []) {
-      const diemDat = tc.DiemDat || 0;
-      if (tc.LoaiTieuChi === "TANG_DIEM") {
-        tongDiemTieuChi += diemDat;
-      } else if (tc.LoaiTieuChi === "GIAM_DIEM") {
-        tongDiemTieuChi -= diemDat;
-      }
-    }
-
-    // Calculate DiemNhiemVu = (MucDoKho × TongDiemTieuChi) / 100
-    const mucDoKho = nv.MucDoKho || 1;
-    const diemNhiemVu = (mucDoKho * tongDiemTieuChi) / 100;
-
-    // Update scores
-    nv.TongDiemTieuChi = tongDiemTieuChi;
-    nv.DiemNhiemVu = diemNhiemVu;
-    await nv.save();
+    await nv.duyet(); // Method handles calculation + snapshot
   }
 
   // Calculate total KPI score (sum of all DiemNhiemVu)
@@ -577,7 +608,7 @@ kpiController.duyetDanhGiaKPI = catchAsync(async (req, res, next) => {
 
   // ✅ FIX: Refresh danhGiaKPI to get updated TongDiemKPI
   const updatedDanhGiaKPI = await DanhGiaKPI.findById(id).populate([
-    { path: "ChuKyID", select: "TenChuKy NgayBatDau NgayKetThuc" },
+    { path: "ChuKyDanhGiaID", select: "TenChuKy NgayBatDau NgayKetThuc" },
     { path: "NhanVienID", select: "HoTen MaNhanVien" },
     { path: "NguoiDanhGiaID", select: "HoTen" },
     { path: "NguoiDuyet", select: "HoTen Ten MaNhanVien" },
@@ -621,6 +652,17 @@ kpiController.huyDuyetDanhGiaKPI = catchAsync(async (req, res, next) => {
     throw new AppError(404, "Không tìm thấy đánh giá KPI", "Not Found");
   }
 
+  // ✅ NEW: Hủy duyệt tất cả tasks trước
+  const danhGiaNhiemVu = await DanhGiaNhiemVuThuongQuy.find({
+    DanhGiaKPIID: id,
+    isDeleted: false,
+  });
+
+  for (const nv of danhGiaNhiemVu) {
+    await nv.huyDuyet();
+  }
+
+  // Hủy duyệt KPI
   await danhGiaKPI.huyDuyet();
 
   return sendResponse(
@@ -753,7 +795,7 @@ kpiController.thongKeKPITheoChuKy = catchAsync(async (req, res, next) => {
 
   // Phân bố xếp loại
   const danhSachKPI = await DanhGiaKPI.find({
-    ChuKyID: chuKyId,
+    ChuKyDanhGiaID: chuKyId,
     TrangThai: "DA_DUYET",
     isDeleted: false,
   });
@@ -830,7 +872,7 @@ kpiController.getDashboard = catchAsync(async (req, res, next) => {
 
   // 2. Lấy đánh giá KPI của các nhân viên này trong chu kỳ
   const danhGiaKPIs = await DanhGiaKPI.find({
-    ChuKyID: chuKyId,
+    ChuKyDanhGiaID: chuKyId,
     NhanVienID: { $in: nhanVienIds },
     isDeleted: { $ne: true },
   })
@@ -840,15 +882,25 @@ kpiController.getDashboard = catchAsync(async (req, res, next) => {
   // 3. Tính progress cho từng đánh giá KPI
   const danhGiaKPIMap = {};
   for (const dg of danhGiaKPIs) {
-    // Lấy số nhiệm vụ đã chấm (theo bản đánh giá)
-    const nhiemVuList = await DanhGiaNhiemVuThuongQuy.find({
-      DanhGiaKPIID: dg._id,
+    // ✅ Lấy số nhiệm vụ đã chấm theo chu kỳ và nhân viên (không phụ thuộc DanhGiaKPIID)
+    const scoredFilter = {
+      NhanVienID: dg.NhanVienID,
+      ChuKyDanhGiaID: chuKyId,
       isDeleted: { $ne: true },
-    });
-
-    const scoredTasks = nhiemVuList.filter(
-      (nv) => (nv.TongDiemTieuChi || 0) > 0
-    ).length;
+      $or: [
+        { ChiTietDiem: { $exists: true, $ne: [] } },
+        { "ChiTietDiem.DiemDat": { $gt: 0 } },
+        { "ChiTietDiem.DiemQuanLy": { $gt: 0 } },
+        { "ChiTietDiem.DiemTuDanhGia": { $gt: 0 } },
+        { DiemQuanLyDanhGia: { $gt: 0 } },
+        { DiemTuDanhGia: { $gt: 0 } },
+      ],
+    };
+    const scoredDistinct = await DanhGiaNhiemVuThuongQuy.distinct(
+      "NhiemVuThuongQuyID",
+      scoredFilter
+    );
+    const scoredTasks = scoredDistinct.length;
 
     // Tổng số nhiệm vụ được PHÂN CÔNG trong chu kỳ này (để bật nút Đánh giá/Xem KPI)
     const assignedTotal = await NhanVienNhiemVu.countDocuments({
@@ -859,14 +911,14 @@ kpiController.getDashboard = catchAsync(async (req, res, next) => {
     });
 
     const percentage =
-      assignedTotal > 0 ? (scoredTasks / assignedTotal) * 100 : 0;
+      assignedTotal > 0 ? Math.round((scoredTasks / assignedTotal) * 100) : 0;
 
     danhGiaKPIMap[dg.NhanVienID._id.toString()] = {
       danhGiaKPI: dg,
       progress: {
         scored: scoredTasks,
         total: assignedTotal,
-        percentage: Math.round(percentage),
+        percentage,
       },
     };
   }
@@ -885,7 +937,7 @@ kpiController.getDashboard = catchAsync(async (req, res, next) => {
         };
       }
 
-      // Nếu chưa có DanhGiaKPI trong chu kỳ, vẫn tính số nhiệm vụ đã được phân công theo chu kỳ
+      // Nếu chưa có DanhGiaKPI trong chu kỳ, vẫn tính số nhiệm vụ đã được phân công và số đã chấm theo chu kỳ
       const assignedTotal = await NhanVienNhiemVu.countDocuments({
         NhanVienID: nhanVienId,
         ChuKyDanhGiaID: chuKyId,
@@ -893,10 +945,36 @@ kpiController.getDashboard = catchAsync(async (req, res, next) => {
         isDeleted: false,
       });
 
+      const scoredFilterNoKPI = {
+        NhanVienID: nhanVienId,
+        ChuKyDanhGiaID: chuKyId,
+        isDeleted: { $ne: true },
+        $or: [
+          { ChiTietDiem: { $exists: true, $ne: [] } },
+          { "ChiTietDiem.DiemDat": { $gt: 0 } },
+          { "ChiTietDiem.DiemQuanLy": { $gt: 0 } },
+          { "ChiTietDiem.DiemTuDanhGia": { $gt: 0 } },
+          { DiemQuanLyDanhGia: { $gt: 0 } },
+          { DiemTuDanhGia: { $gt: 0 } },
+        ],
+      };
+      const scoredDistinctNoKPI = await DanhGiaNhiemVuThuongQuy.distinct(
+        "NhiemVuThuongQuyID",
+        scoredFilterNoKPI
+      );
+      const scoredTasksNoKPI = scoredDistinctNoKPI.length;
+
       return {
         nhanVien: qh.NhanVienDuocQuanLy,
         danhGiaKPI: null,
-        progress: { scored: 0, total: assignedTotal, percentage: 0 },
+        progress: {
+          scored: scoredTasksNoKPI,
+          total: assignedTotal,
+          percentage:
+            assignedTotal > 0
+              ? Math.round((scoredTasksNoKPI / assignedTotal) * 100)
+              : 0,
+        },
       };
     })
   );
@@ -972,7 +1050,7 @@ kpiController.resetCriteria = catchAsync(async (req, res, next) => {
   }
 
   // 3. Load ChuKy configuration
-  const chuKy = await ChuKyDanhGia.findById(danhGiaKPI.ChuKyID).lean();
+  const chuKy = await ChuKyDanhGia.findById(danhGiaKPI.ChuKyDanhGiaID).lean();
   if (!chuKy) {
     throw new AppError(404, "Không tìm thấy chu kỳ đánh giá");
   }
@@ -1015,7 +1093,7 @@ kpiController.resetCriteria = catchAsync(async (req, res, next) => {
     {
       nhiemVuList: updatedList,
       danhGiaKPIId: danhGiaKPI._id,
-      chuKyId: danhGiaKPI.ChuKyID, // ✅ FIX: Return for frontend refresh
+      chuKyId: danhGiaKPI.ChuKyDanhGiaID, // ✅ FIX: Return for frontend refresh
       nhanVienId: danhGiaKPI.NhanVienID, // ✅ FIX: Return for frontend refresh
       syncedCount: nhiemVuList.length,
     },
@@ -1363,19 +1441,25 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
   }
 
   // ✅ VALIDATE: Quyền chấm KPI
-  const quanLy = await QuanLyNhanVien.findOne({
-    NhanVienQuanLy: nguoiDanhGiaID,
-    NhanVienDuocQuanLy: nhanVienId,
-    LoaiQuanLy: "KPI",
-    isDeleted: false,
-  });
+  // Cho phép: 1) Nhân viên xem KPI của chính mình, hoặc 2) Quản lý xem KPI của nhân viên được quản lý
+  const isViewingOwnKPI = nhanVienId === nguoiDanhGiaID?.toString();
 
-  if (!quanLy) {
-    throw new AppError(
-      403,
-      "Bạn không có quyền đánh giá KPI cho nhân viên này",
-      "Forbidden"
-    );
+  if (!isViewingOwnKPI) {
+    // Nếu không xem KPI của mình, kiểm tra quyền quản lý
+    const quanLy = await QuanLyNhanVien.findOne({
+      NhanVienQuanLy: nguoiDanhGiaID,
+      NhanVienDuocQuanLy: nhanVienId,
+      LoaiQuanLy: "KPI",
+      isDeleted: false,
+    });
+
+    if (!quanLy) {
+      throw new AppError(
+        403,
+        "Bạn không có quyền đánh giá KPI cho nhân viên này",
+        "Forbidden"
+      );
+    }
   }
 
   // ✅ LOAD: Chu kỳ với tiêu chí cấu hình
@@ -1422,7 +1506,7 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
 
   // ✅ LOAD or CREATE: DanhGiaKPI record
   let danhGiaKPI = await DanhGiaKPI.findOne({
-    ChuKyID: chuKyId,
+    ChuKyDanhGiaID: chuKyId,
     NhanVienID: nhanVienId,
     isDeleted: false,
   });
@@ -1430,7 +1514,7 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
   if (!danhGiaKPI) {
     // Auto-create DanhGiaKPI if not exists
     danhGiaKPI = await DanhGiaKPI.create({
-      ChuKyID: chuKyId,
+      ChuKyDanhGiaID: chuKyId,
       NhanVienID: nhanVienId,
       NguoiDanhGiaID: nguoiDanhGiaID,
       TongDiemKPI: 0,
@@ -1451,7 +1535,7 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
     return acc;
   }, {});
 
-  // ✅ BUILD: Complete nhiemVu list with ChiTietDiem
+  // ✅ BUILD: Complete nhiemVu list with ChiTietDiem + DiemTuDanhGia
   const danhGiaNhiemVuList = assignments.map((assignment) => {
     const nhiemVuId = assignment.NhiemVuThuongQuyID._id.toString();
     const existingEval = evaluationMap[nhiemVuId];
@@ -1464,6 +1548,13 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
           cd.TenTieuChi === tc.TenTieuChi && cd.LoaiTieuChi === tc.LoaiTieuChi
       );
 
+      // ✅ V2: Detect if this is "Mức độ hoàn thành" criterion
+      // Check both TenTieuChi name and LoaiTieuChi
+      const isMucDoHoanThanh =
+        tc.TenTieuChi === "Mức độ hoàn thành" ||
+        tc.TenTieuChi === "Mức độ hoàn thành công việc" ||
+        tc.TenTieuChi?.toLowerCase().includes("mức độ hoàn thành");
+
       return {
         TenTieuChi: tc.TenTieuChi,
         LoaiTieuChi: tc.LoaiTieuChi,
@@ -1472,6 +1563,7 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
         DonVi: tc.DonVi,
         DiemDat: existingScore?.DiemDat ?? 0,
         GhiChu: existingScore?.GhiChu ?? "",
+        IsMucDoHoanThanh: isMucDoHoanThanh, // ✅ V2: Flag for formula calculation
       };
     });
 
@@ -1484,12 +1576,13 @@ kpiController.getChamDiemTieuChi = catchAsync(async (req, res, next) => {
       ChiTietDiem: chiTietDiem,
       TongDiemTieuChi: existingEval?.TongDiemTieuChi ?? 0,
       DiemNhiemVu: existingEval?.DiemNhiemVu ?? 0,
+      DiemTuDanhGia: assignment.DiemTuDanhGia ?? 0, // ✅ V2: Include self-assessment score
     };
   });
 
-  // Populate ChuKyID in danhGiaKPI for frontend
+  // Populate ChuKyDanhGiaID in danhGiaKPI for frontend
   danhGiaKPI = await DanhGiaKPI.findById(danhGiaKPI._id)
-    .populate("ChuKyID")
+    .populate("ChuKyDanhGiaID")
     .populate("NhanVienID")
     .populate("NguoiDanhGiaID")
     .populate({ path: "NguoiDuyet", select: "HoTen Ten MaNhanVien" })
@@ -1532,7 +1625,7 @@ kpiController.duyetKPITieuChi = catchAsync(async (req, res, next) => {
 
   // ========== STEP 1: PRE-VALIDATION (Before Transaction) ==========
   const danhGiaKPI = await DanhGiaKPI.findById(danhGiaKPIId).populate(
-    "ChuKyID",
+    "ChuKyDanhGiaID",
     "TenChuKy NgayBatDau NgayKetThuc TieuChiCauHinh"
   );
 
@@ -1606,46 +1699,49 @@ kpiController.duyetKPITieuChi = catchAsync(async (req, res, next) => {
 
   // ========== STEP 2: BATCH UPSERT (No transaction for standalone MongoDB) ==========
   try {
-    // ✅ Batch upsert tất cả evaluations
-    const upsertPromises = nhiemVuList.map((nv) =>
-      DanhGiaNhiemVuThuongQuy.findOneAndUpdate(
+    // ✅ V2: Normalize ChiTietDiem before upsert
+    const upsertPromises = nhiemVuList.map((nv) => {
+      // ✅ Ensure IsMucDoHoanThanh is correctly set
+      const normalizedChiTietDiem = nv.ChiTietDiem.map((tc) => {
+        const isMucDoHoanThanh =
+          tc.IsMucDoHoanThanh === true || // Preserve if already true
+          tc.TenTieuChi === "Mức độ hoàn thành" ||
+          tc.TenTieuChi === "Mức độ hoàn thành công việc" ||
+          tc.TenTieuChi?.toLowerCase().includes("mức độ hoàn thành");
+
+        return {
+          ...tc,
+          IsMucDoHoanThanh: isMucDoHoanThanh,
+        };
+      });
+
+      return DanhGiaNhiemVuThuongQuy.findOneAndUpdate(
         {
           NhanVienID: danhGiaKPI.NhanVienID,
           NhiemVuThuongQuyID: nv.NhiemVuThuongQuyID,
-          ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+          ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
         },
         {
           $set: {
             DanhGiaKPIID: danhGiaKPI._id,
             MucDoKho: nv.MucDoKho,
-            ChiTietDiem: nv.ChiTietDiem,
+            ChiTietDiem: normalizedChiTietDiem, // ✅ V2: Use normalized data
             NgayDanhGia: new Date(),
             isDeleted: false,
           },
         },
         { upsert: true, new: true }
-      )
-    );
+      );
+    });
 
     await Promise.all(upsertPromises);
 
-    // ✅ Calculate TongDiemKPI from saved evaluations
-    const savedEvaluations = await DanhGiaNhiemVuThuongQuy.find({
-      DanhGiaKPIID: danhGiaKPI._id,
-      isDeleted: false,
-    });
-
-    const tongDiemKPI = savedEvaluations.reduce(
-      (sum, ev) => sum + (ev.DiemNhiemVu || 0),
-      0
-    );
-
-    // ✅ Finalize approval: cập nhật tổng điểm và ghi lịch sử duyệt
-    danhGiaKPI.TongDiemKPI = tongDiemKPI;
+    // ✅ V2 (Option B): Method duyet() tự tính TongDiemKPI
+    // → Controller chỉ cần gọi method, không cần tính thủ công
     await danhGiaKPI.duyet(undefined, req.user.NhanVienID || req.user._id);
 
     // Populate for response (include history users)
-    await danhGiaKPI.populate("ChuKyID NhanVienID");
+    await danhGiaKPI.populate("ChuKyDanhGiaID NhanVienID");
     await danhGiaKPI.populate({
       path: "NguoiDuyet",
       select: "HoTen Ten MaNhanVien",
@@ -1665,7 +1761,7 @@ kpiController.duyetKPITieuChi = catchAsync(async (req, res, next) => {
       true,
       { danhGiaKPI },
       null,
-      `Duyệt KPI thành công! Tổng điểm: ${tongDiemKPI.toFixed(1)}`
+      `Duyệt KPI thành công! Tổng điểm: ${danhGiaKPI.TongDiemKPI.toFixed(1)}`
     );
   } catch (error) {
     // ========== ERROR HANDLING ==========
@@ -1735,8 +1831,22 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
       continue;
     }
 
+    // ✅ V2: Normalize ChiTietDiem - Ensure IsMucDoHoanThanh is correctly set
+    const normalizedChiTietDiem = nhiemVu.ChiTietDiem.map((tc) => {
+      const isMucDoHoanThanh =
+        tc.IsMucDoHoanThanh === true || // Preserve if already true
+        tc.TenTieuChi === "Mức độ hoàn thành" ||
+        tc.TenTieuChi === "Mức độ hoàn thành công việc" ||
+        tc.TenTieuChi?.toLowerCase().includes("mức độ hoàn thành");
+
+      return {
+        ...tc,
+        IsMucDoHoanThanh: isMucDoHoanThanh, // ✅ Always set correctly
+      };
+    });
+
     // Calculate TongDiemTieuChi = Σ(score/100) where GIAM_DIEM is negative
-    const tongDiemTieuChi = nhiemVu.ChiTietDiem.reduce((sum, tc) => {
+    const tongDiemTieuChi = normalizedChiTietDiem.reduce((sum, tc) => {
       const score = (tc.DiemDat || 0) / 100;
       return sum + (tc.LoaiTieuChi === "GIAM_DIEM" ? -score : score);
     }, 0);
@@ -1760,14 +1870,14 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
       {
         NhanVienID: danhGiaKPI.NhanVienID,
         NhiemVuThuongQuyID: nhiemVuId,
-        ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+        ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
       },
       {
         NhanVienID: danhGiaKPI.NhanVienID,
         NhiemVuThuongQuyID: nhiemVuId,
-        ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+        ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
         MucDoKho: nhiemVu.MucDoKho,
-        ChiTietDiem: nhiemVu.ChiTietDiem,
+        ChiTietDiem: normalizedChiTietDiem, // ✅ V2: Use normalized data
         TongDiemTieuChi: tongDiemTieuChi,
         DiemNhiemVu: diemNhiemVu,
         isDeleted: false,
@@ -1787,7 +1897,7 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
   // Lấy tất cả assignments trong chu kỳ
   const allAssignments = await NhanVienNhiemVu.find({
     NhanVienID: danhGiaKPI.NhanVienID,
-    ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+    ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
     isDeleted: false,
   }).lean();
 
@@ -1804,7 +1914,7 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
   if (nhiemVuIdsToDelete.length > 0) {
     const deleteResult = await DanhGiaNhiemVuThuongQuy.deleteMany({
       NhanVienID: danhGiaKPI.NhanVienID,
-      ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+      ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
       NhiemVuThuongQuyID: { $in: nhiemVuIdsToDelete },
     });
     deletedCount = deleteResult.deletedCount || 0;
@@ -1815,13 +1925,13 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
   await danhGiaKPI.save();
 
   // ✅ REFRESH: Fetch full list như getChamDiemTieuChi để frontend có đầy đủ data
-  const chuKy = await ChuKyDanhGia.findById(danhGiaKPI.ChuKyID);
+  const chuKy = await ChuKyDanhGia.findById(danhGiaKPI.ChuKyDanhGiaID);
   const tieuChiCauHinh = chuKy?.TieuChiCauHinh || [];
 
   // Get all assignments trong chu kỳ
   const assignments = await NhanVienNhiemVu.find({
     NhanVienID: danhGiaKPI.NhanVienID,
-    ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+    ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
     isDeleted: false,
   })
     .populate({
@@ -1833,7 +1943,7 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
   // Get all existing evaluations
   const existingEvaluations = await DanhGiaNhiemVuThuongQuy.find({
     NhanVienID: danhGiaKPI.NhanVienID,
-    ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+    ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
     isDeleted: false,
   }).lean();
 
@@ -1853,6 +1963,13 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
           cd.TenTieuChi === tc.TenTieuChi && cd.LoaiTieuChi === tc.LoaiTieuChi
       );
 
+      // ✅ V2: Detect IsMucDoHoanThanh
+      const isMucDoHoanThanh =
+        existingScore?.IsMucDoHoanThanh ||
+        tc.TenTieuChi === "Mức độ hoàn thành" ||
+        tc.TenTieuChi === "Mức độ hoàn thành công việc" ||
+        tc.TenTieuChi?.toLowerCase().includes("mức độ hoàn thành");
+
       return {
         TenTieuChi: tc.TenTieuChi,
         LoaiTieuChi: tc.LoaiTieuChi,
@@ -1861,6 +1978,7 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
         DonVi: tc.DonVi,
         DiemDat: existingScore?.DiemDat ?? 0,
         GhiChu: existingScore?.GhiChu ?? "",
+        IsMucDoHoanThanh: isMucDoHoanThanh, // ✅ V2: Add flag
       };
     });
 
@@ -1868,9 +1986,10 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
       _id: existingEval?._id || null,
       NhanVienID: danhGiaKPI.NhanVienID,
       NhiemVuThuongQuyID: assignment.NhiemVuThuongQuyID,
-      ChuKyDanhGiaID: danhGiaKPI.ChuKyID,
+      ChuKyDanhGiaID: danhGiaKPI.ChuKyDanhGiaID,
       MucDoKho: assignment.MucDoKho,
       ChiTietDiem: chiTietDiem,
+      DiemTuDanhGia: assignment.DiemTuDanhGia ?? 0, // ✅ V2: Add DiemTuDanhGia from assignment
       TongDiemTieuChi: existingEval?.TongDiemTieuChi ?? 0,
       DiemNhiemVu: existingEval?.DiemNhiemVu ?? 0,
     };
@@ -1878,7 +1997,7 @@ kpiController.luuTatCaNhiemVu = catchAsync(async (req, res, next) => {
 
   // Populate danhGiaKPI (avoid reassigning const)
   const danhGiaKPIPopulated = await DanhGiaKPI.findById(danhGiaKPI._id)
-    .populate("ChuKyID")
+    .populate("ChuKyDanhGiaID")
     .populate("NhanVienID")
     .populate("NguoiDanhGiaID")
     .lean();
@@ -1918,7 +2037,7 @@ kpiController.huyDuyetKPI = catchAsync(async (req, res, next) => {
 
   // ========== STEP 1: VALIDATION ==========
   const danhGiaKPI = await DanhGiaKPI.findById(danhGiaKPIId)
-    .populate("ChuKyID", "TenChuKy NgayBatDau NgayKetThuc")
+    .populate("ChuKyDanhGiaID", "TenChuKy NgayBatDau NgayKetThuc")
     .populate("NhanVienID", "Ten MaNhanVien KhoaID");
 
   if (!danhGiaKPI) {
@@ -1981,27 +2100,12 @@ kpiController.huyDuyetKPI = catchAsync(async (req, res, next) => {
 
   // ========== STEP 3: UPDATE DANHGIA KPI (No transaction for standalone MongoDB) ==========
   try {
-    // Save history before undo
-    const historyEntry = {
-      NguoiHuyDuyet: currentUser.NhanVienID || currentUser._id,
-      NgayHuyDuyet: new Date(),
-      LyDoHuyDuyet: lyDo.trim(),
-      DiemTruocKhiHuy: danhGiaKPI.TongDiemKPI,
-      NgayDuyetTruocDo: danhGiaKPI.NgayDuyet,
-    };
-
-    // Update DanhGiaKPI
-    danhGiaKPI.TrangThai = "CHUA_DUYET";
-    danhGiaKPI.NgayDuyet = null;
-    danhGiaKPI.NguoiDuyet = null;
-    danhGiaKPI.LichSuHuyDuyet = danhGiaKPI.LichSuHuyDuyet || [];
-    danhGiaKPI.LichSuHuyDuyet.push(historyEntry);
-
-    await danhGiaKPI.save();
+    // ✅ V2: Gọi method huyDuyet() (đã có đầy đủ logic)
+    await danhGiaKPI.huyDuyet(currentUser.NhanVienID || currentUser._id, lyDo);
 
     // Populate for response (include history users)
     const danhGiaKPIPopulated = await DanhGiaKPI.findById(danhGiaKPI._id)
-      .populate("ChuKyID")
+      .populate("ChuKyDanhGiaID")
       .populate("NhanVienID")
       .populate("NguoiDanhGiaID")
       .populate({ path: "NguoiDuyet", select: "HoTen Ten MaNhanVien" })
@@ -2031,6 +2135,905 @@ kpiController.huyDuyetKPI = catchAsync(async (req, res, next) => {
       "UPDATE_FAILED"
     );
   }
+});
+
+/**
+ * ✅ NEW API: Nhân viên tự chấm điểm tiêu chí "Mức độ hoàn thành"
+ * @route PUT /api/workmanagement/kpi/danh-gia-nhiem-vu/:id/nhan-vien-cham-diem
+ * @desc Nhân viên tự đánh giá mức độ hoàn thành công việc
+ * @access Private (Employee only)
+ */
+kpiController.nhanVienChamDiem = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { diemTuDanhGia } = req.body; // { "Mức độ hoàn thành công việc": 85 }
+  const nhanVienId = req.user.NhanVienID;
+
+  const danhGia = await DanhGiaNhiemVuThuongQuy.findOne({
+    _id: id,
+    isDeleted: false,
+  });
+
+  // Validation
+  if (!danhGia) {
+    throw new AppError(404, "Không tìm thấy đánh giá nhiệm vụ");
+  }
+  if (danhGia.NhanVienID.toString() !== nhanVienId.toString()) {
+    throw new AppError(403, "Bạn chỉ có thể tự chấm điểm của mình");
+  }
+  if (!danhGia.coTheChamDiem()) {
+    throw new AppError(400, "Không thể chấm điểm khi đã duyệt");
+  }
+
+  // Update DiemTuDanhGia cho tiêu chí IsMucDoHoanThanh = true
+  danhGia.ChiTietDiem.forEach((tc) => {
+    if (tc.IsMucDoHoanThanh && diemTuDanhGia[tc.TenTieuChi] !== undefined) {
+      const diem = Number(diemTuDanhGia[tc.TenTieuChi]);
+
+      // Validate range
+      if (diem < tc.GiaTriMin || diem > tc.GiaTriMax) {
+        throw new AppError(
+          400,
+          `Điểm tiêu chí "${tc.TenTieuChi}" phải trong khoảng ${tc.GiaTriMin}-${tc.GiaTriMax}`
+        );
+      }
+
+      tc.DiemTuDanhGia = diem;
+    }
+  });
+
+  await danhGia.save();
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { danhGia },
+    null,
+    "Tự chấm điểm thành công"
+  );
+});
+
+/**
+ * ✅ NEW API: Quản lý chấm điểm tất cả tiêu chí
+ * @route PUT /api/workmanagement/kpi/danh-gia-nhiem-vu/:id/quan-ly-cham-diem
+ * @desc Quản lý chấm điểm cho tất cả tiêu chí
+ * @access Private (Manager/Admin)
+ */
+kpiController.quanLyChamDiem = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { chiTietDiem } = req.body; // { "Mức độ hoàn thành công việc": 90, "Tiêu chí 1": 80, ... }
+
+  const danhGia = await DanhGiaNhiemVuThuongQuy.findOne({
+    _id: id,
+    isDeleted: false,
+  });
+
+  if (!danhGia) {
+    throw new AppError(404, "Không tìm thấy đánh giá nhiệm vụ");
+  }
+  if (!danhGia.coTheChamDiem()) {
+    throw new AppError(400, "Không thể chấm điểm khi đã duyệt");
+  }
+
+  // Update điểm
+  danhGia.ChiTietDiem.forEach((tc) => {
+    if (chiTietDiem[tc.TenTieuChi] !== undefined) {
+      const diem = Number(chiTietDiem[tc.TenTieuChi]);
+
+      // Validate
+      if (diem < tc.GiaTriMin || diem > tc.GiaTriMax) {
+        throw new AppError(
+          400,
+          `Điểm "${tc.TenTieuChi}" phải trong khoảng ${tc.GiaTriMin}-${tc.GiaTriMax}`
+        );
+      }
+
+      // Nếu cho phép tự đánh giá → chấm DiemQuanLy
+      // Nếu không → chấm DiemDat trực tiếp
+      if (tc.IsMucDoHoanThanh) {
+        tc.DiemQuanLy = diem;
+      } else {
+        tc.DiemDat = diem;
+      }
+    }
+  });
+
+  await danhGia.save();
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { danhGia },
+    null,
+    "Chấm điểm thành công"
+  );
+});
+
+/**
+ * ✅ NEW: Lấy danh sách đánh giá nhiệm vụ (để check manager scores)
+ * @route GET /api/workmanagement/kpi/danh-gia-nhiem-vu
+ * @desc Get list of task evaluations for pre-validation
+ * @access Private
+ * @query nhanVienId, chuKyId
+ */
+kpiController.layDanhSachDanhGiaNhiemVu = catchAsync(async (req, res, next) => {
+  const { nhanVienId, chuKyId } = req.query;
+
+  console.log("🔍 API called with:", { nhanVienId, chuKyId });
+
+  // Validate inputs
+  if (!nhanVienId || !chuKyId) {
+    throw new AppError(
+      400,
+      "Missing required query params: nhanVienId, chuKyId",
+      "Bad Request"
+    );
+  }
+
+  // ✅ FIX: Query trực tiếp DanhGiaNhiemVuThuongQuy (giống backend validation)
+  // KHÔNG cần DanhGiaKPI record
+  const danhGiaNhiemVuList = await DanhGiaNhiemVuThuongQuy.find(
+    {
+      NhanVienID: nhanVienId,
+      ChuKyDanhGiaID: chuKyId,
+      // Nếu hệ thống có soft delete, có thể cần: isDeleted: { $ne: true }
+    },
+    {
+      // Chỉ trả về các trường cần thiết để FE build map nhanh
+      _id: 1,
+      NhanVienID: 1,
+      ChuKyDanhGiaID: 1,
+      NhiemVuThuongQuyID: 1,
+    }
+  ).lean();
+
+  console.log("🔍 Total tasks found:", danhGiaNhiemVuList.length);
+
+  // Trả thẳng danh sách các đánh giá nhiệm vụ (backend validation cũng chỉ cần tồn tại)
+  console.log(
+    "✅ Tasks with manager scores (by existence):",
+    danhGiaNhiemVuList.length
+  );
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    danhGiaNhiemVuList,
+    null,
+    `Found ${danhGiaNhiemVuList.length} task evaluations`
+  );
+});
+
+/**
+ * ✅ Check nhanh 1 nhiệm vụ đã có bản ghi DanhGiaNhiemVuThuongQuy hay chưa
+ * @route GET /api/workmanagement/kpi/danh-gia-nhiem-vu/has-score
+ * @query nhanVienId, chuKyId, nhiemVuId
+ */
+kpiController.hasManagerScoreForTask = catchAsync(async (req, res, next) => {
+  const { nhanVienId, chuKyId, nhiemVuId } = req.query;
+
+  if (!nhanVienId || !chuKyId || !nhiemVuId) {
+    throw new AppError(
+      400,
+      "Missing query: nhanVienId, chuKyId, nhiemVuId",
+      "Bad Request"
+    );
+  }
+
+  const exists = await DanhGiaNhiemVuThuongQuy.exists({
+    NhanVienID: nhanVienId,
+    ChuKyDanhGiaID: chuKyId,
+    NhiemVuThuongQuyID: nhiemVuId,
+  });
+
+  return sendResponse(res, 200, true, { has: !!exists }, null, "OK");
+});
+
+/**
+ * ========================================
+ * BÁO CÁO & THỐNG KÊ KPI
+ * ========================================
+ */
+
+/**
+ * @route GET /api/workmanagement/kpi/bao-cao/thong-ke
+ * @desc Lấy thống kê tổng hợp KPI
+ * @access Private (Manager xem khoa, Admin xem tất cả)
+ * @query chuKyId, khoaId, startDate, endDate, groupBy
+ */
+kpiController.getBaoCaoThongKe = catchAsync(async (req, res, next) => {
+  const { chuKyId, khoaId } = req.query;
+
+  // ✅ Kiểm tra authentication
+  const currentUser = req.user;
+  if (!currentUser) {
+    return next(
+      new AppError(401, "Vui lòng đăng nhập", "AUTHENTICATION_REQUIRED")
+    );
+  }
+
+  const { PhanQuyen, KhoaID: userKhoaId } = currentUser;
+
+  // ✅ Kiểm tra quyền: CHỈ admin và manager
+  const isAdmin = PhanQuyen === "admin";
+  const isManager = PhanQuyen === "manager";
+
+  if (!isAdmin && !isManager) {
+    return next(
+      new AppError(
+        403,
+        "Bạn không có quyền truy cập báo cáo này",
+        "PERMISSION_DENIED"
+      )
+    );
+  }
+
+  // ✅ Build filter - CHỈ lấy đã duyệt
+  let filter = {
+    isDeleted: { $ne: true },
+    TrangThai: "DA_DUYET", // ← CHỈ lấy đã duyệt
+  };
+
+  // ✅ Filter theo chu kỳ (optional)
+  if (chuKyId) {
+    filter.ChuKyDanhGiaID = new mongoose.Types.ObjectId(chuKyId);
+  }
+
+  // ✅ Filter theo khoa - Phân quyền
+  if (isManager) {
+    // Manager: CHỈ xem khoa của mình
+    if (!userKhoaId) {
+      return next(
+        new AppError(
+          403,
+          "Tài khoản chưa được gán khoa/phòng. Vui lòng liên hệ quản trị viên.",
+          "NO_DEPARTMENT"
+        )
+      );
+    }
+    filter.KhoaID = new mongoose.Types.ObjectId(userKhoaId);
+  } else if (isAdmin && khoaId) {
+    // Admin: Có thể chọn khoa cụ thể hoặc xem tất cả
+    filter.KhoaID = new mongoose.Types.ObjectId(khoaId);
+  }
+
+  // ✅ Log filter để debug
+  console.log("🔍 getBaoCaoThongKe - Filter:", JSON.stringify(filter, null, 2));
+
+  // ============================================
+  // 1. THỐNG KÊ TỔNG QUAN
+  // ============================================
+  const tongQuanPipeline = [
+    { $match: filter }, // ✅ Áp dụng filter ngay từ đầu
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NhanVienID",
+        foreignField: "_id",
+        as: "nhanVien",
+      },
+    },
+    { $unwind: "$nhanVien" },
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "nhanVien.KhoaID",
+        foreignField: "_id",
+        as: "khoa",
+      },
+    },
+    { $unwind: { path: "$khoa", preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: null,
+        tongSoDanhGia: { $sum: 1 },
+        tongSoNhanVien: { $addToSet: "$NhanVienID" }, // ✅ Distinct NhanVienID
+        diemTrungBinh: { $avg: "$TongDiemKPI" },
+        diemCaoNhat: { $max: "$TongDiemKPI" },
+        diemThapNhat: { $min: "$TongDiemKPI" },
+        soKhoaThamGia: { $addToSet: "$khoa._id" }, // ✅ Distinct Khoa
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        tongSoDanhGia: 1,
+        tongSoNhanVien: { $size: "$tongSoNhanVien" },
+        diemTrungBinh: { $round: ["$diemTrungBinh", 2] },
+        diemCaoNhat: { $round: ["$diemCaoNhat", 2] },
+        diemThapNhat: { $round: ["$diemThapNhat", 2] },
+        soKhoaThamGia: { $size: "$soKhoaThamGia" },
+      },
+    },
+  ];
+
+  const tongQuanResult = await DanhGiaKPI.aggregate(tongQuanPipeline);
+  const tongQuan = tongQuanResult[0] || {
+    tongSoDanhGia: 0,
+    tongSoNhanVien: 0,
+    diemTrungBinh: 0,
+    diemCaoNhat: 0,
+    diemThapNhat: 0,
+    soKhoaThamGia: 0,
+  };
+
+  console.log("✅ tongQuan:", tongQuan);
+
+  // ============================================
+  // 2. PHÂN BỔ MỨC ĐIỂM
+  // ============================================
+  const phanBoMucDiemPipeline = [
+    { $match: filter },
+    {
+      $bucket: {
+        groupBy: "$TongDiemKPI",
+        boundaries: [0, 3, 5, 7, 9, 10],
+        default: "other",
+        output: {
+          soLuong: { $sum: 1 },
+        },
+      },
+    },
+  ];
+
+  const phanBoRaw = await DanhGiaKPI.aggregate(phanBoMucDiemPipeline);
+
+  const mucDiemMap = {
+    0: { muc: "Yếu", khoangDiem: "< 3.0" },
+    3: { muc: "Trung bình", khoangDiem: "3.0 - 4.9" },
+    5: { muc: "Khá", khoangDiem: "5.0 - 6.9" },
+    7: { muc: "Tốt", khoangDiem: "7.0 - 8.9" },
+    9: { muc: "Xuất sắc", khoangDiem: "9.0 - 10.0" },
+  };
+
+  const totalRecords = phanBoRaw.reduce((sum, item) => sum + item.soLuong, 0);
+  const phanBoMucDiem = phanBoRaw.map((item) => ({
+    ...mucDiemMap[item._id],
+    soLuong: item.soLuong,
+    tyLe:
+      totalRecords > 0 ? ((item.soLuong / totalRecords) * 100).toFixed(1) : 0,
+  }));
+
+  console.log("✅ phanBoMucDiem:", phanBoMucDiem);
+
+  // ============================================
+  // 3. THỐNG KÊ THEO KHOA
+  // ============================================
+  const theoKhoaPipeline = [
+    { $match: filter },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NhanVienID",
+        foreignField: "_id",
+        as: "nhanVien",
+      },
+    },
+    { $unwind: "$nhanVien" },
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "nhanVien.KhoaID",
+        foreignField: "_id",
+        as: "khoa",
+      },
+    },
+    { $unwind: "$khoa" },
+    {
+      $group: {
+        _id: "$khoa._id",
+        tenKhoa: { $first: "$khoa.TenKhoa" },
+        soNhanVien: { $sum: 1 },
+        diemTrungBinh: { $avg: "$TongDiemKPI" },
+        diemCaoNhat: { $max: "$TongDiemKPI" },
+        diemThapNhat: { $min: "$TongDiemKPI" },
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        tenKhoa: 1,
+        soNhanVien: 1,
+        diemTrungBinh: { $round: ["$diemTrungBinh", 2] },
+        diemCaoNhat: { $round: ["$diemCaoNhat", 2] },
+        diemThapNhat: { $round: ["$diemThapNhat", 2] },
+      },
+    },
+    { $sort: { diemTrungBinh: -1 } },
+  ];
+
+  const theoKhoa = await DanhGiaKPI.aggregate(theoKhoaPipeline);
+  console.log("✅ theoKhoa:", theoKhoa.length);
+
+  // ============================================
+  // 4. TOP 10 NHÂN VIÊN XUẤT SẮC
+  // ============================================
+  const topPerformersPipeline = [
+    { $match: filter },
+    { $sort: { TongDiemKPI: -1 } },
+    { $limit: 10 },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NhanVienID",
+        foreignField: "_id",
+        as: "nhanVien",
+      },
+    },
+    { $unwind: "$nhanVien" },
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "nhanVien.KhoaID",
+        foreignField: "_id",
+        as: "khoa",
+      },
+    },
+    { $unwind: { path: "$khoa", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "chukydanhgias",
+        localField: "ChuKyDanhGiaID",
+        foreignField: "_id",
+        as: "chuKy",
+      },
+    },
+    { $unwind: { path: "$chuKy", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        nhanVienId: "$NhanVienID",
+        tenNhanVien: "$nhanVien.Ten",
+        maNhanVien: "$nhanVien.MaNhanVien",
+        khoaPhong: "$khoa.TenKhoa",
+        diemKPI: { $round: ["$TongDiemKPI", 2] },
+        chuKy: "$chuKy.TenChuKy",
+        ngayDuyet: "$NgayDuyet",
+      },
+    },
+  ];
+
+  const topNhanVienXuatSac = await DanhGiaKPI.aggregate(topPerformersPipeline);
+  console.log("✅ topNhanVienXuatSac:", topNhanVienXuatSac.length);
+
+  // ============================================
+  // 5. TOP 10 NHÂN VIÊN CẦN CẢI THIỆN
+  // ============================================
+  const bottomPerformersPipeline = [
+    { $match: filter },
+    { $sort: { TongDiemKPI: 1 } }, // ✅ ASC
+    { $limit: 10 },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NhanVienID",
+        foreignField: "_id",
+        as: "nhanVien",
+      },
+    },
+    { $unwind: "$nhanVien" },
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "nhanVien.KhoaID",
+        foreignField: "_id",
+        as: "khoa",
+      },
+    },
+    { $unwind: { path: "$khoa", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "chukydanhgias",
+        localField: "ChuKyDanhGiaID",
+        foreignField: "_id",
+        as: "chuKy",
+      },
+    },
+    { $unwind: { path: "$chuKy", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        nhanVienId: "$NhanVienID",
+        tenNhanVien: "$nhanVien.Ten",
+        maNhanVien: "$nhanVien.MaNhanVien",
+        khoaPhong: "$khoa.TenKhoa",
+        diemKPI: { $round: ["$TongDiemKPI", 2] },
+        chuKy: "$chuKy.TenChuKy",
+        ngayDuyet: "$NgayDuyet",
+      },
+    },
+  ];
+
+  const nhanVienCanCaiThien = await DanhGiaKPI.aggregate(
+    bottomPerformersPipeline
+  );
+  console.log("✅ nhanVienCanCaiThien:", nhanVienCanCaiThien.length);
+
+  // ============================================
+  // 6. PHÂN BỔ TRẠNG THÁI (Luôn 100% đã duyệt vì filter TrangThai = "DA_DUYET")
+  // ============================================
+  const phanBoTrangThai = {
+    daDuyet: tongQuan.tongSoDanhGia,
+    chuaDuyet: 0, // ✅ Luôn 0 vì đã filter TrangThai = "DA_DUYET"
+    tyLeDaDuyet: 100, // ✅ Luôn 100%
+  };
+
+  // ============================================
+  // RESPONSE
+  // ============================================
+  const data = {
+    tongQuan,
+    phanBoMucDiem,
+    theoKhoa,
+    topNhanVienXuatSac,
+    nhanVienCanCaiThien,
+    phanBoTrangThai,
+  };
+
+  console.log("✅ getBaoCaoThongKe - Response prepared successfully");
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { data },
+    null,
+    "Lấy báo cáo thống kê thành công"
+  );
+});
+
+/**
+ * @route GET /api/workmanagement/kpi/bao-cao/chi-tiet
+ * @desc Lấy danh sách chi tiết KPI (cho table)
+ * @access Private
+ * @query chuKyId, khoaId, startDate, endDate, page, limit, search
+ */
+kpiController.getBaoCaoChiTiet = catchAsync(async (req, res, next) => {
+  const {
+    chuKyId,
+    khoaId,
+    startDate,
+    endDate,
+    page = 0,
+    limit = 10,
+    search = "",
+  } = req.query;
+  const currentUser = req.user;
+  if (!currentUser) {
+    return next(new AppError(401, "Login required", "Authentication Error"));
+  }
+  const role = currentUser.PhanQuyen;
+  const userKhoaId = currentUser.KhoaID;
+  const isAdmin =
+    role === "admin" ||
+    role === "superadmin" ||
+    role === "supperadmin" ||
+    role === 3 ||
+    role === 4;
+
+  // Base filter
+  let baseFilter = {};
+
+  if (!isAdmin) {
+    if (userKhoaId)
+      baseFilter.khoaFilter = new mongoose.Types.ObjectId(userKhoaId);
+  } else if (khoaId) {
+    baseFilter.khoaFilter = new mongoose.Types.ObjectId(khoaId);
+  }
+
+  if (chuKyId) {
+    baseFilter.ChuKyDanhGiaID = new mongoose.Types.ObjectId(chuKyId);
+  }
+
+  if (startDate && endDate) {
+    baseFilter.NgayDuyet = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate),
+    };
+  }
+
+  // Build pipeline
+  const pipeline = [
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NhanVienID",
+        foreignField: "_id",
+        as: "nhanVien",
+      },
+    },
+    { $unwind: "$nhanVien" },
+  ];
+
+  if (baseFilter.khoaFilter) {
+    pipeline.push({
+      $match: { "nhanVien.KhoaID": baseFilter.khoaFilter },
+    });
+  }
+
+  const matchStage = {};
+  if (baseFilter.ChuKyDanhGiaID)
+    matchStage.ChuKyDanhGiaID = baseFilter.ChuKyDanhGiaID;
+  if (baseFilter.NgayDuyet) matchStage.NgayDuyet = baseFilter.NgayDuyet;
+
+  if (Object.keys(matchStage).length > 0) {
+    pipeline.push({ $match: matchStage });
+  }
+
+  // Search filter
+  if (search) {
+    pipeline.push({
+      $match: {
+        $or: [
+          { "nhanVien.Ten": { $regex: search, $options: "i" } },
+          { "nhanVien.MaNhanVien": { $regex: search, $options: "i" } },
+          { "nhanVien.Email": { $regex: search, $options: "i" } },
+        ],
+      },
+    });
+  }
+
+  // Lookups
+  pipeline.push(
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "nhanVien.KhoaID",
+        foreignField: "_id",
+        as: "khoa",
+      },
+    },
+    { $unwind: { path: "$khoa", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "chukydanhgias",
+        localField: "ChuKyDanhGiaID",
+        foreignField: "_id",
+        as: "chuKy",
+      },
+    },
+    { $unwind: { path: "$chuKy", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NguoiDanhGiaID",
+        foreignField: "_id",
+        as: "nguoiDuyet",
+      },
+    },
+    { $unwind: { path: "$nguoiDuyet", preserveNullAndEmptyArrays: true } }
+  );
+
+  // Count total
+  const countPipeline = [...pipeline, { $count: "total" }];
+  const countResult = await DanhGiaKPI.aggregate(countPipeline);
+  const total = countResult[0]?.total || 0;
+
+  // Paginate
+  pipeline.push(
+    { $sort: { NgayDuyet: -1 } },
+    { $skip: parseInt(page) * parseInt(limit) },
+    { $limit: parseInt(limit) },
+    {
+      $project: {
+        nhanVienId: "$NhanVienID",
+        tenNhanVien: "$nhanVien.Ten",
+        maNhanVien: "$nhanVien.MaNhanVien",
+        khoaPhong: "$khoa.TenKhoa",
+        email: "$nhanVien.Email",
+        chuKyDanhGia: "$chuKy.TenChuKy",
+        trangThai: "$TrangThai",
+        diemKPI: { $round: ["$TongDiemKPI", 2] },
+        ngayDuyet: "$NgayDuyet",
+        nguoiDuyet: "$nguoiDuyet.Ten",
+      },
+    }
+  );
+
+  const danhSach = await DanhGiaKPI.aggregate(pipeline);
+
+  const data = {
+    danhSach,
+    pagination: {
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit)),
+    },
+  };
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { data },
+    null,
+    "Lấy danh sách chi tiết thành công"
+  );
+});
+
+/**
+ * @route GET /api/workmanagement/kpi/bao-cao/export-excel
+ * @desc Xuất báo cáo Excel
+ * @access Private
+ * @query chuKyId, khoaId, startDate, endDate
+ */
+kpiController.exportBaoCaoExcel = catchAsync(async (req, res, next) => {
+  const ExcelJS = require("exceljs");
+  const { chuKyId, khoaId, startDate, endDate } = req.query;
+  const currentUser = req.user;
+  if (!currentUser) {
+    return next(new AppError(401, "Login required", "Authentication Error"));
+  }
+  const role = currentUser.PhanQuyen;
+  const userKhoaId = currentUser.KhoaID;
+  const isAdmin =
+    role === "admin" ||
+    role === "superadmin" ||
+    role === "supperadmin" ||
+    role === 3 ||
+    role === 4;
+
+  // Get data (reuse getBaoCaoThongKe logic)
+  let baseFilter = {};
+
+  if (!isAdmin) {
+    if (userKhoaId)
+      baseFilter.khoaFilter = new mongoose.Types.ObjectId(userKhoaId);
+  } else if (khoaId) {
+    baseFilter.khoaFilter = new mongoose.Types.ObjectId(khoaId);
+  }
+
+  if (chuKyId) {
+    baseFilter.ChuKyDanhGiaID = new mongoose.Types.ObjectId(chuKyId);
+  }
+
+  if (startDate && endDate) {
+    baseFilter.NgayDuyet = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate),
+    };
+  }
+
+  // Get detailed data for export
+  const pipeline = [
+    {
+      $lookup: {
+        from: "nhanviens",
+        localField: "NhanVienID",
+        foreignField: "_id",
+        as: "nhanVien",
+      },
+    },
+    { $unwind: "$nhanVien" },
+  ];
+
+  if (baseFilter.khoaFilter) {
+    pipeline.push({
+      $match: { "nhanVien.KhoaID": baseFilter.khoaFilter },
+    });
+  }
+
+  const matchStage = {};
+  if (baseFilter.ChuKyDanhGiaID)
+    matchStage.ChuKyDanhGiaID = baseFilter.ChuKyDanhGiaID;
+  if (baseFilter.NgayDuyet) matchStage.NgayDuyet = baseFilter.NgayDuyet;
+
+  if (Object.keys(matchStage).length > 0) {
+    pipeline.push({ $match: matchStage });
+  }
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: "khoas",
+        localField: "nhanVien.KhoaID",
+        foreignField: "_id",
+        as: "khoa",
+      },
+    },
+    { $unwind: { path: "$khoa", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "chukydanhgias",
+        localField: "ChuKyDanhGiaID",
+        foreignField: "_id",
+        as: "chuKy",
+      },
+    },
+    { $unwind: { path: "$chuKy", preserveNullAndEmptyArrays: true } },
+    { $sort: { "khoa.TenKhoa": 1, TongDiemKPI: -1 } },
+    {
+      $project: {
+        stt: 1,
+        maNhanVien: "$nhanVien.MaNhanVien",
+        tenNhanVien: "$nhanVien.Ten",
+        khoaPhong: "$khoa.TenKhoa",
+        email: "$nhanVien.Email",
+        chuKy: "$chuKy.TenChuKy",
+        diemKPI: { $round: ["$TongDiemKPI", 2] },
+        trangThai: {
+          $cond: [
+            { $eq: ["$TrangThai", "DA_DUYET"] },
+            "Đã duyệt",
+            "Chưa duyệt",
+          ],
+        },
+        ngayDuyet: "$NgayDuyet",
+      },
+    }
+  );
+
+  const data = await DanhGiaKPI.aggregate(pipeline);
+
+  // Create workbook
+  const workbook = new ExcelJS.Workbook();
+
+  // Sheet 1: Danh sách chi tiết
+  const worksheet = workbook.addWorksheet("Danh sách KPI");
+
+  // Header
+  worksheet.columns = [
+    { header: "STT", key: "stt", width: 10 },
+    { header: "Mã NV", key: "maNhanVien", width: 15 },
+    { header: "Họ và tên", key: "tenNhanVien", width: 25 },
+    { header: "Khoa/Phòng", key: "khoaPhong", width: 20 },
+    { header: "Email", key: "email", width: 30 },
+    { header: "Chu kỳ", key: "chuKy", width: 20 },
+    { header: "Điểm KPI", key: "diemKPI", width: 12 },
+    { header: "Trạng thái", key: "trangThai", width: 15 },
+    { header: "Ngày duyệt", key: "ngayDuyet", width: 15 },
+  ];
+
+  // Style header
+  worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF4472C4" },
+  };
+  worksheet.getRow(1).alignment = {
+    vertical: "middle",
+    horizontal: "center",
+  };
+
+  // Add data
+  data.forEach((row, index) => {
+    worksheet.addRow({
+      stt: index + 1,
+      maNhanVien: row.maNhanVien,
+      tenNhanVien: row.tenNhanVien,
+      khoaPhong: row.khoaPhong,
+      email: row.email,
+      chuKy: row.chuKy,
+      diemKPI: row.diemKPI,
+      trangThai: row.trangThai,
+      ngayDuyet: row.ngayDuyet
+        ? new Date(row.ngayDuyet).toLocaleDateString("vi-VN")
+        : "",
+    });
+  });
+
+  // Auto-filter
+  worksheet.autoFilter = {
+    from: "A1",
+    to: "I1",
+  };
+
+  // Generate buffer
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  // Set response headers
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=BaoCaoKPI_${Date.now()}.xlsx`
+  );
+
+  return res.send(buffer);
 });
 
 module.exports = kpiController;

@@ -75,6 +75,13 @@ const chuKyDanhGiaSchema = Schema(
           type: String,
           maxlength: 500,
         },
+        // ✅ NEW: Đánh dấu tiêu chí "Mức độ hoàn thành công việc" (FIXED)
+        IsMucDoHoanThanh: {
+          type: Boolean,
+          default: false,
+          description:
+            "true = Tiêu chí FIXED cho phép tự đánh giá, false = Tiêu chí user-defined",
+        },
       },
     ],
     isDeleted: {
@@ -97,7 +104,7 @@ chuKyDanhGiaSchema.index({ isDeleted: 1 });
 chuKyDanhGiaSchema.virtual("DanhSachDanhGia", {
   ref: "DanhGiaKPI",
   localField: "_id",
-  foreignField: "ChuKyID",
+  foreignField: "ChuKyDanhGiaID",
 });
 
 // Static method đơn giản
@@ -118,6 +125,37 @@ chuKyDanhGiaSchema.pre("save", function (next) {
   // Auto-generate TenChuKy nếu chưa có
   if (!this.TenChuKy) {
     this.TenChuKy = `Tháng ${this.Thang}/${this.Nam}`;
+  }
+
+  // ✅ VALIDATION: Phải có đúng 1 tiêu chí IsMucDoHoanThanh = true
+  const tieuChiMucDoHT = this.TieuChiCauHinh.filter(
+    (tc) => tc.IsMucDoHoanThanh === true
+  );
+
+  if (tieuChiMucDoHT.length === 0) {
+    const error = new Error(
+      "Chu kỳ phải có tiêu chí 'Mức độ hoàn thành công việc'"
+    );
+    error.name = "ValidationError";
+    return next(error);
+  }
+
+  if (tieuChiMucDoHT.length > 1) {
+    const error = new Error(
+      "Chỉ được có 1 tiêu chí 'Mức độ hoàn thành công việc'"
+    );
+    error.name = "ValidationError";
+    return next(error);
+  }
+
+  // ✅ VALIDATION: Tiêu chí FIXED không được đổi tên
+  const tieuChiFixed = tieuChiMucDoHT[0];
+  if (tieuChiFixed.TenTieuChi !== "Mức độ hoàn thành công việc") {
+    const error = new Error(
+      "Tên tiêu chí 'Mức độ hoàn thành công việc' không được thay đổi"
+    );
+    error.name = "ValidationError";
+    return next(error);
   }
 
   next();

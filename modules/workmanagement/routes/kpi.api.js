@@ -111,6 +111,26 @@ router.post(
 );
 
 /**
+ * ✅ NEW: Lấy danh sách đánh giá nhiệm vụ (để check manager scores)
+ * @route GET /api/workmanagement/kpi/danh-gia-nhiem-vu
+ * @desc Get list of task evaluations for pre-validation
+ * @access Private
+ * @query nhanVienId, chuKyId
+ */
+router.get(
+  "/danh-gia-nhiem-vu",
+  authentication.loginRequired,
+  kpiController.layDanhSachDanhGiaNhiemVu
+);
+
+// ✅ Check nhanh một nhiệm vụ đã có điểm (bản ghi đánh giá) chưa
+router.get(
+  "/danh-gia-nhiem-vu/has-score",
+  authentication.loginRequired,
+  kpiController.hasManagerScoreForTask
+);
+
+/**
  * @route GET /api/workmanagement/kpi/:id
  * @desc Lấy chi tiết đánh giá KPI
  * @access Private
@@ -263,6 +283,76 @@ router.get(
   authentication.loginRequired,
   validateQuanLy("KPI"),
   kpiController.calculateKPIForEmployee
+);
+
+/**
+ * ✅ DEPRECATED: Route này dùng cho workflow cũ (tự chấm trong DanhGiaNhiemVuThuongQuy)
+ * Hiện tại dùng /giao-nhiem-vu/tu-cham-diem-batch (lưu vào NhanVienNhiemVu)
+ * @route PUT /api/workmanagement/kpi/nhan-vien-nhiem-vu/:id/tu-cham-diem
+ * @desc Employee self-assessment trong DanhGiaNhiemVuThuongQuy (OLD)
+ * @access Private (Employee only)
+ * @body { diemTuDanhGia: { "Mức độ hoàn thành": 85 } }
+ */
+router.put(
+  "/nhan-vien-nhiem-vu/:id/tu-cham-diem",
+  authentication.loginRequired,
+  kpiController.nhanVienChamDiem
+);
+
+/**
+ * ✅ NEW: Quản lý chấm điểm tất cả tiêu chí
+ * @route PUT /api/workmanagement/kpi/danh-gia-nhiem-vu/:id/quan-ly-cham-diem
+ * @desc Manager scores all criteria
+ * @access Private (Manager/Admin)
+ * @body { chiTietDiem: { "Mức độ hoàn thành công việc": 90, "Tiêu chí 1": 80, ... } }
+ */
+router.put(
+  "/danh-gia-nhiem-vu/:id/quan-ly-cham-diem",
+  authentication.loginRequired,
+  validateQuanLy("KPI"),
+  kpiController.quanLyChamDiem
+);
+
+/**
+ * ============================================================================
+ * BÁO CÁO & THỐNG KÊ KPI
+ * ============================================================================
+ */
+
+/**
+ * @route GET /api/workmanagement/kpi/bao-cao/thong-ke
+ * @desc Lấy thống kê tổng hợp KPI
+ * @access Private (Manager xem khoa, Admin xem tất cả)
+ * @query chuKyId, khoaId, startDate, endDate, groupBy
+ */
+router.get(
+  "/bao-cao/thong-ke",
+  authentication.loginRequired,
+  kpiController.getBaoCaoThongKe
+);
+
+/**
+ * @route GET /api/workmanagement/kpi/bao-cao/chi-tiet
+ * @desc Lấy danh sách chi tiết KPI (cho table)
+ * @access Private
+ * @query chuKyId, khoaId, startDate, endDate, page, limit, search
+ */
+router.get(
+  "/bao-cao/chi-tiet",
+  authentication.loginRequired,
+  kpiController.getBaoCaoChiTiet
+);
+
+/**
+ * @route GET /api/workmanagement/kpi/bao-cao/export-excel
+ * @desc Xuất báo cáo Excel
+ * @access Private
+ * @query chuKyId, khoaId, startDate, endDate
+ */
+router.get(
+  "/bao-cao/export-excel",
+  authentication.loginRequired,
+  kpiController.exportBaoCaoExcel
 );
 
 module.exports = router;

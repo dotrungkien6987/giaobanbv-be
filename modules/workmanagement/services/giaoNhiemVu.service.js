@@ -6,6 +6,9 @@ const NhanVien = require("../../../models/NhanVien");
 const QuanLyNhanVien = require("../models/QuanLyNhanVien");
 const NhiemVuThuongQuy = require("../models/NhiemVuThuongQuy");
 const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
+const DanhGiaKPI = require("../models/DanhGiaKPI");
+const DanhGiaNhiemVuThuongQuy = require("../models/DanhGiaNhiemVuThuongQuy");
+const ChuKyDanhGia = require("../models/ChuKyDanhGia");
 
 function toObjectId(id) {
   return typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
@@ -50,431 +53,8 @@ async function ensureManagerPermission(
 
 const service = {};
 
-service.getManagedEmployees = async (req, managerId, loaiQuanLy) => {
-  const user = await getCurrentUser(req);
-  await ensureManagerPermission(user, managerId, null);
-
-  const filter = {
-    NhanVienQuanLy: toObjectId(managerId),
-    isDeleted: false,
-  };
-  if (loaiQuanLy && ["KPI", "Giao_Viec"].includes(loaiQuanLy))
-    filter.LoaiQuanLy = loaiQuanLy;
-
-  const list = await QuanLyNhanVien.find(filter)
-    .populate({
-      path: "ThongTinNhanVienDuocQuanLy",
-      select: "_id Ten MaNhanVien KhoaID",
-      populate: { path: "KhoaID", select: "_id TenKhoa" },
-    })
-    .sort({ createdAt: -1 });
-  return list;
-};
-
-service.getDutiesByEmployee = async (req, employeeId) => {
-  await getCurrentUser(req); // cần đăng nhập
-  const emp = await NhanVien.findById(employeeId).populate({
-    path: "KhoaID",
-    select: "_id TenKhoa",
-  });
-  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
-  const duties = await NhiemVuThuongQuy.find({
-    KhoaID: emp.KhoaID,
-    TrangThaiHoatDong: true,
-    isDeleted: false,
-  }).populate({ path: "KhoaID", select: "_id TenKhoa" });
-  return duties;
-};
-
-service.getAssignmentsByEmployee = async (req, employeeId) => {
-  const user = await getCurrentUser(req);
-  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
-  const list = await NhanVienNhiemVu.find({
-    NhanVienID: toObjectId(employeeId),
-    isDeleted: false,
-    TrangThaiHoatDong: true,
-  })
-    .populate({
-      path: "NhiemVuThuongQuyID",
-      populate: { path: "KhoaID", select: "_id TenKhoa" },
-    })
-    .populate({ path: "NguoiGanID", select: "_id Ten MaNhanVien" })
-    .sort({ NgayGan: -1 });
-  return list;
-};
-
-async function ensureSameKhoa(employeeId, dutyId) {
-  const [emp, duty] = await Promise.all([
-    NhanVien.findById(employeeId).select("_id KhoaID"),
-    NhiemVuThuongQuy.findById(dutyId).select(
-      "_id KhoaID TrangThaiHoatDong isDeleted"
-    ),
-  ]);
-  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
-  if (!duty || duty.isDeleted || !duty.TrangThaiHoatDong)
-    throw new AppError(
-      404,
-      "Không tìm thấy nhiệm vụ hoặc nhiệm vụ không hoạt động"
-    );
-  if (
-    !emp.KhoaID ||
-    !duty.KhoaID ||
-    emp.KhoaID.toString() !== duty.KhoaID.toString()
-  )
-    throw new AppError(400, "Nhiệm vụ và nhân viên phải cùng KhoaID");
-}
-
-service.assignOne = async (req, employeeId, dutyId, mucDoKho = null) => {
-  const user = await getCurrentUser(req);
-  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
-  await ensureSameKhoa(employeeId, dutyId);
-
-  // ✅ SLICE 1: Validate MucDoKho if provided
-  if (mucDoKho !== null && mucDoKho !== undefined) {
-    if (typeof mucDoKho !== "number" || mucDoKho < 1.0 || mucDoKho > 10.0) {
-      throw new AppError(400, "MucDoKho phải là số từ 1.0 đến 10.0");
-    }
-    // Validate max 1 decimal place
-    if (Math.round(mucDoKho * 10) !== mucDoKho * 10) {
-      throw new AppError(
-        400,
-        "MucDoKho chỉ cho phép tối đa 1 chữ số thập phân (VD: 5.5, 7.2)"
-      );
-    }
-  }
-
-  // Kiểm tra xem đã có assignment bị xóa (soft delete) hay chưa
-  // Lưu ý: model có pre(/^find/) tự loại bỏ isDeleted=true nếu không chỉ định
-  // Để hỗ trợ khôi phục (restore), cần bao gồm cả bản ghi đã xóa mềm
-  const existingAssignment = await NhanVienNhiemVu.findOne({
-    NhanVienID: toObjectId(employeeId),
-    NhiemVuThuongQuyID: toObjectId(dutyId),
-    isDeleted: { $in: [true, false] },
-  });
-
-  let result;
-
-  // Optional cycle id from request body
-  const chuKyId = req.body?.ChuKyDanhGiaID
-    ? toObjectId(req.body.ChuKyDanhGiaID)
-    : undefined;
-
-  if (existingAssignment) {
-    if (!existingAssignment.isDeleted && existingAssignment.TrangThaiHoatDong) {
-      // Đã tồn tại và đang hoạt động -> báo lỗi trùng lặp
-      throw new AppError(409, "Nhiệm vụ đã được gán cho nhân viên này");
-    } else {
-      // Đã tồn tại nhưng bị xóa/vô hiệu hóa -> khôi phục và cập nhật
-      existingAssignment.isDeleted = false;
-      existingAssignment.TrangThaiHoatDong = true;
-      existingAssignment.NgayGan = new Date(); // Cập nhật thời gian gán mới
-      existingAssignment.NguoiGanID = user.NhanVienID || null; // Cập nhật người gán
-
-      // ✅ SLICE 1: Update MucDoKho if provided
-      if (mucDoKho !== null && mucDoKho !== undefined) {
-        existingAssignment.MucDoKho = mucDoKho;
-      }
-
-      // 🆕 If cycle provided, attach to assignment
-      if (chuKyId) {
-        existingAssignment.ChuKyDanhGiaID = chuKyId;
-      }
-
-      await existingAssignment.save();
-      result = existingAssignment;
-    }
-  } else {
-    // Chưa có assignment nào -> tạo mới
-    try {
-      const assignmentData = {
-        NhanVienID: toObjectId(employeeId),
-        NhiemVuThuongQuyID: toObjectId(dutyId),
-        TrangThaiHoatDong: true,
-        isDeleted: false,
-        NgayGan: new Date(),
-        NguoiGanID: user.NhanVienID || null,
-      };
-
-      // ✅ SLICE 1: Add MucDoKho if provided
-      if (mucDoKho !== null && mucDoKho !== undefined) {
-        assignmentData.MucDoKho = mucDoKho;
-      }
-
-      // 🆕 Attach cycle id if provided
-      if (chuKyId) {
-        assignmentData.ChuKyDanhGiaID = chuKyId;
-      }
-
-      result = await NhanVienNhiemVu.create(assignmentData);
-    } catch (err) {
-      if (err?.code === 11000) {
-        // Race condition: assignment được tạo bởi request khác trong lúc này
-        throw new AppError(409, "Nhiệm vụ đã được gán cho nhân viên này");
-      }
-      throw err;
-    }
-  }
-
-  // Populate dữ liệu trước khi trả về (không chain populate trên Document ở Mongoose v6+)
-  await result.populate([
-    {
-      path: "NhiemVuThuongQuyID",
-      populate: { path: "KhoaID", select: "_id TenKhoa" },
-    },
-    { path: "NguoiGanID", select: "_id Ten MaNhanVien" },
-  ]);
-  return result;
-};
-
-service.bulkAssign = async (req, employeeIds, dutyIds) => {
-  const user = await getCurrentUser(req);
-  if (!Array.isArray(dutyIds) || dutyIds.length === 0)
-    throw new AppError(400, "Thiếu danh sách nhiệm vụ");
-  if (!Array.isArray(employeeIds) || employeeIds.length === 0)
-    throw new AppError(400, "Thiếu danh sách nhân viên");
-
-  if (!isAdminUser(user)) {
-    const relations = await QuanLyNhanVien.find({
-      NhanVienQuanLy: toObjectId(user.NhanVienID),
-      NhanVienDuocQuanLy: { $in: employeeIds.map(toObjectId) },
-      isDeleted: false,
-    }).select("NhanVienDuocQuanLy");
-    const managedIds = new Set(
-      relations.map((r) => r.NhanVienDuocQuanLy.toString())
-    );
-    for (const eid of employeeIds) {
-      if (!managedIds.has(eid.toString()))
-        throw new AppError(
-          403,
-          "Bạn không có quyền với một số nhân viên trong danh sách"
-        );
-    }
-  }
-
-  const now = new Date();
-  const chuKyId = req.body?.ChuKyDanhGiaID
-    ? toObjectId(req.body.ChuKyDanhGiaID)
-    : undefined;
-  const ops = [];
-  for (const eid of employeeIds) {
-    for (const did of dutyIds) {
-      try {
-        await ensureSameKhoa(eid, did);
-      } catch (e) {
-        continue;
-      }
-      // Sử dụng upsert với logic khôi phục assignment đã bị xóa
-      ops.push({
-        updateOne: {
-          filter: {
-            NhanVienID: toObjectId(eid),
-            NhiemVuThuongQuyID: toObjectId(did),
-          },
-          update: {
-            $setOnInsert: {
-              NhanVienID: toObjectId(eid),
-              NhiemVuThuongQuyID: toObjectId(did),
-              ...(chuKyId ? { ChuKyDanhGiaID: chuKyId } : {}),
-            },
-            $set: {
-              TrangThaiHoatDong: true,
-              isDeleted: false,
-              NgayGan: now, // Cập nhật thời gian gán (cho cả tạo mới và khôi phục)
-              NguoiGanID: user.NhanVienID || null, // Cập nhật người gán
-              ...(chuKyId ? { ChuKyDanhGiaID: chuKyId } : {}),
-            },
-          },
-          upsert: true,
-        },
-      });
-    }
-  }
-  if (ops.length === 0)
-    return {
-      created: 0,
-      restored: 0,
-      skipped: 0,
-      count: { created: 0, restored: 0, skipped: 0 },
-    };
-
-  const result = await NhanVienNhiemVu.bulkWrite(ops, { ordered: false });
-  const created = result.upsertedCount || 0;
-  const modified = result.modifiedCount || 0;
-  const restored = modified; // Assignments được khôi phục (đã tồn tại nhưng bị update)
-  const skipped = ops.length - created - restored;
-
-  return {
-    created,
-    restored,
-    skipped,
-    count: { created, restored, skipped },
-    message: `Tạo mới: ${created}, Khôi phục: ${restored}, Bỏ qua: ${skipped}`,
-  };
-};
-
-service.unassignById = async (req, assignmentId) => {
-  const user = await getCurrentUser(req);
-  const item = await NhanVienNhiemVu.findById(assignmentId);
-  if (!item) throw new AppError(404, "Không tìm thấy assignment");
-  if (!isAdminUser(user))
-    await ensureManagerPermission(user, null, item.NhanVienID?.toString());
-  item.isDeleted = true;
-  item.TrangThaiHoatDong = false;
-  await item.save();
-  return { _id: assignmentId };
-};
-
-service.unassignByPair = async (req, employeeId, dutyId) => {
-  const user = await getCurrentUser(req);
-  const item = await NhanVienNhiemVu.findOne({
-    NhanVienID: toObjectId(employeeId),
-    NhiemVuThuongQuyID: toObjectId(dutyId),
-    isDeleted: false,
-  });
-  if (!item) throw new AppError(404, "Không tìm thấy assignment");
-  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
-  item.isDeleted = true;
-  item.TrangThaiHoatDong = false;
-  await item.save();
-  return { _id: item._id };
-};
-
-// ==================== NEW: Batch update for single employee ====================
-service.batchUpdateEmployeeAssignments = async (req, employeeId, dutyIds) => {
-  const user = await getCurrentUser(req);
-  if (!isAdminUser(user)) await ensureManagerPermission(user, null, employeeId);
-
-  // Validate input
-  if (!Array.isArray(dutyIds)) {
-    throw new AppError(400, "dutyIds phải là mảng");
-  }
-
-  // Get employee info
-  const emp = await NhanVien.findById(employeeId).select("_id KhoaID");
-  if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
-
-  // Get all duties của khoa này
-  const allDuties = await NhiemVuThuongQuy.find({
-    KhoaID: emp.KhoaID,
-    TrangThaiHoatDong: true,
-    isDeleted: false,
-  }).select("_id");
-
-  const validDutyIds = allDuties.map((d) => d._id.toString());
-  const requestedDutyIds = dutyIds.map((id) => id.toString());
-
-  // Filter chỉ những nhiệm vụ hợp lệ
-  const dutyIdsToAssign = requestedDutyIds.filter((id) =>
-    validDutyIds.includes(id)
-  );
-
-  // ✅ IMPORTANT: Remove duplicates from input array
-  const uniqueDutyIdsToAssign = [...new Set(dutyIdsToAssign)];
-
-  // Get current assignments (active only)
-  const currentAssignments = await NhanVienNhiemVu.find({
-    NhanVienID: toObjectId(employeeId),
-    isDeleted: false,
-    TrangThaiHoatDong: true,
-  }).select("_id NhiemVuThuongQuyID");
-
-  const currentDutyIds = currentAssignments.map((a) =>
-    a.NhiemVuThuongQuyID.toString()
-  );
-
-  // Calculate diff (using unique array)
-  const toAdd = uniqueDutyIdsToAssign.filter(
-    (id) => !currentDutyIds.includes(id)
-  );
-  const toRemove = currentDutyIds.filter(
-    (id) => !uniqueDutyIdsToAssign.includes(id)
-  );
-  const unchanged = uniqueDutyIdsToAssign.filter((id) =>
-    currentDutyIds.includes(id)
-  );
-
-  const now = new Date();
-  let addedCount = 0;
-  let removedCount = 0;
-  let restoredCount = 0;
-
-  // Add new assignments (hoặc restore nếu đã tồn tại bị xóa)
-  for (const dutyId of toAdd) {
-    // Bước 1: Cố gắng RESTORE (nếu record đang bị xóa mềm)
-    const restoreRes = await NhanVienNhiemVu.updateOne(
-      {
-        NhanVienID: toObjectId(employeeId),
-        NhiemVuThuongQuyID: toObjectId(dutyId),
-        isDeleted: true,
-      },
-      {
-        $set: {
-          TrangThaiHoatDong: true,
-          isDeleted: false,
-          NgayGan: now,
-          NguoiGanID: user.NhanVienID || null,
-        },
-      }
-    );
-
-    if (restoreRes.matchedCount && restoreRes.matchedCount > 0) {
-      restoredCount++;
-      continue; // sang duty tiếp theo
-    }
-
-    // Bước 2: Nếu không có record để restore, thực hiện UPSERT (atomic)
-    const upsertRes = await NhanVienNhiemVu.updateOne(
-      {
-        NhanVienID: toObjectId(employeeId),
-        NhiemVuThuongQuyID: toObjectId(dutyId),
-      },
-      {
-        $set: {
-          TrangThaiHoatDong: true,
-          isDeleted: false,
-          NgayGan: now,
-          NguoiGanID: user.NhanVienID || null,
-        },
-      },
-      { upsert: true }
-    );
-
-    if (upsertRes.upsertedCount && upsertRes.upsertedCount > 0) {
-      addedCount++;
-    } else if (upsertRes.matchedCount && upsertRes.matchedCount > 0) {
-      // Đã tồn tại và được cập nhật (trường hợp hiếm khi concurrent), coi như giữ nguyên
-      // Không tăng restoredCount vì không chắc trạng thái trước đó
-    }
-  }
-
-  // Remove assignments (soft delete)
-  for (const dutyId of toRemove) {
-    const assignment = currentAssignments.find(
-      (a) => a.NhiemVuThuongQuyID.toString() === dutyId
-    );
-    if (assignment) {
-      assignment.isDeleted = true;
-      assignment.TrangThaiHoatDong = false;
-      await assignment.save();
-      removedCount++;
-    }
-  }
-
-  // Unchanged: không làm gì cả (giữ nguyên NgayGan)
-
-  return {
-    success: true,
-    added: addedCount,
-    removed: removedCount,
-    restored: restoredCount,
-    unchanged: unchanged.length,
-    total: uniqueDutyIdsToAssign.length,
-    message: `Thêm: ${addedCount}, Khôi phục: ${restoredCount}, Xóa: ${removedCount}, Giữ nguyên: ${unchanged.length}`,
-  };
-};
-
 // ============================================================================
-// 🚀 NEW: Cycle-based assignment management (Option 2: Two-column layout)
+// 🚀 Cycle-based assignment management
 // ============================================================================
 
 /**
@@ -568,6 +148,35 @@ service.batchUpdateCycleAssignments = async (
   const emp = await NhanVien.findById(employeeId);
   if (!emp) throw new AppError(404, "Không tìm thấy nhân viên");
 
+  // ✅ STRICT MODE VALIDATION 1: Check chu kỳ đã đóng chưa
+  if (chuKyId) {
+    const chuKy = await ChuKyDanhGia.findById(chuKyId);
+    if (!chuKy) {
+      throw new AppError(404, "Không tìm thấy chu kỳ đánh giá", "NOT_FOUND");
+    }
+    if (chuKy.isDong) {
+      throw new AppError(
+        403,
+        "Chu kỳ đánh giá đã đóng. Không thể thay đổi phân công nhiệm vụ.",
+        "CYCLE_CLOSED"
+      );
+    }
+  }
+
+  // ✅ STRICT MODE VALIDATION 2: Check KPI đã duyệt chưa
+  const danhGiaKPI = await DanhGiaKPI.findOne({
+    NhanVienID: toObjectId(employeeId),
+    ChuKyDanhGiaID: chuKyId ? toObjectId(chuKyId) : null,
+  });
+
+  if (danhGiaKPI && danhGiaKPI.TrangThai === "DA_DUYET") {
+    throw new AppError(
+      403,
+      "KPI đã được duyệt. Không thể thêm/sửa/xóa nhiệm vụ.\nVui lòng hủy duyệt KPI trên trang 'Đánh giá KPI' trước khi thay đổi phân công.",
+      "KPI_APPROVED"
+    );
+  }
+
   // Validate tasks array
   if (!Array.isArray(tasks)) {
     throw new AppError(400, "tasks phải là mảng");
@@ -636,6 +245,113 @@ service.batchUpdateCycleAssignments = async (
   const toRemove = currentAssignments.filter(
     (a) => !newDutyIds.includes(a.NhiemVuThuongQuyID.toString())
   );
+
+  // ✅ STRICT MODE VALIDATION 3: Check điểm cho nhiệm vụ bị XÓA
+  const deleteViolations = [];
+
+  for (const assignment of toRemove) {
+    const nhiemVu = await NhiemVuThuongQuy.findById(
+      assignment.NhiemVuThuongQuyID
+    );
+    const tenNhiemVu = nhiemVu?.TenNhiemVu || "Không rõ";
+
+    // Check điểm tự đánh giá
+    if (assignment.DiemTuDanhGia && assignment.DiemTuDanhGia > 0) {
+      deleteViolations.push({
+        tenNhiemVu,
+        loai: "DiemTuDanhGia",
+        diem: assignment.DiemTuDanhGia,
+      });
+    }
+
+    // Check điểm quản lý chấm
+    const managerScore = await DanhGiaNhiemVuThuongQuy.findOne({
+      NhanVienID: toObjectId(employeeId),
+      NhiemVuThuongQuyID: assignment.NhiemVuThuongQuyID,
+      ChuKyDanhGiaID: chuKyId ? toObjectId(chuKyId) : null,
+    });
+
+    if (managerScore) {
+      deleteViolations.push({
+        tenNhiemVu,
+        loai: "DiemQuanLy",
+        diem: null,
+      });
+    }
+  }
+
+  if (deleteViolations.length > 0) {
+    const selfAssessmentItems = deleteViolations.filter(
+      (v) => v.loai === "DiemTuDanhGia"
+    );
+    const managerScoreItems = deleteViolations.filter(
+      (v) => v.loai === "DiemQuanLy"
+    );
+
+    let errorMessage = "Không thể xóa các nhiệm vụ sau:\n\n";
+
+    if (selfAssessmentItems.length > 0) {
+      errorMessage += "📝 Đã có điểm tự đánh giá:\n";
+      errorMessage += selfAssessmentItems
+        .map((v) => `  • ${v.tenNhiemVu} (${v.diem} điểm)`)
+        .join("\n");
+      errorMessage +=
+        "\n  → Vui lòng nhân viên đưa điểm về 0 trên trang 'Tự đánh giá KPI'\n\n";
+    }
+
+    if (managerScoreItems.length > 0) {
+      errorMessage += "✅ Đã có điểm chấm từ quản lý:\n";
+      errorMessage += managerScoreItems
+        .map((v) => `  • ${v.tenNhiemVu}`)
+        .join("\n");
+      errorMessage +=
+        "\n  → Vui lòng xóa điểm trên trang 'Quản lý chấm điểm' trước";
+    }
+
+    throw new AppError(400, errorMessage, "HAS_EVALUATION_SCORE");
+  }
+
+  // ✅ STRICT MODE VALIDATION 4: Check điểm quản lý cho nhiệm vụ bị SỬA MucDoKho
+  const updateViolations = [];
+
+  for (const task of toUpdate) {
+    const existing = currentAssignments.find(
+      (a) => a.NhiemVuThuongQuyID.toString() === task.NhiemVuThuongQuyID
+    );
+
+    // Chỉ check nếu MucDoKho thay đổi
+    if (existing && existing.MucDoKho !== task.MucDoKho) {
+      // Chỉ check điểm quản lý (IGNORE DiemTuDanhGia)
+      const managerScore = await DanhGiaNhiemVuThuongQuy.findOne({
+        NhanVienID: toObjectId(employeeId),
+        NhiemVuThuongQuyID: task.NhiemVuThuongQuyID,
+        ChuKyDanhGiaID: chuKyId ? toObjectId(chuKyId) : null,
+      });
+
+      if (managerScore) {
+        const nhiemVu = await NhiemVuThuongQuy.findById(
+          task.NhiemVuThuongQuyID
+        );
+        updateViolations.push({
+          tenNhiemVu: nhiemVu?.TenNhiemVu || "Không rõ",
+          mucDoKhoCu: existing.MucDoKho,
+          mucDoKhoMoi: task.MucDoKho,
+        });
+      }
+    }
+  }
+
+  if (updateViolations.length > 0) {
+    let errorMessage =
+      "Không thể thay đổi mức độ khó cho các nhiệm vụ sau (đã có điểm chấm từ quản lý):\n\n";
+    errorMessage += updateViolations
+      .map((v) => `  • ${v.tenNhiemVu}: ${v.mucDoKhoCu} → ${v.mucDoKhoMoi}`)
+      .join("\n");
+    errorMessage +=
+      "\n\n→ Vui lòng xóa điểm trên trang 'Quản lý chấm điểm' trước khi thay đổi mức độ khó.";
+
+    throw new AppError(400, errorMessage, "HAS_MANAGER_SCORE");
+  }
 
   // Execute operations
   const operations = [];
@@ -827,100 +543,3 @@ service.getEmployeesWithCycleStats = async (req, chuKyId) => {
 };
 
 module.exports = service;
-service.getAssignmentTotals = async (req, nhanVienIds, selectedOnly) => {
-  const user = await getCurrentUser(req);
-
-  // Parse nhanVienIds: can be array or comma-separated string
-  let ids = [];
-  if (Array.isArray(nhanVienIds)) ids = nhanVienIds;
-  else if (typeof nhanVienIds === "string" && nhanVienIds.trim().length > 0)
-    ids = nhanVienIds.split(",").map((s) => s.trim());
-
-  // If not provided or selectedOnly=true, fallback to single selected employee from query NhanVienID
-  if ((!ids || ids.length === 0) && selectedOnly) {
-    const eid = req.query.NhanVienID || req.params.employeeId;
-    if (eid) ids = [eid];
-  }
-
-  // If not admin, ensure all target employees are managed by current user
-  if (!isAdminUser(user) && ids.length > 0) {
-    const relations = await QuanLyNhanVien.find({
-      NhanVienQuanLy: toObjectId(user.NhanVienID),
-      NhanVienDuocQuanLy: { $in: ids.map(toObjectId) },
-      isDeleted: false,
-    }).select("NhanVienDuocQuanLy");
-    const managedIds = new Set(
-      relations.map((r) => r.NhanVienDuocQuanLy.toString())
-    );
-    for (const id of ids) {
-      if (!managedIds.has(id.toString()))
-        throw new AppError(403, "Bạn không có quyền với nhân viên: " + id);
-    }
-  }
-
-  // If ids not provided, scope to all employees managed by current user (or all if admin)
-  if (!ids || ids.length === 0) {
-    if (!isAdminUser(user)) {
-      const relations = await QuanLyNhanVien.find({
-        NhanVienQuanLy: toObjectId(user.NhanVienID),
-        isDeleted: false,
-      }).select("NhanVienDuocQuanLy");
-      ids = relations.map((r) => r.NhanVienDuocQuanLy.toString());
-    }
-  }
-
-  const matchStage = { TrangThaiHoatDong: true, isDeleted: false };
-  if (ids && ids.length > 0)
-    matchStage.NhanVienID = { $in: ids.map(toObjectId) };
-
-  const agg = await NhanVienNhiemVu.aggregate([
-    { $match: matchStage },
-    {
-      $lookup: {
-        from: "nhiemvuthuongquy",
-        localField: "NhiemVuThuongQuyID",
-        foreignField: "_id",
-        as: "duty",
-      },
-    },
-    { $unwind: "$duty" },
-    {
-      $match: {
-        "duty.isDeleted": { $ne: true },
-        "duty.TrangThaiHoatDong": true,
-      },
-    },
-    {
-      $group: {
-        _id: "$NhanVienID",
-        totalMucDoKho: { $sum: { $ifNull: ["$duty.MucDoKho", 0] } },
-        assignments: { $sum: 1 },
-      },
-    },
-    {
-      $lookup: {
-        from: "nhanviens",
-        localField: "_id",
-        foreignField: "_id",
-        as: "nhanvien",
-      },
-    },
-    { $unwind: { path: "$nhanvien", preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        NhanVienID: "$_id",
-        _id: 0,
-        totalMucDoKho: 1,
-        assignments: 1,
-        nhanvien: {
-          _id: "$nhanvien._id",
-          Ten: "$nhanvien.Ten",
-          MaNhanVien: "$nhanvien.MaNhanVien",
-        },
-      },
-    },
-    { $sort: { totalMucDoKho: -1 } },
-  ]);
-
-  return agg;
-};

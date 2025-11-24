@@ -15,6 +15,17 @@ router.get(
 );
 
 /**
+ * @route GET /api/workmanagement/chu-ky-danh-gia/list
+ * @desc Lấy danh sách chu kỳ đơn giản (cho dropdown)
+ * @access Private
+ */
+router.get(
+  "/list",
+  authentication.loginRequired,
+  chuKyDanhGiaController.layDanhSachChuKy
+);
+
+/**
  * @route GET /api/workmanagement/chu-ky-danh-gia/auto-select
  * @desc Tự động chọn chu kỳ phù hợp (ngày hiện tại + 5 ngày)
  * @access Private
@@ -48,6 +59,28 @@ router.get(
 );
 
 /**
+ * @route PUT /api/workmanagement/chu-ky-danh-gia/:id/dong
+ * @desc Đóng chu kỳ đánh giá
+ * @access Private/Admin
+ */
+router.put(
+  "/:id/dong",
+  authentication.adminRequired,
+  chuKyDanhGiaController.dongChuKy
+);
+
+/**
+ * @route PUT /api/workmanagement/chu-ky-danh-gia/:id/mo
+ * @desc Mở lại chu kỳ đánh giá
+ * @access Private/Admin
+ */
+router.put(
+  "/:id/mo",
+  authentication.adminRequired,
+  chuKyDanhGiaController.moChuKy
+);
+
+/**
  * @route GET /api/workmanagement/chu-ky-danh-gia/:id
  * @desc Lấy chi tiết chu kỳ đánh giá
  * @access Private
@@ -74,28 +107,6 @@ router.put(
   "/:id",
   authentication.adminRequired,
   chuKyDanhGiaController.capNhat
-);
-
-/**
- * @route PUT /api/workmanagement/chu-ky-danh-gia/:id/dong
- * @desc Đóng chu kỳ đánh giá
- * @access Private/Admin
- */
-router.put(
-  "/:id/dong",
-  authentication.adminRequired,
-  chuKyDanhGiaController.dongChuKy
-);
-
-/**
- * @route PUT /api/workmanagement/chu-ky-danh-gia/:id/mo
- * @desc Mở lại chu kỳ đánh giá
- * @access Private/Admin
- */
-router.put(
-  "/:id/mo",
-  authentication.adminRequired,
-  chuKyDanhGiaController.moChuKy
 );
 
 /**

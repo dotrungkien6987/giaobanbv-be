@@ -22,9 +22,6 @@ const NguoiThamGiaSchema = new Schema(
       index: true,
     },
     VaiTro: { type: String, enum: VAI_TRO, required: true },
-    TrangThai: { type: String, enum: TRANG_THAI, default: "TAO_MOI" },
-    TienDo: { type: Number, min: 0, max: 100, default: 0 },
-    GhiChu: { type: String, maxlength: 2000 },
   },
   { _id: false }
 );
@@ -175,6 +172,13 @@ const congViecSchema = new Schema(
     BinhLuans: [{ type: Schema.ObjectId, ref: "BinhLuan", default: [] }],
 
     isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date, default: null },
+    deletedBy: {
+      type: Schema.ObjectId,
+      ref: "NhanVien",
+      default: null,
+      description: "ID nhân viên thực hiện xóa",
+    },
   },
   {
     timestamps: true,
@@ -274,13 +278,6 @@ congViecSchema.pre("validate", function (next) {
     return next(new Error("NhanVienID trong NguoiThamGia không được trùng"));
   next();
 });
-
-// Helper cập nhật tiến độ tổng theo người chính
-congViecSchema.methods.capNhatTienDoTongTheoNguoiChinh = function () {
-  const main = (this.NguoiThamGia || []).find((x) => x.VaiTro === "CHINH");
-  this.PhanTramTienDoTong = main ? main.TienDo || 0 : 0;
-  return this.PhanTramTienDoTong;
-};
 
 // Virtual tình trạng theo thời hạn: SAP_QUA_HAN | QUA_HAN | null
 congViecSchema.virtual("TinhTrangThoiHan").get(function () {

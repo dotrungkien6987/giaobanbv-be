@@ -179,7 +179,7 @@ controller.deleteCongViec = catchAsync(async (req, res, next) => {
 controller.getCongViecDetail = catchAsync(async (req, res, next) => {
   const { id } = req.params;
 
-  const congViec = await congViecService.getCongViecDetail(id);
+  const congViec = await congViecService.getCongViecDetail(id, req);
 
   return sendResponse(
     res,
@@ -213,7 +213,7 @@ controller.listChildrenCongViec = catchAsync(async (req, res) => {
   const { page = 1, limit = 50 } = req.query;
   const p = Math.max(1, parseInt(page) || 1);
   const l = Math.min(100, Math.max(1, parseInt(limit) || 50));
-  const items = await congViecService.listChildren(id, p, l);
+  const items = await congViecService.listChildren(id, p, l, req);
   return sendResponse(
     res,
     200,
@@ -463,7 +463,7 @@ controller.updateProgressHistoryNote = catchAsync(async (req, res) => {
 controller.getTreeRoot = catchAsync(async (req, res) => {
   const { id } = req.params;
   const root = await congViecService.getTreeRoot(id);
-  const children = await congViecService.getTreeChildren(id);
+  const children = await congViecService.getTreeChildren(id, req);
   return sendResponse(
     res,
     200,
@@ -479,7 +479,7 @@ controller.getFullTree = catchAsync(async (req, res) => {
   const { id } = req.params;
   // Find ancestor root
   const ancestorRoot = await congViecService.findRootNode(id);
-  const children = await congViecService.getTreeChildren(ancestorRoot._id);
+  const children = await congViecService.getTreeChildren(ancestorRoot._id, req);
   return sendResponse(
     res,
     200,
@@ -497,7 +497,7 @@ controller.getFullTree = catchAsync(async (req, res) => {
 // Tree children: GET /api/workmanagement/congviec/:id/tree-children
 controller.getTreeChildren = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const children = await congViecService.getTreeChildren(id);
+  const children = await congViecService.getTreeChildren(id, req);
   return sendResponse(
     res,
     200,
@@ -505,6 +505,102 @@ controller.getTreeChildren = catchAsync(async (req, res) => {
     { parentId: id, children },
     null,
     "Lấy danh sách con thành công"
+  );
+});
+
+/**
+ * Get dashboard metrics for a NhiemVuThuongQuy during KPI evaluation
+ * GET /api/workmanagement/congviec/dashboard-by-nhiemvu
+ * Query: nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID
+ */
+controller.getDashboardByNhiemVu = catchAsync(async (req, res, next) => {
+  const { nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID } = req.query;
+
+  const dashboardData = await congViecService.getDashboardByNhiemVu({
+    nhiemVuThuongQuyID,
+    nhanVienID,
+    chuKyDanhGiaID,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    dashboardData,
+    null,
+    "Lấy dashboard công việc thành công"
+  );
+});
+
+/**
+ * Get summary of "other" tasks (FlagNVTQKhac=true)
+ * @route GET /api/workmanagement/congviec/summary-other-tasks
+ * @query {String} nhanVienID - Employee ID (required)
+ * @query {String} chuKyDanhGiaID - Evaluation cycle ID (required)
+ * @access Private
+ */
+controller.getOtherTasksSummary = catchAsync(async (req, res) => {
+  const { nhanVienID, chuKyDanhGiaID } = req.query;
+
+  // Validate query params
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu nhanVienID hoặc chuKyDanhGiaID trong query",
+      "MISSING_PARAMS"
+    );
+  }
+
+  // Call service method
+  const data = await congViecService.getOtherTasksSummary(
+    nhanVienID,
+    chuKyDanhGiaID
+  );
+
+  // Send response
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Lấy tóm tắt công việc khác thành công"
+  );
+});
+
+/**
+ * Get summary of collaboration tasks (VaiTro=PHOI_HOP)
+ * @route GET /api/workmanagement/congviec/summary-collab-tasks
+ * @query {String} nhanVienID - Employee ID (required)
+ * @query {String} chuKyDanhGiaID - Evaluation cycle ID (required)
+ * @access Private
+ */
+controller.getCollabTasksSummary = catchAsync(async (req, res) => {
+  const { nhanVienID, chuKyDanhGiaID } = req.query;
+
+  // Validate query params
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu nhanVienID hoặc chuKyDanhGiaID trong query",
+      "MISSING_PARAMS"
+    );
+  }
+
+  // Call service method
+  const data = await congViecService.getCollabTasksSummary(
+    nhanVienID,
+    chuKyDanhGiaID
+  );
+
+  // Send response
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Lấy tóm tắt công việc phối hợp thành công"
   );
 });
 

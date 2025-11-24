@@ -75,20 +75,42 @@ controller.list = catchAsync(async (req, res) => {
 });
 
 controller.stats = catchAsync(async (req, res) => {
-  const [byType, sizeStatsArr] = await Promise.all([
+  const [byType, sizeStatsArr, statusCounts] = await Promise.all([
     TepTin.thongKeTheoLoaiFile(),
     TepTin.thongKeKichThuoc(),
+    TepTin.aggregate([
+      {
+        $group: {
+          _id: "$TrangThai",
+          count: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
+
   const sizeStats = (sizeStatsArr && sizeStatsArr[0]) || {
     tongKichThuoc: 0,
     soLuongFile: 0,
     kichThuocTrungBinh: 0,
   };
+
+  // Derive counts for clarity on UI (ACTIVE-only vs total)
+  const countsMap = Object.fromEntries(
+    (statusCounts || []).map((x) => [x._id || "UNKNOWN", x.count || 0])
+  );
+  const activeCount = countsMap["ACTIVE"] || 0;
+  const deletedCount = countsMap["DELETED"] || 0;
+  const totalCount = activeCount + deletedCount;
+
   return sendResponse(
     res,
     200,
     true,
-    { byType, sizeStats },
+    {
+      byType,
+      sizeStats,
+      counts: { active: activeCount, deleted: deletedCount, total: totalCount },
+    },
     null,
     "Thống kê tệp (admin) thành công"
   );

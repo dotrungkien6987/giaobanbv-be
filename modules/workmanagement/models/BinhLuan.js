@@ -20,7 +20,7 @@ const binhLuanSchema = Schema(
     NguoiBinhLuanID: {
       type: Schema.ObjectId,
       required: true,
-      ref: "User",
+      ref: "NhanVien",
     },
     BinhLuanChaID: {
       type: Schema.ObjectId,
@@ -84,16 +84,17 @@ binhLuanSchema.methods.an = function () {
   return this.save();
 };
 
-binhLuanSchema.methods.coTheCapNhat = function (nguoiDungId) {
+binhLuanSchema.methods.coTheCapNhat = function (nhanVienId) {
   // Chỉ người tạo comment mới có thể cập nhật
-  return this.NguoiBinhLuanID.toString() === nguoiDungId.toString();
+  return this.NguoiBinhLuanID.toString() === nhanVienId.toString();
 };
 
-binhLuanSchema.methods.coTheXoa = function (nguoiDungId, vaiTro) {
+binhLuanSchema.methods.coTheXoa = function (nhanVienId, vaiTro) {
   // Người tạo hoặc admin/manager có thể xóa
+  const vaiTroNormalized = vaiTro ? vaiTro.toLowerCase() : "";
   return (
-    this.NguoiBinhLuanID.toString() === nguoiDungId.toString() ||
-    ["ADMIN", "MANAGER"].includes(vaiTro)
+    this.NguoiBinhLuanID.toString() === nhanVienId.toString() ||
+    ["admin", "manager", "superadmin"].includes(vaiTroNormalized)
   );
 };
 
@@ -104,7 +105,7 @@ binhLuanSchema.methods.layTraLoi = function () {
       BinhLuanChaID: this._id,
       TrangThai: "ACTIVE",
     })
-    .populate("NguoiBinhLuanID", "HoTen MaNhanVien")
+    .populate("NguoiBinhLuanID", "Ten Email")
     .sort({ NgayBinhLuan: 1 });
 };
 
@@ -128,13 +129,13 @@ binhLuanSchema.statics.timTheoCongViec = function (congViecId) {
     TrangThai: "ACTIVE",
     BinhLuanChaID: null, // Chỉ lấy comment gốc
   })
-    .populate("NguoiBinhLuanID", "HoTen MaNhanVien Avatar")
+    .populate("NguoiBinhLuanID", "Ten Email")
     .populate({
       path: "TraLoi",
       match: { TrangThai: "ACTIVE" },
       populate: {
         path: "NguoiBinhLuanID",
-        select: "HoTen MaNhanVien Avatar",
+        select: "Ten Email",
       },
     })
     .sort({ NgayBinhLuan: -1 });
@@ -146,21 +147,21 @@ binhLuanSchema.statics.timTheoYeuCauHoTro = function (yeuCauId) {
     TrangThai: "ACTIVE",
     BinhLuanChaID: null,
   })
-    .populate("NguoiBinhLuanID", "HoTen MaNhanVien Avatar")
+    .populate("NguoiBinhLuanID", "Ten Email")
     .populate({
       path: "TraLoi",
       match: { TrangThai: "ACTIVE" },
       populate: {
         path: "NguoiBinhLuanID",
-        select: "HoTen MaNhanVien Avatar",
+        select: "Ten Email",
       },
     })
     .sort({ NgayBinhLuan: -1 });
 };
 
-binhLuanSchema.statics.timTheoNguoiDung = function (nguoiDungId, limit = 20) {
+binhLuanSchema.statics.timTheoNguoiDung = function (nhanVienId, limit = 20) {
   return this.find({
-    NguoiBinhLuanID: nguoiDungId,
+    NguoiBinhLuanID: nhanVienId,
     TrangThai: "ACTIVE",
   })
     .populate("CongViecID", "TieuDe")
@@ -197,7 +198,7 @@ binhLuanSchema.statics.timBinhLuanGanDay = function (soNgay = 7, limit = 50) {
     NgayBinhLuan: { $gte: tuNgay },
     TrangThai: "ACTIVE",
   })
-    .populate("NguoiBinhLuanID", "HoTen MaNhanVien")
+    .populate("NguoiBinhLuanID", "Ten Email")
     .populate("CongViecID", "TieuDe")
     .populate("YeuCauHoTroID", "TieuDe")
     .sort({ NgayBinhLuan: -1 })

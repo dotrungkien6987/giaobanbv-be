@@ -67,11 +67,15 @@ router.get(
   congViecController.listChildrenCongViec // danh sách con trực tiếp
 );
 
-// Danh sách nhiệm vụ thường quy của chính nhân viên đăng nhập
+// ========================================
+// Danh sách nhiệm vụ thường quy theo chu kỳ
+// ========================================
 router.get("/nhiemvuthuongquy/my", async (req, res, next) => {
   try {
-    let nhanVienId = req.nhanVienId; // legacy: set by old authentication middleware (now removed)
-    // Fallback: resolve NhanVienID from current user if not provided by middleware
+    // ✅ FIX: Dùng req.user.NhanVienID thay vì req.nhanVienId (legacy)
+    let nhanVienId = req.user?.NhanVienID;
+
+    // Fallback: Nếu không có, resolve từ User model
     if (!nhanVienId && req.userId) {
       try {
         const User = require("../../../models/User");
@@ -80,21 +84,70 @@ router.get("/nhiemvuthuongquy/my", async (req, res, next) => {
           .lean();
         nhanVienId = user?.NhanVienID;
       } catch (e) {
-        // ignore resolve errors and continue with empty result below
+        // Ignore resolve errors
       }
     }
 
-    // If still no nhanVienId, return empty list to avoid blocking UI
+    // Nếu không có nhanVienId → Return empty
     if (!nhanVienId) {
       return res.json({ success: true, data: [] });
     }
 
-    const data = await congViecService.getMyRoutineTasks(nhanVienId);
+    // ✅ NEW: Nhận query param chuKyId (optional)
+    const { chuKyId } = req.query;
+
+    const data = await congViecService.getMyRoutineTasks(nhanVienId, {
+      chuKyId: chuKyId || undefined,
+    });
+
     return res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
 });
+
+// ✅ NEW: Lấy danh sách chu kỳ (cho dropdown)
+router.get("/chu-ky-danh-gia/list", async (req, res, next) => {
+  try {
+    const data = await congViecService.getDanhSachChuKy();
+    return res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @route   GET /api/workmanagement/congviec/dashboard-by-nhiemvu
+ * @desc    Get dashboard metrics for a NhiemVuThuongQuy during KPI evaluation
+ * @access  Private
+ * @query   nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID
+ */
+router.get(
+  "/congviec/dashboard-by-nhiemvu",
+  congViecController.getDashboardByNhiemVu
+);
+
+/**
+ * @route   GET /api/workmanagement/congviec/summary-other-tasks
+ * @desc    Get summary of "other" tasks (FlagNVTQKhac=true) for KPI evaluation
+ * @access  Private
+ * @query   nhanVienID, chuKyDanhGiaID
+ */
+router.get(
+  "/congviec/summary-other-tasks",
+  congViecController.getOtherTasksSummary
+);
+
+/**
+ * @route   GET /api/workmanagement/congviec/summary-collab-tasks
+ * @desc    Get summary of collaboration tasks (VaiTro=PHOI_HOP) for KPI evaluation
+ * @access  Private
+ * @query   nhanVienID, chuKyDanhGiaID
+ */
+router.get(
+  "/congviec/summary-collab-tasks",
+  congViecController.getCollabTasksSummary
+);
 
 /**
  * @route   POST /api/workmanagement/congviec

@@ -34,12 +34,13 @@ exports.updateColors = async (req, res, next) => {
       }
     };
 
-    const { statusColors, priorityColors } = req.body || {};
+    const { statusColors, priorityColors, dueStatusColors } = req.body || {};
     validateColorMap(statusColors, "statusColors");
     validateColorMap(priorityColors, "priorityColors");
+    validateColorMap(dueStatusColors, "dueStatusColors");
 
     const data = await service.updateConfig(
-      { statusColors, priorityColors },
+      { statusColors, priorityColors, dueStatusColors },
       req.userId
     );
     res.json({ data });

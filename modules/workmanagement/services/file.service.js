@@ -253,6 +253,16 @@ service.streamInline = async (fileId, req, res) => {
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
     : config.toAbs(doc.DuongDan);
+
+  // Check file existence before streaming to prevent ENOENT crash
+  const fileExists = await fs.pathExists(filePath);
+  if (!fileExists) {
+    throw new AppError(
+      410,
+      `Tệp không tồn tại trên hệ thống lưu trữ (ID: ${fileId})`
+    );
+  }
+
   const ctype =
     mime.lookup(doc.TenGoc) || doc.LoaiFile || "application/octet-stream";
   res.setHeader("Content-Type", ctype);
@@ -268,7 +278,19 @@ service.streamInline = async (fileId, req, res) => {
     "Content-Disposition",
     `inline; filename="${sanitized}"; filename*=UTF-8''${encoded}`
   );
-  return fs.createReadStream(filePath);
+
+  const stream = fs.createReadStream(filePath);
+  // Prevent unhandled error crash
+  stream.on("error", (err) => {
+    console.error(`Stream error for file ${fileId}:`, err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: { message: "Lỗi khi đọc tệp" },
+      });
+    }
+  });
+  return stream;
 };
 
 service.streamDownload = async (fileId, req, res) => {
@@ -279,6 +301,16 @@ service.streamDownload = async (fileId, req, res) => {
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
     : config.toAbs(doc.DuongDan);
+
+  // Check file existence before streaming to prevent ENOENT crash
+  const fileExists = await fs.pathExists(filePath);
+  if (!fileExists) {
+    throw new AppError(
+      410,
+      `Tệp không tồn tại trên hệ thống lưu trữ (ID: ${fileId})`
+    );
+  }
+
   const ctype =
     mime.lookup(doc.TenGoc) || doc.LoaiFile || "application/octet-stream";
   res.setHeader("Content-Type", ctype);
@@ -294,7 +326,19 @@ service.streamDownload = async (fileId, req, res) => {
     "Content-Disposition",
     `attachment; filename="${sanitized}"; filename*=UTF-8''${encoded}`
   );
-  return fs.createReadStream(filePath);
+
+  const stream = fs.createReadStream(filePath);
+  // Prevent unhandled error crash
+  stream.on("error", (err) => {
+    console.error(`Stream error for file ${fileId}:`, err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: { message: "Lỗi khi đọc tệp" },
+      });
+    }
+  });
+  return stream;
 };
 
 service.toDTO = (doc) => {

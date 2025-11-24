@@ -13,15 +13,20 @@ async function getConfig() {
   return {
     statusColors: doc.statusColors || {},
     priorityColors: doc.priorityColors || {},
+    dueStatusColors: doc.dueStatusColors || {},
     updatedAt: doc.updatedAt,
     updatedBy: doc.updatedBy,
   };
 }
 
-async function updateConfig({ statusColors, priorityColors }, userId) {
+async function updateConfig(
+  { statusColors, priorityColors, dueStatusColors },
+  userId
+) {
   const update = {};
   if (statusColors) update.statusColors = statusColors;
   if (priorityColors) update.priorityColors = priorityColors;
+  if (dueStatusColors) update.dueStatusColors = dueStatusColors;
   if (userId) update.updatedBy = userId;
 
   const doc = await WorkColorConfig.findOneAndUpdate(
@@ -35,6 +40,7 @@ async function updateConfig({ statusColors, priorityColors }, userId) {
   return {
     statusColors: doc.statusColors || {},
     priorityColors: doc.priorityColors || {},
+    dueStatusColors: doc.dueStatusColors || {},
     updatedAt: doc.updatedAt,
     updatedBy: doc.updatedBy,
   };

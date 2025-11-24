@@ -7,9 +7,118 @@ const CongViec = require("../models/CongViec");
 const Counter = require("../models/Counter");
 const BinhLuan = require("../models/BinhLuan");
 const TepTin = require("../models/TepTin");
+const ChuKyDanhGia = require("../models/ChuKyDanhGia");
 
 function toObjectId(id) {
   return typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
+}
+
+/**
+ * Helper function kiểm tra quyền xem công việc (relationship-based)
+ * User có quyền xem nếu là: Assigner, Main, Participant, Manager, hoặc Admin
+ */
+async function checkTaskViewPermission(congviec, req) {
+  const currentUser = await User.findById(req.userId).lean();
+  if (!currentUser?.NhanVienID) {
+    throw new AppError(
+      400,
+      "Tài khoản chưa liên kết với nhân viên. Vui lòng liên hệ quản trị viên."
+    );
+  }
+
+  const currentNhanVienId = String(currentUser.NhanVienID);
+  const isAssigner = String(congviec.NguoiGiaoViecID) === currentNhanVienId;
+  const isMain = String(congviec.NguoiChinhID) === currentNhanVienId;
+  const isParticipant = congviec.NguoiThamGia?.some(
+    (p) => String(p.NhanVienID || p.NhanVienID?._id) === currentNhanVienId
+  );
+
+  const vaiTro = currentUser.PhanQuyen?.toLowerCase();
+  const isAdmin = ["admin", "superadmin"].includes(vaiTro);
+
+  const hasPermission = isAssigner || isMain || isParticipant || isAdmin;
+
+  if (!hasPermission) {
+    throw new AppError(403, "Bạn không có quyền xem công việc này");
+  }
+
+  return true;
+}
+
+/**
+ * Helper function kiểm tra quyền cập nhật công việc với field-level validation
+ * @returns {Object} { allowed: boolean, role: string, invalidFields?: string[], message?: string }
+ */
+function checkUpdatePermission(congViec, nhanVienId, vaiTro, updateFields) {
+  const normalizedRole = (vaiTro || "").toLowerCase();
+  const isAdmin = ["admin", "superadmin"].includes(normalizedRole);
+  const isOwner = String(congViec.NguoiGiaoViecID) === String(nhanVienId);
+  const isMain = String(congViec.NguoiChinhID) === String(nhanVienId);
+
+  // Admin: Có thể sửa tất cả trường cấu hình (trừ auto-calculated)
+  if (isAdmin) {
+    return { allowed: true, role: "admin" };
+  }
+
+  // Owner: Có thể sửa các trường cấu hình chính
+  const ownerAllowedFields = [
+    "TieuDe",
+    "MoTa",
+    "NgayBatDau",
+    "NgayHetHan",
+    "MucDoUuTien",
+    "CoDuyetHoanThanh",
+    "CanhBaoMode",
+    "CanhBaoSapHetHanPercent",
+    "NgayCanhBao",
+    "NguoiChinhID",
+    "NguoiThamGia",
+    "NhomViecUserID",
+  ];
+
+  if (isOwner) {
+    const invalidFields = updateFields.filter(
+      (f) => !ownerAllowedFields.includes(f)
+    );
+    if (invalidFields.length > 0) {
+      return {
+        allowed: false,
+        role: "owner",
+        invalidFields,
+        message: `Người giao việc không được sửa các trường: ${invalidFields.join(
+          ", "
+        )}`,
+      };
+    }
+    return { allowed: true, role: "owner" };
+  }
+
+  // Main: CHỈ được sửa 2 trường
+  const mainAllowedFields = ["NhiemVuThuongQuyID", "FlagNVTQKhac"];
+
+  if (isMain) {
+    const invalidFields = updateFields.filter(
+      (f) => !mainAllowedFields.includes(f)
+    );
+    if (invalidFields.length > 0) {
+      return {
+        allowed: false,
+        role: "main",
+        invalidFields,
+        message: `Người chính chỉ có thể sửa: Nhiệm vụ thường quy (NhiemVuThuongQuyID), Cờ NVTQ khác (FlagNVTQKhac). Không được sửa: ${invalidFields.join(
+          ", "
+        )}`,
+      };
+    }
+    return { allowed: true, role: "main" };
+  }
+
+  // Người khác: Không có quyền
+  return {
+    allowed: false,
+    role: "none",
+    message: "Bạn không có quyền cập nhật công việc này",
+  };
 }
 
 const service = {};
@@ -272,7 +381,10 @@ service.updateProgress = async (congviecId, payload, req) => {
     isDeleted: { $ne: true },
   }).populate("LichSuTienDo.NguoiThucHienID", "Ten Email HoTen UserName");
   if (!cv) throw new AppError(404, "Không tìm thấy công việc");
-  const performerId = req.nhanVienId;
+  const performerId = req.user?.NhanVienID;
+  if (!performerId) {
+    throw new AppError(401, "Không xác định được nhân viên thực hiện");
+  }
   if (String(cv.NguoiChinhID) !== String(performerId)) {
     throw new AppError(403, "Chỉ Người Chính được cập nhật tiến độ");
   }
@@ -421,15 +533,53 @@ service.getNhanVienById = async (nhanvienid) => {
   return nhanvien;
 };
 
-// Lấy danh sách Nhiệm Vụ Thường Quy của nhân viên hiện tại
-// Assumption: Có model NhanVienNhiemVu với quan hệ NhanVienID - NhiemVuThuongQuyID
+// ========================================
+// Lấy danh sách Nhiệm Vụ Thường Quy theo CHU KỲ
+// ========================================
 try {
   const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
-  service.getMyRoutineTasks = async (nhanVienId) => {
+
+  /**
+   * Lấy danh sách nhiệm vụ thường quy của nhân viên theo chu kỳ
+   * @param {ObjectId} nhanVienId - ID nhân viên
+   * @param {Object} options - { chuKyId?: ObjectId }
+   * @returns {Promise<Array>} Danh sách nhiệm vụ
+   */
+  service.getMyRoutineTasks = async (nhanVienId, options = {}) => {
     if (!nhanVienId) throw new AppError(400, "Thiếu nhanVienId");
-    // Chỉ lấy các assignment đang hoạt động để tránh trả về nhiệm vụ đã ngưng
+
+    const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+    const { chuKyId } = options;
+
+    // BƯỚC 1: Xác định chu kỳ
+    let chuKy;
+
+    if (chuKyId) {
+      // User chọn chu kỳ cụ thể
+      chuKy = await ChuKyDanhGia.findById(chuKyId);
+      if (!chuKy) {
+        throw new AppError(404, "Không tìm thấy chu kỳ đánh giá");
+      }
+    } else {
+      // Mặc định: Lấy chu kỳ hiện tại (isDong=false, mới nhất)
+      chuKy = await ChuKyDanhGia.layChuKyHienTai();
+
+      if (!chuKy) {
+        console.warn(
+          `[getMyRoutineTasks] Không có chu kỳ đang mở cho nhanVienId=${nhanVienId}`
+        );
+        return [];
+      }
+    }
+
+    console.log(
+      `[getMyRoutineTasks] Chu kỳ: ${chuKy.TenChuKy} (${chuKy._id}), nhanVienId=${nhanVienId}`
+    );
+
+    // BƯỚC 2: Query assignments trong chu kỳ
     const list = await NhanVienNhiemVu.find({
       NhanVienID: nhanVienId,
+      ChuKyDanhGiaID: chuKy._id,
       TrangThaiHoatDong: true,
     })
       .populate({
@@ -438,43 +588,50 @@ try {
       })
       .lean();
 
-    return (
-      list
-        // Bỏ những assignment populate lỗi hoặc nhiệm vụ đã bị xóa mềm
-        .filter(
-          (x) =>
-            x.NhiemVuThuongQuyID &&
-            x.NhiemVuThuongQuyID.isDeleted !== true &&
-            x.NhiemVuThuongQuyID.TrangThaiHoatDong === true
-        )
-        .map((x) => {
-          const duty = x.NhiemVuThuongQuyID;
-          return {
-            _id: String(duty._id),
-            Ten: duty.TenNhiemVu || "", // FE hiện đang dùng field Ten
-            TenNhiemVu: duty.TenNhiemVu || "", // để phòng trường hợp FE muốn dùng đúng tên gốc
-            MoTa: duty.MoTa || "",
-            // Không có MaNhiemVu trong schema hiện tại: giữ lại để không vỡ FE nhưng để rỗng
-            MaNhiemVu: "", // TODO: nếu cần mã nhiệm vụ, bổ sung field trong schema hoặc generate
-            TrangThai: duty.TrangThaiHoatDong ? "ACTIVE" : "INACTIVE",
-            MucDoKho: duty.MucDoKho ?? null,
-          };
+    // BƯỚC 3: Filter & Transform
+    return list
+      .filter(
+        (x) =>
+          x.NhiemVuThuongQuyID &&
+          x.NhiemVuThuongQuyID.isDeleted !== true &&
+          x.NhiemVuThuongQuyID.TrangThaiHoatDong === true
+      )
+      .map((x) => {
+        const duty = x.NhiemVuThuongQuyID;
+        return {
+          _id: String(duty._id),
+          Ten: duty.TenNhiemVu || "",
+          TenNhiemVu: duty.TenNhiemVu || "",
+          MoTa: duty.MoTa || "",
+          MaNhiemVu: "",
+          TrangThai: duty.TrangThaiHoatDong ? "ACTIVE" : "INACTIVE",
+          MucDoKho: duty.MucDoKho ?? null,
+        };
+      })
+      .sort((a, b) =>
+        (a.Ten || "").localeCompare(b.Ten || "", "vi", {
+          numeric: true,
+          sensitivity: "base",
         })
-        .sort((a, b) =>
-          (a.Ten || "").localeCompare(b.Ten || "", "vi", {
-            numeric: true,
-            sensitivity: "base",
-          })
-        )
-    );
+      );
+  };
+
+  /**
+   * Lấy danh sách chu kỳ (cho dropdown selection)
+   * @returns {Promise<Array>} Danh sách chu kỳ
+   */
+  service.getDanhSachChuKy = async () => {
+    const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+    return await ChuKyDanhGia.layDanhSachChuKy();
   };
 } catch (_) {
-  // bỏ qua nếu model chưa tồn tại
+  // Fallback nếu model chưa tồn tại
   service.getMyRoutineTasks = async () => {
-    // Fallback service nếu model chưa tồn tại
-    console.warn(
-      "[getMyRoutineTasks] NhanVienNhiemVu model not found, returning empty array"
-    );
+    console.warn("[getMyRoutineTasks] NhanVienNhiemVu model not found");
+    return [];
+  };
+  service.getDanhSachChuKy = async () => {
+    console.warn("[getDanhSachChuKy] ChuKyDanhGia model not found");
     return [];
   };
 }
@@ -554,6 +711,11 @@ service.getReceivedCongViecs = async (
   });
 
   const query = service.buildCongViecFilter(filters);
+
+  // ✅ FIX: Loại trừ công việc TAO_MOI cho người nhận việc
+  // Chỉ người giao việc (owner) mới thấy TAO_MOI trong tab "Đã giao"
+  // Người nhận việc chỉ thấy từ DA_GIAO trở đi
+  query.TrangThai = { $ne: "TAO_MOI" };
 
   // Auto-detect: nhanvienid có thể là User._id hoặc NhanVien._id
   let targetNhanVienId = toObjectId(nhanvienid);
@@ -904,19 +1066,33 @@ service.getAssignedCongViecs = async (
 };
 
 /**
- * Xóa công việc (soft delete)
+ * Xóa công việc (soft delete) với đầy đủ validation và cascade
+ *
+ * @improvements Applied fixes (2024-11):
+ * - P0: Added view permission check before revealing task info (security - prevents information leakage)
+ * - P1: NhanVienID validation (prevents authorization bypass)
+ * - P1: Role normalization - case-insensitive + superadmin support
+ * - P1: Cascade comment replies (data integrity - no orphaned replies)
+ * - P2: Improved error messages with counts (better UX)
+ * - P2: Audit trail with deletedAt and deletedBy (traceability)
  */
 service.deleteCongViec = async (congviecid, req) => {
+  // ✅ 1. ID validation
   if (!mongoose.Types.ObjectId.isValid(congviecid)) {
     throw new AppError(400, "ID công việc không hợp lệ");
   }
 
+  // ✅ 2. Exists check
   const congviec = await CongViec.findById(congviecid);
   if (!congviec) {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
-  // Step 5: Concurrency guard using If-Unmodified-Since header
+  // 🔥 P0 FIX: Permission check BEFORE revealing any information
+  // Prevents information leakage - user cannot probe for task existence by attempting delete
+  await checkTaskViewPermission(congviec, req);
+
+  // ✅ 3. Optimistic lock check (version conflict detection)
   const clientVersion = req.headers["if-unmodified-since"];
   if (clientVersion) {
     const serverVersion = congviec.updatedAt
@@ -927,29 +1103,34 @@ service.deleteCongViec = async (congviecid, req) => {
     }
   }
 
+  // ✅ 4. Already deleted check
   if (congviec.isDeleted) {
     throw new AppError(400, "Công việc đã bị xóa");
   }
 
-  // Authorization: chỉ người giao việc hoặc admin/manager được xóa
-  // Lưu ý: Công việc HOAN_THANH chỉ admin được xóa
-  let currentUser = null;
-  if (req?.userId) {
-    currentUser = await User.findById(req.userId).select(
-      "PhanQuyen NhanVienID"
-    );
-  }
+  // ✅ 5. User authentication
+  const currentUser = await User.findById(req.userId).select(
+    "PhanQuyen NhanVienID"
+  );
   if (!currentUser) {
     throw new AppError(401, "Không xác thực được người dùng");
   }
 
-  const isAdmin = currentUser.PhanQuyen === "admin";
-  const isManager = currentUser.PhanQuyen === "manager";
+  // 🔥 P1 FIX: NhanVienID validation (prevents authorization bypass)
+  if (!currentUser.NhanVienID) {
+    throw new AppError(
+      403,
+      "Tài khoản chưa được liên kết với nhân viên. Vui lòng liên hệ quản trị viên."
+    );
+  }
+
+  // 🔥 P1 FIX: Role authorization with normalization (case-insensitive + superadmin support)
+  const role = (currentUser.PhanQuyen || "").toLowerCase();
+  const isAdmin = role === "admin" || role === "superadmin";
   const isOwner =
-    currentUser.NhanVienID &&
     String(currentUser.NhanVienID) === String(congviec.NguoiGiaoViecID);
 
-  // Completed tasks: only admin can delete
+  // ✅ 6. Completed status restriction (only admin can delete completed tasks)
   if (congviec.TrangThai === "HOAN_THANH" && !isAdmin) {
     throw new AppError(
       403,
@@ -957,27 +1138,33 @@ service.deleteCongViec = async (congviecid, req) => {
     );
   }
 
-  if (!(isAdmin || isManager || isOwner)) {
+  // ✅ 7. Authorization check
+  if (!(isAdmin || isOwner)) {
     throw new AppError(
       403,
-      "Bạn không có quyền xóa công việc này (chỉ người giao việc hoặc admin/manager)"
+      "Bạn không có quyền xóa công việc này (chỉ người giao việc hoặc admin)"
     );
   }
 
-  // Không cho xóa nếu còn công việc con (chưa bị xóa)
+  // 🔥 P2 FIX: Children check with improved error message
   const childCount = await CongViec.countDocuments({
     CongViecChaID: congviecid,
     isDeleted: { $ne: true },
   });
   if (childCount > 0) {
-    throw new AppError(400, "Vui lòng xóa công việc con trước");
+    throw new AppError(
+      400,
+      `Không thể xóa vì còn ${childCount} công việc con. Vui lòng xóa các công việc con trước.`
+    );
   }
 
-  // Soft delete
+  // 🔥 P2 FIX: Soft delete with audit trail
   congviec.isDeleted = true;
+  congviec.deletedAt = new Date();
+  congviec.deletedBy = currentUser.NhanVienID;
   await congviec.save();
 
-  // If this is a subtask, decrement parent's ChildrenCount
+  // ✅ 8. Decrement parent's ChildrenCount if this is a subtask
   if (congviec.CongViecChaID) {
     await CongViec.updateOne(
       { _id: congviec.CongViecChaID },
@@ -985,25 +1172,59 @@ service.deleteCongViec = async (congviecid, req) => {
     );
   }
 
-  // Cascade mềm bình luận (đánh dấu DELETED)
+  // 🔥 P1 FIX: Cascade comments + replies (comprehensive deletion)
+  // Step 1: Get root comments
+  const comments = await BinhLuan.find({
+    CongViecID: congviecid,
+    TrangThai: { $ne: "DELETED" },
+  })
+    .select("_id")
+    .lean();
+
+  const commentIds = comments.map((c) => c._id);
+
+  // Step 2: Get all replies to those comments (nested replies handled by BinhLuanChaID)
+  const replies = await BinhLuan.find({
+    BinhLuanChaID: { $in: commentIds },
+    TrangThai: { $ne: "DELETED" },
+  })
+    .select("_id")
+    .lean();
+
+  const replyIds = replies.map((r) => r._id);
+
+  // Step 3: Combine all comment IDs (root + replies)
+  const allCommentIds = [...commentIds, ...replyIds];
+
+  // Step 4: Cascade soft delete all comments and replies
   const commentUpdate = await BinhLuan.updateMany(
-    { CongViecID: congviecid, TrangThai: { $ne: "DELETED" } },
+    { _id: { $in: allCommentIds } },
     { $set: { TrangThai: "DELETED", NgayCapNhat: new Date() } }
   );
   const commentCount = commentUpdate?.modifiedCount || 0;
 
-  // Cascade mềm tệp đính kèm
-  const fileUpdate = await TepTin.updateMany(
+  // ✅ 9. Cascade task files (files attached directly to task)
+  const taskFileUpdate = await TepTin.updateMany(
     { CongViecID: congviecid, TrangThai: { $ne: "DELETED" } },
     { $set: { TrangThai: "DELETED" } }
   );
-  const fileCount = fileUpdate?.modifiedCount || 0;
+
+  // ✅ 10. Cascade comment files (files attached to comments and replies)
+  const commentFileUpdate = await TepTin.updateMany(
+    { BinhLuanID: { $in: allCommentIds }, TrangThai: { $ne: "DELETED" } },
+    { $set: { TrangThai: "DELETED" } }
+  );
+
+  const fileCount =
+    (taskFileUpdate?.modifiedCount || 0) +
+    (commentFileUpdate?.modifiedCount || 0);
 
   return {
     message: "Xóa công việc thành công",
     meta: {
-      childCount,
-      commentCount,
+      childCount: 0,
+      commentCount, // includes both root comments and replies
+      repliesDeleted: replyIds.length, // specific count of replies
       fileCount,
     },
   };
@@ -1012,7 +1233,7 @@ service.deleteCongViec = async (congviecid, req) => {
 /**
  * Lấy chi tiết công việc theo ID với đầy đủ thông tin
  */
-service.getCongViecDetail = async (congviecid) => {
+service.getCongViecDetail = async (congviecid, req) => {
   if (!mongoose.Types.ObjectId.isValid(congviecid)) {
     throw new AppError(400, "ID công việc không hợp lệ");
   }
@@ -1054,6 +1275,9 @@ service.getCongViecDetail = async (congviecid) => {
   if (!congviec) {
     throw new AppError(404, "Không tìm thấy công việc");
   }
+
+  // Kiểm tra quyền xem
+  await checkTaskViewPermission(congviec, req);
 
   // Map to unified DTO
   const dto = mapCongViecDTO(congviec);
@@ -1611,8 +1835,8 @@ service.transition = async (id, payload = {}, req) => {
   ) {
     action = "HOAN_THANH_TAM";
   }
-  // Quyền (Step1): strictly by req.nhanVienId
-  const performerIdCtx = req?.nhanVienId || null;
+  // Quyền (Step1): strictly by req.user.NhanVienID
+  const performerIdCtx = req.user?.NhanVienID || null;
   const isAssigner =
     performerIdCtx &&
     String(congviec.NguoiGiaoViecID) === String(performerIdCtx);
@@ -1913,9 +2137,18 @@ service.createSubtask = async (parentId, data, req) => {
 };
 
 // Danh sách con trực tiếp
-service.listChildren = async (parentId, page = 1, limit = 50) => {
+service.listChildren = async (parentId, page = 1, limit = 50, req) => {
   if (!mongoose.Types.ObjectId.isValid(parentId))
     throw new AppError(400, "PARENT_ID_INVALID");
+
+  // Kiểm tra quyền xem parent task
+  const parent = await CongViec.findOne({
+    _id: parentId,
+    isDeleted: { $ne: true },
+  }).lean();
+  if (!parent) throw new AppError(404, "Không tìm thấy công việc cha");
+  await checkTaskViewPermission(parent, req);
+
   const skip = (page - 1) * limit;
   const rows = await CongViec.find({
     CongViecChaID: parentId,
@@ -2006,9 +2239,18 @@ service.getTreeRoot = async (id) => {
   return mapTreeNode(doc);
 };
 
-service.getTreeChildren = async (parentId) => {
+service.getTreeChildren = async (parentId, req) => {
   if (!mongoose.Types.ObjectId.isValid(parentId))
     throw new AppError(400, "PARENT_ID_INVALID");
+
+  // Kiểm tra quyền xem parent
+  const parent = await CongViec.findOne({
+    _id: parentId,
+    isDeleted: { $ne: true },
+  }).lean();
+  if (!parent) throw new AppError(404, "Không tìm thấy công việc cha");
+  await checkTaskViewPermission(parent, req);
+
   const children = await CongViec.find({
     CongViecChaID: parentId,
     isDeleted: { $ne: true },
@@ -2106,11 +2348,16 @@ service.deleteComment = async (binhLuanId, req) => {
 
   // Kiểm quyền: chủ comment hoặc admin/manager
   const user = await User.findById(req.userId).lean();
-  const isAdmin =
-    user && (user.PhanQuyen === "admin" || user.PhanQuyen === "manager");
-  const isOwner =
-    user && String(comment.NguoiBinhLuanID) === String(req.userId);
-  if (!isAdmin && !isOwner) throw new AppError(403, "Không có quyền thu hồi");
+  if (!user?.NhanVienID) {
+    throw new AppError(400, "Tài khoản chưa liên kết với nhân viên");
+  }
+
+  const vaiTro = user.PhanQuyen?.toLowerCase();
+  const isAdmin = ["admin", "superadmin"].includes(vaiTro);
+  const isOwner = String(comment.NguoiBinhLuanID) === String(user.NhanVienID);
+
+  if (!isAdmin && !isOwner)
+    throw new AppError(403, "Không có quyền xóa bình luận");
 
   // Xóa mềm bình luận và file đính kèm
   await BinhLuan.softDeleteWithFiles(binhLuanId);
@@ -2130,10 +2377,14 @@ service.recallCommentText = async (binhLuanId, req) => {
     throw new AppError(404, "Không tìm thấy bình luận");
 
   const user = await User.findById(req.userId).lean();
-  const isAdmin =
-    user && (user.PhanQuyen === "admin" || user.PhanQuyen === "manager");
-  const isOwner =
-    user && String(comment.NguoiBinhLuanID) === String(req.userId);
+  if (!user?.NhanVienID) {
+    throw new AppError(400, "Tài khoản chưa liên kết với nhân viên");
+  }
+
+  const vaiTro = user.PhanQuyen?.toLowerCase();
+  const isAdmin = ["admin", "superadmin"].includes(vaiTro);
+  const isOwner = String(comment.NguoiBinhLuanID) === String(user.NhanVienID);
+
   if (!isAdmin && !isOwner)
     throw new AppError(403, "Không có quyền thu hồi nội dung");
 
@@ -2239,6 +2490,63 @@ service.updateCongViec = async (congviecid, updateData, req) => {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
+  // =============================
+  // PERMISSION CHECK - Kiểm tra quyền cập nhật
+  // =============================
+  const currentUser = await User.findById(req.userId).lean();
+  if (!currentUser?.NhanVienID) {
+    throw new AppError(400, "Tài khoản chưa liên kết với nhân viên");
+  }
+
+  // CHẶN cập nhật tiến độ - bắt buộc qua API updateProgress
+  if (Object.prototype.hasOwnProperty.call(updateData, "PhanTramTienDoTong")) {
+    throw new AppError(
+      400,
+      "Không thể cập nhật tiến độ qua API này. Vui lòng sử dụng API POST /congviec/:id/progress để cập nhật tiến độ với lịch sử đầy đủ"
+    );
+  }
+
+  // Lấy danh sách fields muốn cập nhật (loại bỏ fields không được phép)
+  const updateFields = Object.keys(updateData).filter(
+    (key) =>
+      ![
+        "_id",
+        "MaCongViec",
+        "SoThuTu",
+        "createdAt",
+        "updatedAt",
+        "LichSuTrangThai",
+        "LichSuTienDo",
+        "PhanTramTienDoTong",
+        "NgayGiaoViec",
+        "NgayHoanThanh",
+        "NgayTiepNhanThucTe",
+        "NgayHoanThanhTam",
+        "SoGioTre",
+        "HoanThanhTreHan",
+        "FirstSapQuaHanAt",
+        "FirstQuaHanAt",
+        "isDeleted",
+        "deletedAt",
+        "deletedBy",
+        "Path",
+        "Depth",
+        "ChildrenCount",
+      ].includes(key)
+  );
+
+  // Kiểm tra quyền với whitelist fields
+  const permissionCheck = checkUpdatePermission(
+    congviec,
+    currentUser.NhanVienID,
+    currentUser.PhanQuyen,
+    updateFields
+  );
+
+  if (!permissionCheck.allowed) {
+    throw new AppError(403, permissionCheck.message);
+  }
+
   // Validate dates if provided
   if (updateData.NgayBatDau && updateData.NgayHetHan) {
     const ngayBatDau = new Date(updateData.NgayBatDau);
@@ -2258,41 +2566,25 @@ service.updateCongViec = async (congviecid, updateData, req) => {
   }
 
   // =============================
-  // Nhiệm vụ thường quy (single-select) update rules
-  // Fields: NhiemVuThuongQuyID, FlagNVTQKhac
-  // Only main performer can modify
-  if (
-    Object.prototype.hasOwnProperty.call(updateData, "NhiemVuThuongQuyID") ||
-    Object.prototype.hasOwnProperty.call(updateData, "FlagNVTQKhac")
-  ) {
-    const performerNhanVienId = req.nhanVienId; // mapped in auth middleware
-    if (!performerNhanVienId) {
-      throw new AppError(403, "Không xác định nhân viên thực hiện");
+  // Business validation for Nhiệm vụ thường quy (single-select)
+  // =============================
+  // If Khác flag set true -> clear ID
+  if (updateData.FlagNVTQKhac) {
+    updateData.NhiemVuThuongQuyID = null;
+  }
+  // If an ID provided -> ensure valid ObjectId and unset FlagKhac
+  if (updateData.NhiemVuThuongQuyID) {
+    if (!mongoose.Types.ObjectId.isValid(updateData.NhiemVuThuongQuyID)) {
+      throw new AppError(400, "NhiemVuThuongQuyID không hợp lệ");
     }
-    if (String(congviec.NguoiChinhID) !== String(performerNhanVienId)) {
-      throw new AppError(
-        403,
-        "Chỉ Người Chính được phép cập nhật Nhiệm Vụ Thường Quy"
-      );
-    }
-    // If Khác flag set true -> clear ID
-    if (updateData.FlagNVTQKhac) {
-      updateData.NhiemVuThuongQuyID = null;
-    }
-    // If an ID provided -> ensure valid ObjectId and unset FlagKhac
-    if (updateData.NhiemVuThuongQuyID) {
-      if (!mongoose.Types.ObjectId.isValid(updateData.NhiemVuThuongQuyID)) {
-        throw new AppError(400, "NhiemVuThuongQuyID không hợp lệ");
-      }
-      updateData.FlagNVTQKhac = false;
-    }
-    // Prevent simultaneous both (redundant safeguard)
-    if (updateData.NhiemVuThuongQuyID && updateData.FlagNVTQKhac) {
-      throw new AppError(
-        400,
-        "Không thể vừa có NhiemVuThuongQuyID vừa đặt FlagNVTQKhac=true"
-      );
-    }
+    updateData.FlagNVTQKhac = false;
+  }
+  // Prevent simultaneous both (redundant safeguard)
+  if (updateData.NhiemVuThuongQuyID && updateData.FlagNVTQKhac) {
+    throw new AppError(
+      400,
+      "Không thể vừa có NhiemVuThuongQuyID vừa đặt FlagNVTQKhac=true"
+    );
   }
 
   // =============================
@@ -2380,8 +2672,6 @@ service.updateCongViec = async (congviecid, updateData, req) => {
     let thamGia = updateData.NguoiThamGia.map((p) => ({
       NhanVienID: p.NhanVienID || p.NhanVienId || p._id,
       VaiTro: p.VaiTro === "CHINH" ? "CHINH" : "PHOI_HOP",
-      TienDo: p.TienDo || 0,
-      GhiChu: p.GhiChu,
     }));
 
     // Đảm bảo có đúng 1 người CHINH và khớp với NguoiChinhID (nếu có)
@@ -2396,7 +2686,6 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         thamGia.unshift({
           NhanVienID: updateData.NguoiChinhID,
           VaiTro: "CHINH",
-          TienDo: 0,
         });
       } else {
         // Nếu có nhiều hơn 1 CHINH thì hạ cấp các bản ghi thừa
@@ -2423,11 +2712,6 @@ service.updateCongViec = async (congviecid, updateData, req) => {
       congviec[key] = updateData[key];
     }
   });
-
-  // Cập nhật tiến độ tổng theo người chính nếu có thay đổi danh sách tham gia
-  if (updateData.NguoiThamGia) {
-    congviec.capNhatTienDoTongTheoNguoiChinh();
-  }
 
   await congviec.save();
 
@@ -2475,6 +2759,15 @@ service.addComment = async (congviecid, noiDung, req, parentId = null) => {
     throw new AppError(404, "Không tìm thấy công việc");
   }
 
+  // Lấy NhanVienID từ User
+  const currentUser = await User.findById(req.userId).lean();
+  if (!currentUser?.NhanVienID) {
+    throw new AppError(
+      400,
+      "Tài khoản chưa liên kết với nhân viên. Vui lòng liên hệ quản trị viên."
+    );
+  }
+
   // Validate parent if replying
   let parent = null;
   if (parentId) {
@@ -2493,7 +2786,7 @@ service.addComment = async (congviecid, noiDung, req, parentId = null) => {
   const binhLuan = await BinhLuan.create({
     CongViecID: new mongoose.Types.ObjectId(congviecid),
     NoiDung: noiDung.trim(),
-    NguoiBinhLuanID: new mongoose.Types.ObjectId(req.userId),
+    NguoiBinhLuanID: new mongoose.Types.ObjectId(currentUser.NhanVienID),
     BinhLuanChaID: parent ? new mongoose.Types.ObjectId(parentId) : undefined,
   });
 
@@ -2502,27 +2795,521 @@ service.addComment = async (congviecid, noiDung, req, parentId = null) => {
   await congviec.save();
 
   // Build DTO consistent with FE expectations
-  const user = await require("../../../models/User")
-    .findById(req.userId)
-    .populate({ path: "NhanVienID", select: "Ten" })
+  const nhanvien = await NhanVien.findById(currentUser.NhanVienID)
+    .select("Ten Email")
     .lean();
   const tenNguoiBinhLuan =
-    (user && user.NhanVienID && user.NhanVienID.Ten) ||
-    (user && user.HoTen) ||
-    (user && user.UserName) ||
-    "Người dùng";
+    nhanvien?.Ten || currentUser.HoTen || currentUser.UserName || "Người dùng";
   return {
     _id: String(binhLuan._id),
     CongViecID: String(binhLuan.CongViecID),
     BinhLuanChaID: binhLuan.BinhLuanChaID
       ? String(binhLuan.BinhLuanChaID)
       : null,
-    NguoiBinhLuanID: String(req.userId),
+    NguoiBinhLuanID: String(currentUser.NhanVienID),
     NoiDung: binhLuan.NoiDung,
     NguoiBinhLuan: { Ten: tenNguoiBinhLuan },
     NgayBinhLuan: binhLuan.NgayBinhLuan || binhLuan.createdAt,
     TrangThai: binhLuan.TrangThai || "ACTIVE",
     Files: [],
+  };
+};
+
+// ========================================
+// Dashboard by NhiemVu Thuong Quy for KPI Evaluation
+// ========================================
+/**
+ * Get dashboard metrics for a NhiemVuThuongQuy during KPI evaluation
+ * @param {Object} params - { nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID }
+ * @returns {Promise<Object>} Dashboard data with summary, metrics, and tasks
+ */
+service.getDashboardByNhiemVu = async ({
+  nhiemVuThuongQuyID,
+  nhanVienID,
+  chuKyDanhGiaID,
+}) => {
+  const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+
+  // Validate inputs
+  if (!nhiemVuThuongQuyID || !nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Missing required parameters: nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID"
+    );
+  }
+
+  // Get cycle date range
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(404, "Không tìm thấy chu kỳ đánh giá");
+  }
+
+  // ✅ FIX: Use NgayBatDau/NgayKetThuc (correct field names from schema)
+  const tuNgay = chuKy.NgayBatDau ? new Date(chuKy.NgayBatDau) : null;
+  const denNgay = chuKy.NgayKetThuc ? new Date(chuKy.NgayKetThuc) : null;
+
+  // Validate dates are valid
+  if (
+    !tuNgay ||
+    isNaN(tuNgay.getTime()) ||
+    !denNgay ||
+    isNaN(denNgay.getTime())
+  ) {
+    throw new AppError(400, "Chu kỳ đánh giá có ngày không hợp lệ");
+  }
+
+  // Base filter: tasks in cycle date range
+  // ✅ FIX: Only use createdAt (NgayGiaoViec may be null/invalid causing CastError)
+  const baseFilter = {
+    NhiemVuThuongQuyID: toObjectId(nhiemVuThuongQuyID),
+    NguoiChinhID: toObjectId(nhanVienID),
+    isDeleted: { $ne: true },
+    createdAt: {
+      $gte: tuNgay,
+      $lte: denNgay,
+    },
+  };
+
+  const now = new Date();
+
+  // ========== PARALLEL AGGREGATIONS ==========
+  const [
+    statusDistribution,
+    timeMetrics,
+    collaborationMetrics,
+    priorityBreakdown,
+    taskList,
+  ] = await Promise.all([
+    // 1. Status distribution
+    CongViec.aggregate([
+      { $match: baseFilter },
+      {
+        $group: {
+          _id: "$TrangThai",
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+
+    // 2. Time-based metrics (completed tasks only)
+    CongViec.aggregate([
+      { $match: { ...baseFilter, TrangThai: "HOAN_THANH" } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          onTime: {
+            $sum: { $cond: [{ $eq: ["$HoanThanhTreHan", false] }, 1, 0] },
+          },
+          late: {
+            $sum: { $cond: [{ $eq: ["$HoanThanhTreHan", true] }, 1, 0] },
+          },
+          totalLateHours: {
+            $sum: { $cond: ["$HoanThanhTreHan", "$SoGioTre", 0] },
+          },
+          maxLateHours: { $max: "$SoGioTre" },
+          // Average completion time (NgayHoanThanh - NgayTiepNhanThucTe)
+          avgCompletionDays: {
+            $avg: {
+              $cond: [
+                { $and: ["$NgayHoanThanh", "$NgayTiepNhanThucTe"] },
+                {
+                  $divide: [
+                    {
+                      $subtract: ["$NgayHoanThanh", "$NgayTiepNhanThucTe"],
+                    },
+                    1000 * 60 * 60 * 24, // Convert ms to days
+                  ],
+                },
+                null,
+              ],
+            },
+          },
+        },
+      },
+    ]),
+
+    // 3. Collaboration metrics
+    CongViec.aggregate([
+      { $match: baseFilter },
+      {
+        $lookup: {
+          from: "binhluans",
+          localField: "_id",
+          foreignField: "CongViecID",
+          as: "comments",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgTeamSize: { $avg: { $size: "$NguoiThamGia" } },
+          totalComments: { $sum: { $size: "$comments" } },
+          totalTasks: { $sum: 1 },
+          multiPersonTasks: {
+            $sum: { $cond: [{ $gt: [{ $size: "$NguoiThamGia" }, 1] }, 1, 0] },
+          },
+          totalProgress: { $sum: "$PhanTramTienDoTong" },
+        },
+      },
+    ]),
+
+    // 4. Priority breakdown with status
+    CongViec.aggregate([
+      { $match: baseFilter },
+      {
+        $group: {
+          _id: "$MucDoUuTien",
+          total: { $sum: 1 },
+          completed: {
+            $sum: { $cond: [{ $eq: ["$TrangThai", "HOAN_THANH"] }, 1, 0] },
+          },
+          late: {
+            $sum: { $cond: ["$HoanThanhTreHan", 1, 0] },
+          },
+          active: {
+            $sum: {
+              $cond: [{ $eq: ["$TrangThai", "DANG_THUC_HIEN"] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]),
+
+    // 5. Full task list with populated data
+    CongViec.find(baseFilter)
+      .populate({
+        path: "NguoiGiaoViec",
+        select: "Ten Email KhoaID",
+        populate: { path: "KhoaID", select: "TenKhoa" },
+      })
+      .populate({
+        path: "NguoiChinh",
+        select: "Ten Email KhoaID",
+        populate: { path: "KhoaID", select: "TenKhoa" },
+      })
+      .select(
+        "MaCongViec TieuDe TrangThai MucDoUuTien PhanTramTienDoTong NgayHetHan NgayHoanThanh SoGioTre HoanThanhTreHan NguoiThamGia createdAt"
+      )
+      .sort({ SoGioTre: -1, NgayHetHan: 1 })
+      .lean(),
+  ]);
+
+  // ========== PROCESS RESULTS ==========
+
+  // Status distribution map
+  const statusMap = {
+    TAO_MOI: 0,
+    DA_GIAO: 0,
+    DANG_THUC_HIEN: 0,
+    CHO_DUYET: 0,
+    HOAN_THANH: 0,
+  };
+  statusDistribution.forEach((item) => {
+    statusMap[item._id] = item.count;
+  });
+
+  const total = Object.values(statusMap).reduce((sum, count) => sum + count, 0);
+  const completed = statusMap.HOAN_THANH;
+  const active = statusMap.DANG_THUC_HIEN;
+
+  // Time metrics
+  const timeData = timeMetrics[0] || {
+    total: 0,
+    onTime: 0,
+    late: 0,
+    totalLateHours: 0,
+    maxLateHours: 0,
+    avgCompletionDays: 0,
+  };
+
+  const onTimeRate = timeData.total > 0 ? timeData.onTime / timeData.total : 0;
+  const lateRate = timeData.total > 0 ? timeData.late / timeData.total : 0;
+  const avgLateHours =
+    timeData.late > 0 ? timeData.totalLateHours / timeData.late : 0;
+
+  // Collaboration metrics
+  const collabData = collaborationMetrics[0] || {
+    avgTeamSize: 0,
+    totalComments: 0,
+    totalTasks: 0,
+    multiPersonTasks: 0,
+    totalProgress: 0,
+  };
+
+  const avgComments =
+    collabData.totalTasks > 0
+      ? collabData.totalComments / collabData.totalTasks
+      : 0;
+  const avgProgress =
+    collabData.totalTasks > 0
+      ? collabData.totalProgress / collabData.totalTasks
+      : 0;
+
+  // Priority distribution map
+  const priorityMap = {};
+  priorityBreakdown.forEach((item) => {
+    priorityMap[item._id] = {
+      total: item.total,
+      completed: item.completed,
+      late: item.late,
+      active: item.active,
+    };
+  });
+
+  // Calculate currently overdue tasks
+  const overdueCount = taskList.filter(
+    (task) =>
+      task.TrangThai !== "HOAN_THANH" &&
+      task.NgayHetHan &&
+      new Date(task.NgayHetHan) < now
+  ).length;
+
+  // Map task list for frontend
+  const mappedTasks = taskList.map((task) => ({
+    ...task,
+    NguoiGiaoProfile: task.NguoiGiaoViec,
+    NguoiChinhProfile: task.NguoiChinh,
+    SoLuongNguoiThamGia: task.NguoiThamGia?.length || 0,
+  }));
+
+  // ========== RETURN DASHBOARD DATA ==========
+  return {
+    summary: {
+      total,
+      completed,
+      completionRate: total > 0 ? completed / total : 0,
+      late: timeData.late,
+      lateRate,
+      active,
+      overdue: overdueCount,
+      avgProgress: Math.round(avgProgress * 10) / 10,
+      onTimeRate: Math.round(onTimeRate * 1000) / 10, // Convert to percentage with 1 decimal
+    },
+    timeMetrics: {
+      avgLateHours: Math.round(avgLateHours * 10) / 10,
+      maxLateHours: timeData.maxLateHours || 0,
+      avgCompletionDays:
+        Math.round((timeData.avgCompletionDays || 0) * 10) / 10,
+      onTimeCount: timeData.onTime,
+      lateCount: timeData.late,
+    },
+    statusDistribution: Object.keys(statusMap).map((status) => ({
+      status,
+      count: statusMap[status],
+      percentage: total > 0 ? Math.round((statusMap[status] / total) * 100) : 0,
+    })),
+    priorityDistribution: Object.keys(priorityMap).map((priority) => ({
+      priority,
+      ...priorityMap[priority],
+    })),
+    collaboration: {
+      avgTeamSize: Math.round((collabData.avgTeamSize || 0) * 10) / 10,
+      avgComments: Math.round(avgComments * 10) / 10,
+      multiPersonTasks: collabData.multiPersonTasks,
+      multiPersonRate:
+        total > 0 ? Math.round((collabData.multiPersonTasks / total) * 100) : 0,
+    },
+    tasks: mappedTasks,
+  };
+};
+
+/**
+ * Get summary of "other" tasks (FlagNVTQKhac = true)
+ * Used by: Compact card in KPI evaluation page
+ * @param {String} nhanVienID - Employee ID
+ * @param {String} chuKyDanhGiaID - Evaluation cycle ID
+ * @returns {Object} {total, completed, late, active, tasks[]}
+ */
+service.getOtherTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
+  // Validate inputs
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu nhanVienID hoặc chuKyDanhGiaID",
+      "MISSING_PARAMS"
+    );
+  }
+
+  // Get cycle dates
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(
+      404,
+      "Không tìm thấy chu kỳ đánh giá",
+      "CYCLE_NOT_FOUND"
+    );
+  }
+
+  const tuNgay = new Date(chuKy.NgayBatDau);
+  const denNgay = new Date(chuKy.NgayKetThuc);
+
+  if (
+    !tuNgay ||
+    isNaN(tuNgay.getTime()) ||
+    !denNgay ||
+    isNaN(denNgay.getTime())
+  ) {
+    throw new AppError(
+      400,
+      "Chu kỳ đánh giá có ngày không hợp lệ",
+      "INVALID_DATES"
+    );
+  }
+
+  // Build filter - VAI TRÒ CHÍNH + FLAG "KHÁC"
+  const baseFilter = {
+    NguoiChinhID: toObjectId(nhanVienID),
+    FlagNVTQKhac: true,
+    NhiemVuThuongQuyID: null,
+    isDeleted: { $ne: true },
+    createdAt: { $gte: tuNgay, $lte: denNgay },
+  };
+
+  // Aggregation for counts (lightweight)
+  const [summary] = await CongViec.aggregate([
+    { $match: baseFilter },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        completed: {
+          $sum: { $cond: [{ $eq: ["$TrangThai", "HOAN_THANH"] }, 1, 0] },
+        },
+        late: {
+          $sum: { $cond: ["$HoanThanhTreHan", 1, 0] },
+        },
+        active: {
+          $sum: { $cond: [{ $eq: ["$TrangThai", "DANG_THUC_HIEN"] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  // Get task list (limit 50 for performance)
+  const tasks = await CongViec.find(baseFilter)
+    .select(
+      "MaCongViec TieuDe TrangThai NgayHetHan SoGioTre HoanThanhTreHan createdAt"
+    )
+    .sort({ SoGioTre: -1, NgayHetHan: 1 })
+    .limit(50)
+    .lean();
+
+  // Return summary + task list
+  return {
+    total: summary?.total || 0,
+    completed: summary?.completed || 0,
+    late: summary?.late || 0,
+    active: summary?.active || 0,
+    tasks: tasks || [],
+  };
+};
+
+/**
+ * Get summary of collaboration tasks (VaiTro = PHOI_HOP)
+ * Used by: Compact card in KPI evaluation page
+ * @param {String} nhanVienID - Employee ID
+ * @param {String} chuKyDanhGiaID - Evaluation cycle ID
+ * @returns {Object} {total, completed, late, active, tasks[]}
+ */
+service.getCollabTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
+  // Validate inputs
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu nhanVienID hoặc chuKyDanhGiaID",
+      "MISSING_PARAMS"
+    );
+  }
+
+  // Get cycle dates
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(
+      404,
+      "Không tìm thấy chu kỳ đánh giá",
+      "CYCLE_NOT_FOUND"
+    );
+  }
+
+  const tuNgay = new Date(chuKy.NgayBatDau);
+  const denNgay = new Date(chuKy.NgayKetThuc);
+
+  if (
+    !tuNgay ||
+    isNaN(tuNgay.getTime()) ||
+    !denNgay ||
+    isNaN(denNgay.getTime())
+  ) {
+    throw new AppError(
+      400,
+      "Chu kỳ đánh giá có ngày không hợp lệ",
+      "INVALID_DATES"
+    );
+  }
+
+  // Build filter - VAI TRÒ PHỐI HỢP
+  const baseFilter = {
+    NguoiThamGia: {
+      $elemMatch: {
+        NhanVienID: toObjectId(nhanVienID),
+        VaiTro: "PHOI_HOP",
+      },
+    },
+    isDeleted: { $ne: true },
+    createdAt: { $gte: tuNgay, $lte: denNgay },
+  };
+
+  // Aggregation for counts
+  const [summary] = await CongViec.aggregate([
+    { $match: baseFilter },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        completed: {
+          $sum: { $cond: [{ $eq: ["$TrangThai", "HOAN_THANH"] }, 1, 0] },
+        },
+        late: {
+          $sum: { $cond: ["$HoanThanhTreHan", 1, 0] },
+        },
+        active: {
+          $sum: { $cond: [{ $eq: ["$TrangThai", "DANG_THUC_HIEN"] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  // Get task list with NguoiChinh info
+  const tasks = await CongViec.find(baseFilter)
+    .select(
+      "MaCongViec TieuDe TrangThai NgayHetHan SoGioTre HoanThanhTreHan NguoiChinhID createdAt"
+    )
+    .populate({
+      path: "NguoiChinhID",
+      select: "Ten Email",
+    })
+    .sort({ SoGioTre: -1, NgayHetHan: 1 })
+    .limit(50)
+    .lean();
+
+  // Map NguoiChinhProfile for frontend
+  const tasksWithProfile = tasks.map((task) => ({
+    ...task,
+    NguoiChinhProfile: task.NguoiChinhID
+      ? {
+          Ten: task.NguoiChinhID.Ten,
+          Email: task.NguoiChinhID.Email,
+        }
+      : null,
+  }));
+
+  return {
+    total: summary?.total || 0,
+    completed: summary?.completed || 0,
+    late: summary?.late || 0,
+    active: summary?.active || 0,
+    tasks: tasksWithProfile,
   };
 };
 

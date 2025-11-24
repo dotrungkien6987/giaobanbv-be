@@ -107,11 +107,64 @@ chuKyDanhGiaSchema.virtual("DanhSachDanhGia", {
   foreignField: "ChuKyDanhGiaID",
 });
 
-// Static method đơn giản
-chuKyDanhGiaSchema.statics.layChuKyDangMo = function () {
-  return this.findOne({ isDong: false, isDeleted: false }).sort({
-    NgayBatDau: -1,
+// ========================================
+// Static methods
+// ========================================
+
+/**
+ * Lấy chu kỳ hiện tại (đang mở, mới nhất)
+ * Dùng cho: Routine task selector, KPI evaluation
+ */
+chuKyDanhGiaSchema.statics.layChuKyHienTai = function () {
+  // Chu kỳ hiện tại = isDong = false (đang mở)
+  // Nếu có nhiều → Lấy theo NgayBatDau mới nhất
+  return this.findOne({
+    isDong: false,
+    isDeleted: false,
+  }).sort({
+    NgayBatDau: -1, // Descending: Mới nhất trước
   });
+};
+
+/**
+ * @deprecated - Dùng layChuKyHienTai() thay thế
+ */
+chuKyDanhGiaSchema.statics.layChuKyDangMo = function () {
+  return this.layChuKyHienTai();
+};
+
+/**
+ * Lấy danh sách chu kỳ (cho dropdown selection)
+ * @param {Number} limit - Số lượng chu kỳ tối đa (mặc định 12)
+ * @returns {Promise<Array>} Danh sách chu kỳ
+ */
+chuKyDanhGiaSchema.statics.layDanhSachChuKy = function (limit = 12) {
+  return this.find({
+    isDeleted: false,
+  })
+    .sort({ NgayBatDau: -1 }) // Mới nhất trước
+    .limit(limit)
+    .select("TenChuKy Thang Nam NgayBatDau NgayKetThuc isDong")
+    .then((cycles) => {
+      // Format dates for frontend: DD-MM-YYYY
+      return cycles.map((c) => {
+        const batDau = new Date(c.NgayBatDau);
+        const ketThuc = new Date(c.NgayKetThuc);
+
+        const formatDate = (date) => {
+          const day = String(date.getDate()).padStart(2, "0");
+          const month = String(date.getMonth() + 1).padStart(2, "0");
+          const year = date.getFullYear();
+          return `${day}-${month}-${year}`;
+        };
+
+        return {
+          ...c.toObject(),
+          NgayBatDau: formatDate(batDau),
+          NgayKetThuc: formatDate(ketThuc),
+        };
+      });
+    });
 };
 
 // Validation

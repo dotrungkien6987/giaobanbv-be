@@ -50,6 +50,26 @@ chuKyDanhGiaController.layDanhSach = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * @route GET /api/workmanagement/chu-ky-danh-gia/list
+ * @desc Lấy danh sách chu kỳ đơn giản (cho dropdown)
+ * @access Private
+ */
+chuKyDanhGiaController.layDanhSachChuKy = catchAsync(async (req, res, next) => {
+  const { limit = 12 } = req.query;
+
+  const danhSach = await ChuKyDanhGia.layDanhSachChuKy(parseInt(limit));
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    danhSach,
+    null,
+    "Lấy danh sách chu kỳ thành công"
+  );
+});
+
+/**
  * @route GET /api/workmanagement/chu-ky-danh-gia/dang-mo
  * @desc Lấy chu kỳ đánh giá đang mở
  * @access Private

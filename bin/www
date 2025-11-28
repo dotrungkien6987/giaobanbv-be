@@ -4,16 +4,16 @@
  * Module dependencies.
  */
 
-var app = require('../app');
-var debug = require('debug')('be:server');
-var http = require('http');
+var app = require("../app");
+var debug = require("debug")("be:server");
+var http = require("http");
 
 /**
  * Get port from environment and store in Express.
  */
 
-var port = normalizePort(process.env.PORT || '3000');
-app.set('port', port);
+var port = normalizePort(process.env.PORT || "3000");
+app.set("port", port);
 
 /**
  * Create HTTP server.
@@ -22,12 +22,37 @@ app.set('port', port);
 var server = http.createServer(app);
 
 /**
+ * Socket.IO & Notification Service Setup
+ */
+var socketService = require("../services/socketService");
+var notificationService = require("../modules/workmanagement/services/notificationService");
+var agendaService = require("../services/agendaService");
+
+// Initialize Socket.IO with HTTP server
+socketService.init(server);
+
+// Load notification templates into cache
+notificationService.loadTemplates().catch(function (err) {
+  console.error("[NotificationService] Failed to load templates:", err.message);
+});
+
+// Initialize Agenda.js job scheduler
+agendaService.init().catch(function (err) {
+  console.error("[AgendaService] Failed to initialize:", err.message);
+});
+
+// Make services accessible from app (for controllers/routes)
+app.set("socketService", socketService);
+app.set("notificationService", notificationService);
+app.set("agendaService", agendaService);
+
+/**
  * Listen on provided port, on all network interfaces.
  */
 
 server.listen(port);
-server.on('error', onError);
-server.on('listening', onListening);
+server.on("error", onError);
+server.on("listening", onListening);
 
 /**
  * Normalize a port into a number, string, or false.
@@ -54,22 +79,20 @@ function normalizePort(val) {
  */
 
 function onError(error) {
-  if (error.syscall !== 'listen') {
+  if (error.syscall !== "listen") {
     throw error;
   }
 
-  var bind = typeof port === 'string'
-    ? 'Pipe ' + port
-    : 'Port ' + port;
+  var bind = typeof port === "string" ? "Pipe " + port : "Port " + port;
 
   // handle specific listen errors with friendly messages
   switch (error.code) {
-    case 'EACCES':
-      console.error(bind + ' requires elevated privileges');
+    case "EACCES":
+      console.error(bind + " requires elevated privileges");
       process.exit(1);
       break;
-    case 'EADDRINUSE':
-      console.error(bind + ' is already in use');
+    case "EADDRINUSE":
+      console.error(bind + " is already in use");
       process.exit(1);
       break;
     default:
@@ -83,8 +106,41 @@ function onError(error) {
 
 function onListening() {
   var addr = server.address();
-  var bind = typeof addr === 'string'
-    ? 'pipe ' + addr
-    : 'port ' + addr.port;
-  debug('Listening on ' + bind);
+  var bind = typeof addr === "string" ? "pipe " + addr : "port " + addr.port;
+  debug("Listening on " + bind);
 }
+
+/**
+ * Graceful shutdown handler
+ */
+async function gracefulShutdown(signal) {
+  console.log(`\n[Shutdown] Received ${signal}. Shutting down gracefully...`);
+
+  try {
+    // Stop accepting new connections
+    server.close(function () {
+      console.log("[Shutdown] HTTP server closed");
+    });
+
+    // Stop Agenda job processing
+    await agendaService.stop();
+    console.log("[Shutdown] Agenda service stopped");
+
+    // Give pending operations time to complete
+    setTimeout(function () {
+      console.log("[Shutdown] Graceful shutdown complete");
+      process.exit(0);
+    }, 1000);
+  } catch (err) {
+    console.error("[Shutdown] Error during shutdown:", err.message);
+    process.exit(1);
+  }
+}
+
+// Handle termination signals
+process.on("SIGTERM", function () {
+  gracefulShutdown("SIGTERM");
+});
+process.on("SIGINT", function () {
+  gracefulShutdown("SIGINT");
+});

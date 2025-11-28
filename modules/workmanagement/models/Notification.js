@@ -1,163 +1,93 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
-const notificationSchema = Schema(
+/**
+ * Notification Model
+ * Lưu trữ thông báo đã gửi cho user
+ *
+ * Lưu ý: recipientId là User._id, KHÔNG PHẢI NhanVien._id
+ */
+const notificationSchema = new Schema(
   {
+    // Người nhận (User._id, KHÔNG PHẢI NhanVien._id)
     recipientId: {
-      type: Schema.ObjectId,
+      type: Schema.Types.ObjectId,
+      ref: "User",
       required: true,
-      ref: "Employee",
+      index: true,
     },
-    senderId: {
-      type: Schema.ObjectId,
-      ref: "Employee",
-      default: null,
+
+    // Loại thông báo (match với NotificationTemplate.type)
+    type: {
+      type: String,
+      required: true,
+      index: true,
     },
+
+    // Nội dung đã render
     title: {
       type: String,
       required: true,
-      trim: true,
-      maxlength: 255,
     },
-    message: {
+    body: {
       type: String,
-      maxlength: 2000,
+      required: true,
     },
-    notificationType: {
+
+    // Icon để hiển thị
+    icon: {
       type: String,
-      enum: [
-        "TASK_ASSIGNED",
-        "TASK_UPDATED",
-        "TASK_COMPLETED",
-        "TASK_OVERDUE",
-        "TICKET_CREATED",
-        "TICKET_ASSIGNED",
-        "TICKET_UPDATED",
-        "TICKET_RESOLVED",
-        "KPI_EVALUATION",
-        "KPI_APPROVED",
-        "KPI_REJECTED",
-        "DEADLINE_REMINDER",
-        "GENERAL",
-      ],
-      default: "GENERAL",
+      default: "notification",
     },
-    relatedType: {
+
+    // Độ ưu tiên
+    priority: {
       type: String,
-      enum: ["TASK", "TICKET", "EVALUATION"],
-      default: null,
+      enum: ["normal", "urgent"],
+      default: "normal",
     },
-    relatedId: {
-      type: Schema.ObjectId,
-      default: null,
-    },
+
+    // Trạng thái đọc
     isRead: {
       type: Boolean,
       default: false,
+      index: true,
     },
     readAt: {
       type: Date,
-      default: null,
+    },
+
+    // Link khi click vào notification
+    actionUrl: {
+      type: String,
+    },
+
+    // Data gốc (để debug hoặc re-render)
+    metadata: {
+      type: Schema.Types.Mixed,
+    },
+
+    // Kênh đã gửi
+    deliveredVia: {
+      type: [String],
+      enum: ["inapp", "push"],
+      default: ["inapp"],
+    },
+
+    // Auto delete sau 30 ngày
+    expiresAt: {
+      type: Date,
+      default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      index: { expireAfterSeconds: 0 },
     },
   },
   {
     timestamps: true,
-    collection: "notifications",
   }
 );
 
-// Indexes
+// Compound indexes for performance
+notificationSchema.index({ recipientId: 1, isRead: 1, createdAt: -1 });
 notificationSchema.index({ recipientId: 1, createdAt: -1 });
-notificationSchema.index({ recipientId: 1, isRead: 1 });
-notificationSchema.index({ senderId: 1 });
-notificationSchema.index({ notificationType: 1 });
-notificationSchema.index({ relatedType: 1, relatedId: 1 });
 
-// Methods
-notificationSchema.methods.toJSON = function () {
-  const notification = this._doc;
-  delete notification.__v;
-  return notification;
-};
-
-notificationSchema.methods.markAsRead = function () {
-  this.isRead = true;
-  this.readAt = new Date();
-  return this.save();
-};
-
-notificationSchema.methods.markAsUnread = function () {
-  this.isRead = false;
-  this.readAt = null;
-  return this.save();
-};
-
-// Static methods
-notificationSchema.statics.findByRecipient = function (
-  recipientId,
-  unreadOnly = false
-) {
-  const query = { recipientId };
-  if (unreadOnly) {
-    query.isRead = false;
-  }
-
-  return this.find(query)
-    .populate("senderId", "fullName employeeCode avatarUrl")
-    .sort({ createdAt: -1 });
-};
-
-notificationSchema.statics.findBySender = function (senderId) {
-  return this.find({ senderId })
-    .populate("recipientId", "fullName employeeCode")
-    .sort({ createdAt: -1 });
-};
-
-notificationSchema.statics.findByType = function (notificationType) {
-  return this.find({ notificationType })
-    .populate("recipientId", "fullName employeeCode")
-    .populate("senderId", "fullName employeeCode")
-    .sort({ createdAt: -1 });
-};
-
-notificationSchema.statics.findByRelated = function (relatedType, relatedId) {
-  return this.find({ relatedType, relatedId })
-    .populate("recipientId", "fullName employeeCode")
-    .populate("senderId", "fullName employeeCode")
-    .sort({ createdAt: -1 });
-};
-
-notificationSchema.statics.getUnreadCount = function (recipientId) {
-  return this.countDocuments({ recipientId, isRead: false });
-};
-
-notificationSchema.statics.markAllAsRead = function (recipientId) {
-  return this.updateMany(
-    { recipientId, isRead: false },
-    { isRead: true, readAt: new Date() }
-  );
-};
-
-notificationSchema.statics.deleteOldNotifications = function (daysOld = 30) {
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-
-  return this.deleteMany({
-    createdAt: { $lt: cutoffDate },
-    isRead: true,
-  });
-};
-
-// Helper method to create notifications
-notificationSchema.statics.createNotification = function (data) {
-  const notification = new this(data);
-  return notification.save();
-};
-
-// Bulk create notifications
-notificationSchema.statics.createBulkNotifications = function (notifications) {
-  return this.insertMany(notifications);
-};
-
-const Notification = mongoose.model("Notification", notificationSchema);
-module.exports = Notification;
+module.exports = mongoose.model("Notification", notificationSchema);

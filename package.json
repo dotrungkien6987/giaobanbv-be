@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "start": "node ./bin/www",
-    "dev": "nodemon ./bin/www"
+    "dev": "nodemon ./bin/www",
+    "seed:notifications": "node seeds/notificationTemplates.js"
   },
   "dependencies": {
+    "agenda": "^5.0.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
     "cookie-parser": "~1.4.4",
@@ -27,7 +29,8 @@
     "nanoid": "^5.1.5",
     "pg": "^8.14.1",
     "sanitize-filename": "^1.6.3",
-    "sharp": "^0.34.3"
+    "sharp": "^0.34.3",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

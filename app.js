@@ -5,29 +5,9 @@ const path = require("path");
 const cookieParser = require("cookie-parser");
 const logger = require("morgan");
 const cors = require("cors");
-var whitelist = [
-  "http://192.168.5.200:3001",
-  `https://bvdktphutho.net`,
-  `http://bvdktphutho.net`,
-  `http://192.168.5.200:3000`,
-  `http://localhost:3000`,
-  `http://localhost:3001`,
-  `http://192.168.1.248:3000`,
-  `http://27.72.116.110:777`,
-  `http://27.72.116.110:8443`,
-  `http://bvdkphutho.io.vn:8443`,
-  `http://bvdkphutho.io.vn:777`,
-  `http://api.bvdkphutho.io.vn`,
-];
-var corsOptionsDelegate = function (req, callback) {
-  var corsOptions;
-  if (whitelist.indexOf(req.header("Origin")) !== -1) {
-    corsOptions = { origin: true }; // reflect (enable) the requested origin in the CORS response
-  } else {
-    corsOptions = { origin: false }; // disable CORS for this request
-  }
-  callback(null, corsOptions); // callback expects two parameters: error and options
-};
+
+// Import shared CORS config
+const { whitelist, corsOptionsDelegate } = require("./config/corsConfig");
 
 const { sendResponse } = require("./helpers/utils");
 
@@ -48,6 +28,12 @@ app.use(cors(corsOptionsDelegate));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api", indexRouter);
+
+// Notification System Routes
+const notificationRoutes = require("./modules/workmanagement/routes/notificationRoutes");
+const notificationTemplateRoutes = require("./modules/workmanagement/routes/notificationTemplateRoutes");
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/notification-templates", notificationTemplateRoutes);
 
 const mongoose = require("mongoose");
 const mongoURI =

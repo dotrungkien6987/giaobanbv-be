@@ -16,6 +16,7 @@ const {
   detectCriteriaChanges,
   mergeCriteriaWithPreservedScores,
 } = require("../helpers/criteriaSync.helper");
+const triggerService = require("../../../services/triggerService");
 
 const kpiController = {};
 
@@ -128,6 +129,13 @@ kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
   const danhGiaNhiemVuPopulated = await DanhGiaNhiemVuThuongQuy.find({
     DanhGiaKPIID: danhGiaKPI._id,
   }).populate("NhiemVuThuongQuyID", "TenNhiemVu MoTa MucDoKho");
+
+  // 🔔 Notification trigger - Tạo đánh giá KPI
+  await triggerService.fire("KPI.taoDanhGia", {
+    danhGiaKPI: danhGiaKPI,
+    chuKy: chuKy,
+    performerId: NguoiDanhGiaID,
+  });
 
   return sendResponse(
     res,
@@ -614,6 +622,12 @@ kpiController.duyetDanhGiaKPI = catchAsync(async (req, res, next) => {
     { path: "NguoiDuyet", select: "HoTen Ten MaNhanVien" },
     { path: "LichSuDuyet.NguoiDuyet", select: "HoTen Ten MaNhanVien" },
   ]);
+
+  // 🔔 Notification trigger - Duyệt KPI
+  await triggerService.fire("KPI.duyetDanhGia", {
+    danhGiaKPI: updatedDanhGiaKPI,
+    performerId: currentNhanVienID,
+  });
 
   return sendResponse(
     res,
@@ -1755,6 +1769,12 @@ kpiController.duyetKPITieuChi = catchAsync(async (req, res, next) => {
       select: "HoTen Ten MaNhanVien",
     });
 
+    // 🔔 Notification trigger - Duyệt KPI Tiêu chí
+    await triggerService.fire("KPI.duyetTieuChi", {
+      danhGiaKPI: danhGiaKPI,
+      performerId: nguoiDanhGiaID,
+    });
+
     return sendResponse(
       res,
       200,
@@ -2118,6 +2138,13 @@ kpiController.huyDuyetKPI = catchAsync(async (req, res, next) => {
         select: "HoTen Ten MaNhanVien",
       })
       .lean();
+
+    // 🔔 Notification trigger - Hủy duyệt KPI
+    await triggerService.fire("KPI.huyDuyet", {
+      danhGiaKPI: danhGiaKPIPopulated,
+      lyDo: lyDo,
+      performerId: currentUser.NhanVienID,
+    });
 
     return sendResponse(
       res,

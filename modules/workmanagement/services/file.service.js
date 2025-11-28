@@ -134,7 +134,7 @@ service.createCommentWithFiles = async (
   const comment = await BinhLuan.create({
     NoiDung: typeof noiDung === "string" ? noiDung.trim() : "",
     CongViecID: toObjectId(congViecId),
-    NguoiBinhLuanID: toObjectId(req.userId),
+    NguoiBinhLuanID: toObjectId(nhanVienId),
     BinhLuanChaID: parentId ? toObjectId(parentId) : undefined,
   });
   const filesDTO = await service.uploadForTask(
@@ -156,11 +156,26 @@ service.createCommentWithFiles = async (
     (user && user.UserName) ||
     "Người dùng";
   const base = comment.toObject();
+
+  // ✅ Fire notification trigger for comment
+  try {
+    const triggerService = require("../../../services/triggerService");
+    const cv = await CongViec.findById(congViecId).lean();
+    await triggerService.fire("CongViec.comment", {
+      congViec: cv,
+      comment: base,
+      nguoiBinhLuan: { _id: nhanVienId, Ten: tenNguoiBinhLuan },
+      performerId: nhanVienId, // NhanVienID của người bình luận để excludePerformer hoạt động
+    });
+  } catch (triggerErr) {
+    console.error("[file.service] Trigger error:", triggerErr.message);
+  }
+
   return {
     _id: String(base._id),
     CongViecID: String(base.CongViecID),
     BinhLuanChaID: base.BinhLuanChaID ? String(base.BinhLuanChaID) : null,
-    NguoiBinhLuanID: String(req.userId),
+    NguoiBinhLuanID: String(nhanVienId),
     NoiDung: base.NoiDung,
     NguoiBinhLuan: { Ten: tenNguoiBinhLuan },
     NgayBinhLuan: base.NgayBinhLuan || base.createdAt || new Date(),

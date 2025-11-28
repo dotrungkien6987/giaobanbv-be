@@ -26,9 +26,6 @@ const {
   TRANG_THAI_CONG_VIEC,
 } = require("./QuanLyTrangThaiCongViec");
 
-// Notification System
-const QuyTacThongBao = require("./QuyTacThongBao");
-
 // Evaluation Criteria (Legacy - keeping for backward compatibility)
 const EvaluationCriteria = require("./EvaluationCriteria");
 const EvaluationCycle = require("./EvaluationCycle");
@@ -58,8 +55,10 @@ const CongViec = require("./CongViec");
 const BinhLuan = require("./BinhLuan");
 const TepTin = require("./TepTin");
 
-// Notifications
+// Notification System (New)
 const Notification = require("./Notification");
+const NotificationTemplate = require("./NotificationTemplate");
+const UserNotificationSettings = require("./UserNotificationSettings");
 
 module.exports = {
   // Core Organization (Tên tiếng Việt)
@@ -75,9 +74,6 @@ module.exports = {
   LichSuGanNhiemVu,
   QuanLyTrangThaiCongViec,
   TRANG_THAI_CONG_VIEC,
-
-  // Notification System
-  QuyTacThongBao,
 
   // Evaluation (Legacy - keeping for backward compatibility)
   EvaluationCriteria,
@@ -106,6 +102,8 @@ module.exports = {
   BinhLuan,
   TepTin,
 
-  // Notifications
+  // Notification System (New)
   Notification,
+  NotificationTemplate,
+  UserNotificationSettings,
 };

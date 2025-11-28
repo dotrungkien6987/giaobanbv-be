@@ -1,3 +1,5 @@
+console.log("🔥🔥🔥 congViec.service.js LOADED AT:", new Date().toISOString());
+
 const mongoose = require("mongoose");
 const { AppError } = require("../../../helpers/utils");
 
@@ -8,6 +10,8 @@ const Counter = require("../models/Counter");
 const BinhLuan = require("../models/BinhLuan");
 const TepTin = require("../models/TepTin");
 const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+const triggerService = require("../../../services/triggerService");
+const deadlineScheduler = require("../helpers/deadlineScheduler");
 
 function toObjectId(id) {
   return typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
@@ -1332,6 +1336,7 @@ service.getCongViecDetail = async (congviecid, req) => {
   if (congviec.createdAt) dto.NgayTao = congviec.createdAt;
 
   // Enrich with comments: display NhanVien name and timestamp
+  // NguoiBinhLuanID ref trực tiếp đến NhanVien (không phải User)
   const comments = await BinhLuan.aggregate([
     {
       $match: {
@@ -1342,17 +1347,8 @@ service.getCongViecDetail = async (congviecid, req) => {
     { $sort: { NgayBinhLuan: -1, createdAt: -1 } },
     {
       $lookup: {
-        from: "users",
-        localField: "NguoiBinhLuanID",
-        foreignField: "_id",
-        as: "User",
-      },
-    },
-    { $unwind: { path: "$User", preserveNullAndEmptyArrays: true } },
-    {
-      $lookup: {
         from: "nhanviens",
-        localField: "User.NhanVienID",
+        localField: "NguoiBinhLuanID",
         foreignField: "_id",
         as: "NhanVien",
       },
@@ -1367,12 +1363,7 @@ service.getCongViecDetail = async (congviecid, req) => {
         NgayBinhLuan: 1,
         createdAt: 1,
         NguoiBinhLuan: {
-          Ten: {
-            $ifNull: [
-              "$NhanVien.Ten",
-              { $ifNull: ["$User.HoTen", "$User.UserName"] },
-            ],
-          },
+          Ten: { $ifNull: ["$NhanVien.Ten", "$NhanVien.HoTen"] },
         },
       },
     },
@@ -1381,6 +1372,7 @@ service.getCongViecDetail = async (congviecid, req) => {
   // Lưu ý: không gán BinhLuans tại đây; sẽ gán sau khi lookup Files để đảm bảo lần tải đầu có kèm tệp đính kèm
 
   // Lookup attached files for each comment
+  // NguoiBinhLuanID ref trực tiếp đến NhanVien (không phải User)
   const commentsWithFiles = await BinhLuan.aggregate([
     {
       $match: {
@@ -1392,17 +1384,8 @@ service.getCongViecDetail = async (congviecid, req) => {
     { $sort: { NgayBinhLuan: -1, createdAt: -1 } },
     {
       $lookup: {
-        from: "users",
-        localField: "NguoiBinhLuanID",
-        foreignField: "_id",
-        as: "User",
-      },
-    },
-    { $unwind: { path: "$User", preserveNullAndEmptyArrays: true } },
-    {
-      $lookup: {
         from: "nhanviens",
-        localField: "User.NhanVienID",
+        localField: "NguoiBinhLuanID",
         foreignField: "_id",
         as: "NhanVien",
       },
@@ -1465,12 +1448,7 @@ service.getCongViecDetail = async (congviecid, req) => {
         createdAt: 1,
         TrangThai: 1,
         NguoiBinhLuan: {
-          Ten: {
-            $ifNull: [
-              "$NhanVien.Ten",
-              { $ifNull: ["$User.HoTen", "$User.UserName"] },
-            ],
-          },
+          Ten: { $ifNull: ["$NhanVien.Ten", "$NhanVien.HoTen"] },
         },
         Files: 1,
         repliesCount: 1,
@@ -1560,6 +1538,13 @@ service.giaoViec = async (id, payload = {}, req) => {
     congviec.NgayCanhBao = ngay;
   }
   await congviec.save();
+
+  // 🔔 Notification trigger - Giao việc
+  await triggerService.fire("CongViec.giaoViec", {
+    congViec: congviec,
+    performerId: req.user?.NhanVienID,
+  });
+
   const populated = await CongViec.findById(congviec._id)
     .populate({
       path: "NguoiGiaoViec",
@@ -1932,6 +1917,43 @@ service.transition = async (id, payload = {}, req) => {
     });
   }
   await congviec.save();
+  console.log(
+    "🔥 DEBUG transition: Saved, action=",
+    action,
+    "congviec._id=",
+    congviec._id
+  );
+
+  // 🔔 Notification trigger - Transition actions
+  try {
+    console.log(
+      "🔥 DEBUG transition: Calling triggerService.fire('CongViec." +
+        action +
+        "')"
+    );
+    await triggerService.fire(`CongViec.${action}`, {
+      congViec: congviec,
+      performerId: performerIdCtx,
+      ghiChu: ghiChu || lyDo,
+    });
+    console.log("🔥 DEBUG transition: triggerService.fire() completed");
+  } catch (triggerErr) {
+    console.error(
+      "🔥 DEBUG transition: triggerService.fire() ERROR:",
+      triggerErr
+    );
+  }
+
+  // 📅 Handle deadline jobs on status change (non-blocking)
+  try {
+    await deadlineScheduler.handleStatusChange(congviec);
+  } catch (scheduleErr) {
+    console.error(
+      "[transition] Deadline scheduling error:",
+      scheduleErr.message
+    );
+  }
+
   // Lightweight fetch for patch building already done in controller; still return full for backward compatibility
   const populated = await CongViec.findById(congviec._id)
     .populate({
@@ -2093,6 +2115,18 @@ service.createCongViec = async (congViecData, req) => {
 
   const congviec = new CongViec(newCongViecData);
   await congviec.save();
+
+  // 📅 Schedule deadline notification jobs (non-blocking)
+  try {
+    await deadlineScheduler.scheduleDeadlineJobs(congviec, {
+      cancelExisting: false,
+    });
+  } catch (scheduleErr) {
+    console.error(
+      "[createCongViec] Deadline scheduling error:",
+      scheduleErr.message
+    );
+  }
 
   // Return populated data
   const populatedCongViec = await CongViec.findById(congviec._id)
@@ -2412,8 +2446,7 @@ service.listReplies = async (parentId, req) => {
   })
     .populate({
       path: "NguoiBinhLuanID",
-      select: "NhanVienID HoTen UserName",
-      populate: { path: "NhanVienID", select: "Ten" },
+      select: "Ten HoTen", // NguoiBinhLuanID ref đến NhanVien model
     })
     .sort({ NgayBinhLuan: 1, createdAt: 1 })
     .lean();
@@ -2449,12 +2482,8 @@ service.listReplies = async (parentId, req) => {
   }, {});
 
   const dtos = replies.map((r) => {
-    const user = r.NguoiBinhLuanID || {};
-    const tenNguoiBinhLuan =
-      (user.NhanVienID && user.NhanVienID.Ten) ||
-      user.HoTen ||
-      user.UserName ||
-      "Người dùng";
+    const nhanVien = r.NguoiBinhLuanID || {};
+    const tenNguoiBinhLuan = nhanVien.Ten || nhanVien.HoTen || "Người dùng";
     return {
       _id: String(r._id),
       CongViecID: r.CongViecID ? String(r.CongViecID) : null,
@@ -2489,6 +2518,13 @@ service.updateCongViec = async (congviecid, updateData, req) => {
   if (!congviec) {
     throw new AppError(404, "Không tìm thấy công việc");
   }
+
+  // 📅 Capture old values for deadline scheduling check
+  const oldDeadlineSnapshot = {
+    NgayHetHan: congviec.NgayHetHan,
+    NgayCanhBao: congviec.NgayCanhBao,
+    TrangThai: congviec.TrangThai,
+  };
 
   // =============================
   // PERMISSION CHECK - Kiểm tra quyền cập nhật
@@ -2715,6 +2751,20 @@ service.updateCongViec = async (congviecid, updateData, req) => {
 
   await congviec.save();
 
+  // 📅 Reschedule deadline jobs if dates changed (non-blocking)
+  try {
+    if (deadlineScheduler.needsRescheduling(oldDeadlineSnapshot, congviec)) {
+      await deadlineScheduler.scheduleDeadlineJobs(congviec, {
+        cancelExisting: true,
+      });
+    }
+  } catch (scheduleErr) {
+    console.error(
+      "[updateCongViec] Deadline scheduling error:",
+      scheduleErr.message
+    );
+  }
+
   // Return populated data
   const populatedCongViec = await CongViec.findById(congviec._id)
     .populate({
@@ -2793,6 +2843,39 @@ service.addComment = async (congviecid, noiDung, req, parentId = null) => {
   // Add comment to CongViec
   congviec.BinhLuans.push(binhLuan._id);
   await congviec.save();
+  console.log("🔥 DEBUG addComment: Comment saved, about to call trigger");
+  console.log(
+    "🔥 DEBUG addComment: congviec._id=",
+    congviec._id,
+    "NguoiChinhID=",
+    congviec.NguoiChinhID,
+    "NguoiGiaoViecID=",
+    congviec.NguoiGiaoViecID
+  );
+  console.log(
+    "🔥 DEBUG addComment: binhLuan._id=",
+    binhLuan._id,
+    "NguoiBinhLuanID=",
+    binhLuan.NguoiBinhLuanID
+  );
+
+  // 🔔 Notification trigger - Comment
+  try {
+    console.log(
+      "🔥 DEBUG addComment: Calling triggerService.fire('CongViec.comment')"
+    );
+    await triggerService.fire("CongViec.comment", {
+      congViec: congviec,
+      comment: binhLuan,
+      performerId: currentUser.NhanVienID,
+    });
+    console.log("🔥 DEBUG addComment: triggerService.fire() completed");
+  } catch (triggerErr) {
+    console.error(
+      "🔥 DEBUG addComment: triggerService.fire() ERROR:",
+      triggerErr
+    );
+  }
 
   // Build DTO consistent with FE expectations
   const nhanvien = await NhanVien.findById(currentUser.NhanVienID)

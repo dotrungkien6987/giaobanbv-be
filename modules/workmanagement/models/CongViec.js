@@ -119,6 +119,18 @@ const congViecSchema = new Schema(
     FirstSapQuaHanAt: { type: Date },
     FirstQuaHanAt: { type: Date },
 
+    // Tracking fields cho deadline notifications (Agenda.js)
+    ApproachingNotifiedAt: {
+      type: Date,
+      default: null,
+      description: "Thời điểm đã gửi thông báo sắp đến hạn",
+    },
+    OverdueNotifiedAt: {
+      type: Date,
+      default: null,
+      description: "Thời điểm đã gửi thông báo quá hạn",
+    },
+
     // Cấu hình cảnh báo hết hạn
     CanhBaoMode: { type: String, enum: ["FIXED", "PERCENT"], default: null },
     CanhBaoSapHetHanPercent: {

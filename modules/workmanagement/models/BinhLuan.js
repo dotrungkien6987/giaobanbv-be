@@ -213,7 +213,9 @@ binhLuanSchema.pre("save", function (next) {
   next();
 });
 
-// Post-save middleware to send notifications
+// TODO: [NOTIFICATION_SYSTEM] - Thay thế bằng notificationService.send() khi implement Phase 2
+// Post-save middleware to send notifications (DISABLED - waiting for new notification system)
+/*
 binhLuanSchema.post("save", async function () {
   if (this.isNew) {
     const ThongBao = mongoose.model("ThongBao");
@@ -258,6 +260,7 @@ binhLuanSchema.post("save", async function () {
     }
   }
 });
+*/
 
 const BinhLuan = mongoose.model("BinhLuan", binhLuanSchema);
 module.exports = BinhLuan;

@@ -239,34 +239,6 @@ const templates = [
     requiredVariables: ["managerName", "cycleName", "reason", "evaluationId"],
   },
 
-  // ===== TICKET NOTIFICATIONS =====
-  {
-    type: "TICKET_CREATED",
-    name: "Yêu cầu hỗ trợ mới",
-    description: "Khi có yêu cầu hỗ trợ mới gửi đến",
-    category: "ticket",
-    titleTemplate: "Yêu cầu hỗ trợ mới",
-    bodyTemplate: "{{requesterName}} gửi yêu cầu: {{ticketTitle}}",
-    icon: "ticket",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "normal",
-    actionUrlTemplate: "/ticket/{{ticketId}}",
-    requiredVariables: ["requesterName", "ticketTitle", "ticketId"],
-  },
-  {
-    type: "TICKET_RESOLVED",
-    name: "Yêu cầu đã xử lý",
-    description: "Khi yêu cầu hỗ trợ được xử lý xong",
-    category: "ticket",
-    titleTemplate: "Yêu cầu đã xử lý ✓",
-    bodyTemplate: "{{resolverName}} đã xử lý: {{ticketTitle}}",
-    icon: "check",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "normal",
-    actionUrlTemplate: "/ticket/{{ticketId}}",
-    requiredVariables: ["resolverName", "ticketTitle", "ticketId"],
-  },
-
   // ===== SYSTEM NOTIFICATIONS =====
   {
     type: "SYSTEM_ANNOUNCEMENT",

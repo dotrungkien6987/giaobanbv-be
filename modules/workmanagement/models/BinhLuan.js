@@ -13,10 +13,6 @@ const binhLuanSchema = Schema(
       type: Schema.ObjectId,
       ref: "CongViec",
     },
-    YeuCauHoTroID: {
-      type: Schema.ObjectId,
-      ref: "YeuCauHoTro",
-    },
     NguoiBinhLuanID: {
       type: Schema.ObjectId,
       required: true,
@@ -52,7 +48,6 @@ const binhLuanSchema = Schema(
 
 // Indexes
 binhLuanSchema.index({ CongViecID: 1, NgayBinhLuan: -1 });
-binhLuanSchema.index({ YeuCauHoTroID: 1, NgayBinhLuan: -1 });
 binhLuanSchema.index({ NguoiBinhLuanID: 1 });
 binhLuanSchema.index({ BinhLuanChaID: 1 });
 binhLuanSchema.index({ TrangThai: 1 });

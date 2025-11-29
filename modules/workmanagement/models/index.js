@@ -42,10 +42,6 @@ const DanhGiaNhiemVuThuongQuy = require("./DanhGiaNhiemVuThuongQuy");
 // Tasks and Assignments (legacy AssignedTask đã gỡ bỏ)
 const NhomViecUser = require("./NhomViecUser");
 
-// Tickets System
-const TicketCategory = require("./TicketCategory");
-const Ticket = require("./Ticket");
-
 // Files and Comments (legacy) — đã thay thế bằng TepTin/TepTinCongViec và BinhLuan/BinhLuanCongViec
 // const File = require("./File");
 // const Comment = require("./Comment");
@@ -90,10 +86,6 @@ module.exports = {
 
   // Tasks
   NhomViecUser,
-
-  // Tickets
-  TicketCategory,
-  Ticket,
 
   // Files & Comments — sử dụng TepTin/TepTinCongViec và BinhLuan/BinhLuanCongViec
 

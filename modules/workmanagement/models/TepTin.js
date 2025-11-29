@@ -49,10 +49,6 @@ const tepTinSchema = Schema(
       type: Schema.ObjectId,
       ref: "CongViec",
     },
-    YeuCauHoTroID: {
-      type: Schema.ObjectId,
-      ref: "YeuCauHoTro",
-    },
     // Liên kết (tuỳ chọn) tới bình luận để quản lý file đính kèm comment
     BinhLuanID: {
       type: Schema.ObjectId,
@@ -85,7 +81,6 @@ const tepTinSchema = Schema(
 
 // Indexes
 tepTinSchema.index({ CongViecID: 1 });
-tepTinSchema.index({ YeuCauHoTroID: 1 });
 tepTinSchema.index({ NguoiTaiLenID: 1 });
 tepTinSchema.index({ NgayTaiLen: -1 });
 tepTinSchema.index({ TrangThai: 1 });

@@ -17,7 +17,7 @@ const { whitelist } = require("../config/corsConfig");
 class SocketService {
   constructor() {
     this.io = null;
-    this.onlineUsers = new Map(); // userId -> socketId
+    this.onlineUsers = new Map(); // userId -> Set<socketId> (support multiple connections per user)
   }
 
   /**
@@ -68,18 +68,30 @@ class SocketService {
     // Connection handler
     this.io.on("connection", (socket) => {
       const userId = socket.userId;
-      console.log(`[Socket] User connected: ${userId}`);
+      console.log(`[Socket] User connected: ${userId} (socket: ${socket.id})`);
 
-      // Track online user
-      this.onlineUsers.set(userId, socket.id);
+      // Track online user - support multiple connections (multiple tabs/browsers)
+      if (!this.onlineUsers.has(userId)) {
+        this.onlineUsers.set(userId, new Set());
+      }
+      this.onlineUsers.get(userId).add(socket.id);
 
       // Join user-specific room for easier targeting
       socket.join(`user:${userId}`);
 
       // Handle disconnect
       socket.on("disconnect", () => {
-        console.log(`[Socket] User disconnected: ${userId}`);
-        this.onlineUsers.delete(userId);
+        console.log(
+          `[Socket] User disconnected: ${userId} (socket: ${socket.id})`
+        );
+        const userSockets = this.onlineUsers.get(userId);
+        if (userSockets) {
+          userSockets.delete(socket.id);
+          // Remove user from map if no more connections
+          if (userSockets.size === 0) {
+            this.onlineUsers.delete(userId);
+          }
+        }
       });
 
       // Handle notification events from client (for real-time sync across tabs)
@@ -98,19 +110,18 @@ class SocketService {
   }
 
   /**
-   * Emit event to specific user
+   * Emit event to specific user (all their connections/tabs/browsers)
    * @param {string} userId
    * @param {string} event
    * @param {any} data
    * @returns {boolean} - true if user is online
    */
   emitToUser(userId, event, data) {
-    const socketId = this.onlineUsers.get(userId.toString());
-    if (socketId) {
-      this.io.to(socketId).emit(event, data);
-      return true;
-    }
-    return false;
+    const userIdStr = userId.toString();
+    // Use room to emit to ALL connections of this user
+    // (each socket joins room `user:${userId}` on connect)
+    this.io.to(`user:${userIdStr}`).emit(event, data);
+    return this.onlineUsers.has(userIdStr);
   }
 
   /**

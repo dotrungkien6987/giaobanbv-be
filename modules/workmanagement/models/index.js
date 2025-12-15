@@ -51,6 +51,14 @@ const CongViec = require("./CongViec");
 const BinhLuan = require("./BinhLuan");
 const TepTin = require("./TepTin");
 
+// YeuCau System (Ticket/Support Request)
+const DanhMucYeuCau = require("./DanhMucYeuCau");
+const LyDoTuChoi = require("./LyDoTuChoi");
+const CauHinhThongBaoKhoa = require("./CauHinhThongBaoKhoa");
+const YeuCau = require("./YeuCau");
+const YeuCauCounter = require("./YeuCauCounter");
+const LichSuYeuCau = require("./LichSuYeuCau");
+
 // Notification System (New)
 const Notification = require("./Notification");
 const NotificationTemplate = require("./NotificationTemplate");
@@ -93,6 +101,14 @@ module.exports = {
   CongViec,
   BinhLuan,
   TepTin,
+
+  // YeuCau System (Ticket/Support Request)
+  DanhMucYeuCau,
+  LyDoTuChoi,
+  CauHinhThongBaoKhoa,
+  YeuCau,
+  YeuCauCounter,
+  LichSuYeuCau,
 
   // Notification System (New)
   Notification,

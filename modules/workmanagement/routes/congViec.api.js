@@ -168,6 +168,12 @@ router.put("/congviec/:id", congViecController.updateCongViec);
 // Cập nhật tiến độ (thêm lịch sử)
 router.post("/congviec/:id/progress", congViecController.updateProgress);
 
+// Gán nhiệm vụ thường quy
+router.post(
+  "/congviec/:id/assign-routine-task",
+  congViecController.assignRoutineTask
+);
+
 // Flow actions
 router.post("/congviec/:id/giao-viec", congViecController.giaoViec);
 router.post("/congviec/:id/tiep-nhan", congViecController.tiepNhan);

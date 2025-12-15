@@ -4,6 +4,7 @@ const {
   UserNotificationSettings,
 } = require("../models");
 const socketService = require("../../../services/socketService");
+const notificationHelper = require("../../../helpers/notificationHelper");
 // const fcmService = require("../../../services/fcmService"); // Uncomment when FCM is ready
 
 /**
@@ -123,13 +124,31 @@ class NotificationService {
    * Send notification to single user
    * @param {Object} options
    * @param {string} options.type - Notification type (must match template)
-   * @param {string} options.recipientId - User._id
+   * @param {string} options.recipientId - User._id hoặc NhanVien._id (tự động convert)
    * @param {Object} options.data - Data for template rendering
    * @param {string} [options.priority] - Override default priority
    * @returns {Promise<Notification|null>}
    */
   async send({ type, recipientId, data = {}, priority }) {
     try {
+      // 0. Convert NhanVienID → UserID nếu cần
+      let userId = await notificationHelper.resolveNhanVienToUserId(
+        recipientId
+      );
+      // Nếu không tìm thấy qua NhanVienID, có thể recipientId đã là UserID
+      if (!userId) {
+        const User = require("../../../models/User");
+        const userExists = await User.exists({ _id: recipientId });
+        if (userExists) {
+          userId = recipientId;
+        } else {
+          console.log(
+            `[NotificationService] No user found for recipientId: ${recipientId}`
+          );
+          return null;
+        }
+      }
+
       // 1. Get template (auto-creates if not found)
       const dataKeys = Object.keys(data);
       const template = await this.getTemplate(type, dataKeys);
@@ -141,12 +160,12 @@ class NotificationService {
       });
 
       // 3. Get user settings
-      const settings = await UserNotificationSettings.getOrCreate(recipientId);
+      const settings = await UserNotificationSettings.getOrCreate(userId);
 
       // 4. Check if user wants this notification
       if (!settings.shouldSend(type, "inapp")) {
         console.log(
-          `[NotificationService] User ${recipientId} disabled ${type} notifications`
+          `[NotificationService] User ${userId} disabled ${type} notifications`
         );
         return null;
       }
@@ -160,7 +179,7 @@ class NotificationService {
 
       // 6. Save to database
       const notification = await Notification.create({
-        recipientId,
+        recipientId: userId,
         type: template.type,
         title,
         body,
@@ -172,15 +191,15 @@ class NotificationService {
       });
 
       // 7. Send via Socket.IO if online
-      const isOnline = socketService.isUserOnline(recipientId);
+      const isOnline = socketService.isUserOnline(userId);
       if (isOnline) {
-        socketService.emitToUser(recipientId, "notification:new", {
+        socketService.emitToUser(userId, "notification:new", {
           notification: notification.toObject(),
         });
 
         // Also send updated unread count
-        const unreadCount = await this.getUnreadCount(recipientId);
-        socketService.emitToUser(recipientId, "notification:count", {
+        const unreadCount = await this.getUnreadCount(userId);
+        socketService.emitToUser(userId, "notification:count", {
           count: unreadCount,
         });
       }
@@ -194,7 +213,7 @@ class NotificationService {
       }
 
       console.log(
-        `[NotificationService] ✅ Sent ${type} to ${recipientId} (online: ${isOnline})`
+        `[NotificationService] ✅ Sent ${type} to ${userId} (online: ${isOnline})`
       );
       return notification;
     } catch (error) {

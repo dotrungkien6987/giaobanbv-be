@@ -319,6 +319,30 @@ controller.updateProgress = catchAsync(async (req, res) => {
 });
 
 /**
+ * Gán nhiệm vụ thường quy cho công việc
+ * POST /api/workmanagement/congviec/:id/assign-routine-task
+ */
+controller.assignRoutineTask = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { nhiemVuThuongQuyID, isKhac, expectedVersion } = req.body || {};
+
+  const dto = await congViecService.assignRoutineTask(
+    id,
+    { nhiemVuThuongQuyID, isKhac, expectedVersion },
+    req
+  );
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { data: dto },
+    null,
+    "Gán nhiệm vụ thường quy thành công"
+  );
+});
+
+/**
  * Thêm bình luận vào công việc
  * POST /api/workmanagement/congviec/:id/comment
  */

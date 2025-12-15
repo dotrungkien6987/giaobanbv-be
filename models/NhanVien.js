@@ -39,6 +39,8 @@ const nhanvienSchema = Schema(
       type: Number,
       enum: [0, 1],
     },
+    // Ảnh đại diện (1 ảnh) - lưu đường dẫn tương đối dưới thư mục uploads (vd: avatars/<nhanVienId>/<fileName>)
+    Avatar: { type: String, default: "" },
     Images: { type: [String], default: [] },
     isDeleted: { type: Boolean, default: false, select: false },
   },

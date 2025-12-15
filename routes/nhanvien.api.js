@@ -5,6 +5,10 @@ const validators = require("../middlewares/validators");
 
 const nhanvienController = require("../controllers/nhanvien.controller");
 const authentication = require("../middlewares/authentication");
+const {
+  uploadAvatar,
+  verifyAvatarMagic,
+} = require("../middlewares/avatarUpload");
 
 /**
  * @route POST /nhanvien
@@ -17,6 +21,29 @@ router.post(
   authentication.loginRequired,
 
   nhanvienController.insertOne
+);
+
+// ===== Self-service profile for logged-in user (NhanVien linked by User.NhanVienID) =====
+router.get("/me", authentication.loginRequired, nhanvienController.getMe);
+
+router.patch("/me", authentication.loginRequired, nhanvienController.updateMe);
+
+router.post(
+  "/me/avatar",
+  authentication.loginRequired,
+  uploadAvatar.single("avatar"),
+  verifyAvatarMagic,
+  nhanvienController.uploadMyAvatar
+);
+
+// Serve avatar by NhanVienID (login required)
+router.get(
+  "/:nhanvienID/avatar",
+  authentication.loginRequired,
+  validators.validate([
+    param("nhanvienID").exists().isString().custom(validators.checkObjectId),
+  ]),
+  nhanvienController.getAvatarByNhanVienID
 );
 /**
  * @route PUT /nhanvien
@@ -148,11 +175,10 @@ router.delete(
   nhanvienController.deleteOneNhanVien
 );
 
-module.exports = router;
-
 router.post(
   "/import",
   authentication.loginRequired,
-
   nhanvienController.importNhanVien
 );
+
+module.exports = router;

@@ -122,9 +122,22 @@ module.exports = {
   "CongViec.comment": {
     enabled: true,
     template: "COMMENT_ADDED",
-    description: "Thông báo khi có bình luận mới",
+    description: "Thông báo khi có bình luận mới trên công việc",
     handler: "comment",
     recipients: "all", // Gửi cho tất cả người liên quan
+    excludePerformer: true,
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // YÊU CẦU (YeuCau) - 1 trigger
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  "YeuCau.comment": {
+    enabled: true,
+    template: "COMMENT_ADDED",
+    description: "Thông báo khi có bình luận mới trên yêu cầu",
+    handler: "yeuCauComment",
+    recipients: "all", // Gửi cho người tạo + người xử lý + điều phối
     excludePerformer: true,
   },
 

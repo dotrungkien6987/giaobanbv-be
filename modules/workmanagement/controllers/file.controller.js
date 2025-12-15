@@ -92,4 +92,13 @@ controller.streamDownload = catchAsync(async (req, res) => {
   stream.pipe(res);
 });
 
+// ═══════════════════════════════════════════════════════════════
+// 🔓 THUMBNAIL - Public endpoint (không cần auth)
+// ═══════════════════════════════════════════════════════════════
+controller.streamThumbnail = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  // Không có req.userId vì không qua authentication middleware
+  await fileService.streamThumbnail(id, res);
+});
+
 module.exports = controller;

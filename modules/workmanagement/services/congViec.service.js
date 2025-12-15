@@ -10,6 +10,8 @@ const Counter = require("../models/Counter");
 const BinhLuan = require("../models/BinhLuan");
 const TepTin = require("../models/TepTin");
 const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
+const NhiemVuThuongQuy = require("../models/NhiemVuThuongQuy");
 const triggerService = require("../../../services/triggerService");
 const deadlineScheduler = require("../helpers/deadlineScheduler");
 
@@ -455,6 +457,148 @@ service.updateProgress = async (congviecId, payload, req) => {
   const dto = mapCongViecDTO(populated);
   // Patch response optimization could be added later; for now return full subset
   dto._progressAutoCompleted = autoCompleted;
+  return dto;
+};
+
+/**
+ * Gán nhiệm vụ thường quy cho công việc
+ * Chỉ Người Chính hoặc Người Giao Việc được phép
+ */
+service.assignRoutineTask = async (congviecId, payload, req) => {
+  if (!mongoose.Types.ObjectId.isValid(congviecId)) {
+    throw new AppError(400, "ID công việc không hợp lệ");
+  }
+
+  const { nhiemVuThuongQuyID, isKhac, expectedVersion } = payload || {};
+
+  // Validate: không thể vừa có ID vừa có flag Khác
+  if (nhiemVuThuongQuyID && isKhac) {
+    throw new AppError(
+      400,
+      "Không thể vừa chọn nhiệm vụ thường quy vừa đánh dấu 'Khác'"
+    );
+  }
+
+  // Validate: nhiemVuThuongQuyID nếu có phải là ObjectId hợp lệ
+  if (
+    nhiemVuThuongQuyID &&
+    !mongoose.Types.ObjectId.isValid(nhiemVuThuongQuyID)
+  ) {
+    throw new AppError(400, "ID nhiệm vụ thường quy không hợp lệ");
+  }
+
+  // Lấy công việc
+  const cv = await CongViec.findOne({
+    _id: congviecId,
+    isDeleted: { $ne: true },
+  });
+
+  if (!cv) {
+    throw new AppError(404, "Không tìm thấy công việc");
+  }
+
+  // Check permission
+  const currentUser = await User.findById(req.userId).lean();
+  if (!currentUser?.NhanVienID) {
+    throw new AppError(400, "Tài khoản chưa liên kết với nhân viên");
+  }
+
+  const performerId = String(currentUser.NhanVienID);
+  const isMain = String(cv.NguoiChinhID) === performerId;
+  const isOwner = String(cv.NguoiGiaoViecID) === performerId;
+  const normalizedRole = (currentUser.PhanQuyen || "").toLowerCase();
+  const isAdmin = ["admin", "superadmin"].includes(normalizedRole);
+
+  if (!isMain && !isOwner && !isAdmin) {
+    throw new AppError(
+      403,
+      "Chỉ người thực hiện chính, người giao việc hoặc admin được gán nhiệm vụ thường quy"
+    );
+  }
+
+  // Version guard: check optimistic concurrency
+  if (expectedVersion) {
+    const currentVersion = cv.updatedAt ? cv.updatedAt.toISOString() : null;
+    if (currentVersion && currentVersion !== expectedVersion) {
+      throw new AppError(
+        409,
+        "VERSION_CONFLICT",
+        "Dữ liệu đã thay đổi, vui lòng tải lại"
+      );
+    }
+  }
+
+  // Validate nhiemVuThuongQuyID nếu có: phải tồn tại trong hệ thống
+  if (nhiemVuThuongQuyID) {
+    const nvtqExists = await NhiemVuThuongQuy.exists({
+      _id: nhiemVuThuongQuyID,
+    });
+    if (!nvtqExists) {
+      throw new AppError(404, "Nhiệm vụ thường quy không tồn tại");
+    }
+
+    // Optional: Validate rằng nhiệm vụ này được giao cho nhân viên trong chu kỳ hiện tại
+    // (Có thể bỏ qua nếu muốn cho phép gán linh hoạt)
+    const assignment = await NhanVienNhiemVu.findOne({
+      NhanVienID: cv.NguoiChinhID,
+      NhiemVuThuongQuyID: nhiemVuThuongQuyID,
+    }).lean();
+
+    if (!assignment) {
+      // Warning nhưng vẫn cho phép gán (có thể chuyển thành throw AppError nếu muốn strict)
+      console.warn(
+        `[assignRoutineTask] Warning: Nhiệm vụ ${nhiemVuThuongQuyID} không được giao cho nhân viên ${cv.NguoiChinhID} trong bất kỳ chu kỳ nào`
+      );
+    }
+  }
+
+  // Update công việc
+  const oldNhiemVuID = cv.NhiemVuThuongQuyID;
+  const oldFlagKhac = cv.FlagNVTQKhac;
+
+  if (isKhac) {
+    // Đánh dấu "Khác" - xóa liên kết nhiệm vụ
+    cv.NhiemVuThuongQuyID = null;
+    cv.FlagNVTQKhac = true;
+  } else if (nhiemVuThuongQuyID) {
+    // Gán nhiệm vụ cụ thể
+    cv.NhiemVuThuongQuyID = nhiemVuThuongQuyID;
+    cv.FlagNVTQKhac = false;
+  } else {
+    // Clear cả hai (unassign)
+    cv.NhiemVuThuongQuyID = null;
+    cv.FlagNVTQKhac = false;
+  }
+
+  await cv.save();
+
+  // Populate để trả về DTO đầy đủ
+  const populated = await CongViec.findById(cv._id)
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NhiemVuThuongQuyID",
+      select: "TenNhiemVu MoTa MucDoKho",
+    })
+    .lean();
+
+  const dto = mapCongViecDTO(populated);
+
+  // Log audit trail (optional)
+  console.log(
+    `[assignRoutineTask] User ${performerId} assigned routine task to CongViec ${congviecId}: ` +
+      `${oldNhiemVuID || "(none)"} (khác: ${oldFlagKhac}) -> ` +
+      `${cv.NhiemVuThuongQuyID || "(none)"} (khác: ${cv.FlagNVTQKhac})`
+  );
+
   return dto;
 };
 
@@ -1477,6 +1621,7 @@ service.getCongViecDetail = async (congviecid, req) => {
           NguoiTaiLenID: f.NguoiTaiLenID ? String(f.NguoiTaiLenID) : null,
           NgayTaiLen: f.NgayTaiLen,
           TrangThai: f.TrangThai || "ACTIVE",
+          thumbUrl: `/api/workmanagement/files/${String(f._id)}/thumb`,
           inlineUrl: `/api/workmanagement/files/${String(f._id)}/inline`,
           downloadUrl: `/api/workmanagement/files/${String(f._id)}/download`,
         }))
@@ -2475,6 +2620,7 @@ service.listReplies = async (parentId, req) => {
       NguoiTaiLenID: f.NguoiTaiLenID ? String(f.NguoiTaiLenID) : null,
       NgayTaiLen: f.NgayTaiLen,
       TrangThai: f.TrangThai || "ACTIVE",
+      thumbUrl: `/api/workmanagement/files/${String(f._id)}/thumb`,
       inlineUrl: `/api/workmanagement/files/${String(f._id)}/inline`,
       downloadUrl: `/api/workmanagement/files/${String(f._id)}/download`,
     });

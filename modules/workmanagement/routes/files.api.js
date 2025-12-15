@@ -2,11 +2,32 @@ const express = require("express");
 const router = express.Router();
 const authentication = require("../../../middlewares/authentication");
 const fileController = require("../controllers/file.controller");
+const rateLimit = require("express-rate-limit");
 const {
   upload,
   verifyMagicAndTotalSize,
 } = require("../middlewares/upload.middleware");
 
+// Rate limiter cho thumbnail endpoint (public)
+const thumbLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 phút
+  max: 100, // 100 requests/IP/phút
+  message: {
+    success: false,
+    message: "Quá nhiều yêu cầu, vui lòng thử lại sau",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 🔓 PUBLIC ENDPOINT - Thumbnail (không cần auth)
+// ═══════════════════════════════════════════════════════════════
+router.get("/files/:id/thumb", thumbLimiter, fileController.streamThumbnail);
+
+// ═══════════════════════════════════════════════════════════════
+// 🔒 PROTECTED ENDPOINTS - Cần authentication
+// ═══════════════════════════════════════════════════════════════
 router.use(authentication.loginRequired);
 
 // Upload files for a task (no comment)

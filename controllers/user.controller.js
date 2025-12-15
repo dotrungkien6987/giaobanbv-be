@@ -76,6 +76,47 @@ userController.getCurrentUser = catchAsync(async (req, res, next) => {
   );
 });
 
+/**
+ * Get current user with full NhanVien info (including NhanVien.KhoaID)
+ * Used for Work Management module that needs NhanVien.KhoaID instead of User.KhoaID
+ */
+userController.getCurrentUserFull = catchAsync(async (req, res, next) => {
+  const curentUserId = req.userId;
+
+  const user = await User.findById(curentUserId).populate("KhoaID");
+  if (!user)
+    throw new AppError(400, "User not found", "Get current User Error");
+
+  let nhanVien = null;
+  let nhanVienKhoaId = null;
+
+  // Populate NhanVien with KhoaID if user has NhanVienID
+  if (user.NhanVienID) {
+    const NhanVien = require("../models/NhanVien");
+    nhanVien = await NhanVien.findById(user.NhanVienID).populate("KhoaID");
+
+    if (nhanVien && nhanVien.KhoaID) {
+      // Extract KhoaID as string or object ID
+      nhanVienKhoaId = nhanVien.KhoaID._id
+        ? nhanVien.KhoaID._id.toString()
+        : nhanVien.KhoaID.toString();
+    }
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      user,
+      nhanVien,
+      nhanVienKhoaId,
+    },
+    null,
+    "Get current User with full info successful"
+  );
+});
+
 userController.getAllUsers = catchAsync(async (req, res, next) => {
   let users = await User.find({ isDeleted: false })
     .populate("KhoaID")

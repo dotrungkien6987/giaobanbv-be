@@ -157,6 +157,8 @@ class TriggerService {
         return this._handleKPI(context, config);
       case "comment":
         return this._handleComment(context, config);
+      case "yeuCauComment":
+        return this._handleYeuCauComment(context, config);
       case "deadline":
         return this._handleDeadline(context, config);
       default:
@@ -344,6 +346,52 @@ class TriggerService {
       taskId: String(congViec._id),
       taskCode: congViec.MaCongViec || "",
       taskName: congViec.TieuDe || "Công việc",
+      commenterName: commenterName,
+      commentPreview: comment.NoiDung?.substring(0, 100) || "",
+    };
+
+    return { recipientNhanVienIds, data };
+  }
+
+  /**
+   * Handler for YeuCau Comment trigger
+   * @private
+   */
+  async _handleYeuCauComment(context, config) {
+    const { yeuCau, comment } = context;
+    console.log(`[TriggerService] 💬 _handleYeuCauComment called`);
+
+    if (!yeuCau || !comment) {
+      console.log(
+        `[TriggerService] ⚠️ _handleYeuCauComment: missing yeuCau or comment`
+      );
+      return null;
+    }
+
+    // Recipients: người tạo + người xử lý + điều phối
+    let recipientNhanVienIds = [];
+
+    if (yeuCau.NguoiYeuCauID) recipientNhanVienIds.push(yeuCau.NguoiYeuCauID);
+    if (yeuCau.NguoiXuLyID) recipientNhanVienIds.push(yeuCau.NguoiXuLyID);
+    if (yeuCau.NguoiDieuPhoiID)
+      recipientNhanVienIds.push(yeuCau.NguoiDieuPhoiID);
+    if (yeuCau.NguoiDuocDieuPhoiID)
+      recipientNhanVienIds.push(yeuCau.NguoiDuocDieuPhoiID);
+
+    console.log(
+      `[TriggerService] 💬 YeuCau recipientNhanVienIds (before dedup):`,
+      recipientNhanVienIds
+    );
+
+    // Build template data
+    const commenterName = await notificationHelper.getDisplayName(
+      comment.NguoiBinhLuanID
+    );
+
+    const data = {
+      yeuCauId: String(yeuCau._id),
+      yeuCauCode: yeuCau.MaYeuCau || "",
+      yeuCauTitle: yeuCau.TieuDe || "Yêu cầu",
       commenterName: commenterName,
       commentPreview: comment.NoiDung?.substring(0, 100) || "",
     };

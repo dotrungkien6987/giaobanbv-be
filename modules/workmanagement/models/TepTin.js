@@ -49,6 +49,10 @@ const tepTinSchema = Schema(
       type: Schema.ObjectId,
       ref: "CongViec",
     },
+    YeuCauID: {
+      type: Schema.ObjectId,
+      ref: "YeuCau",
+    },
     // Liên kết (tuỳ chọn) tới bình luận để quản lý file đính kèm comment
     BinhLuanID: {
       type: Schema.ObjectId,
@@ -81,6 +85,7 @@ const tepTinSchema = Schema(
 
 // Indexes
 tepTinSchema.index({ CongViecID: 1 });
+tepTinSchema.index({ YeuCauID: 1, TrangThai: 1, NgayTaiLen: -1 });
 tepTinSchema.index({ NguoiTaiLenID: 1 });
 tepTinSchema.index({ NgayTaiLen: -1 });
 tepTinSchema.index({ TrangThai: 1 });
@@ -146,9 +151,9 @@ tepTinSchema.statics.timTheoCongViec = function (congViecId) {
     .sort({ NgayTaiLen: -1 });
 };
 
-tepTinSchema.statics.timTheoYeuCauHoTro = function (yeuCauId) {
+tepTinSchema.statics.timTheoYeuCau = function (yeuCauId) {
   return this.find({
-    YeuCauHoTroID: yeuCauId,
+    YeuCauID: yeuCauId,
     TrangThai: "ACTIVE",
   })
     .populate("NguoiTaiLenID", "HoTen MaNhanVien")
@@ -161,7 +166,7 @@ tepTinSchema.statics.timTheoNguoiDung = function (nguoiDungId, limit = 20) {
     TrangThai: "ACTIVE",
   })
     .populate("CongViecID", "TieuDe")
-    .populate("YeuCauHoTroID", "TieuDe")
+    .populate("YeuCauID", "TieuDe")
     .sort({ NgayTaiLen: -1 })
     .limit(limit);
 };

@@ -7,29 +7,38 @@ const { use } = require("./auth.api");
 const authentication = require("../middlewares/authentication");
 
 /**
- * @route POST /user  
+ * @route POST /user
  * @description  Insert a new account
  * @body {UserName,Email,PassWord,KhoaID,HoTen,PhanQuyen}
  * @access Admin require
  */
 router.post(
   "/",
-  authentication.loginRequired,authentication.adminRequired,
+  authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     body("UserName", "Invalid name").exists().notEmpty(),
     body("PassWord", "Invalid password").exists().notEmpty(),
     body("KhoaID", "không có khoaID").exists().notEmpty(),
     body("PhanQuyen", "Không có phân quyền").exists().notEmpty(),
- 
   ]),
   userController.insertOne
 );
 
 //thieeu authentication.loginRequired
-router.get("/",authentication.loginRequired,authentication.adminRequired, userController.getUsers);
+router.get(
+  "/",
+  authentication.loginRequired,
+  authentication.adminRequired,
+  userController.getUsers
+);
 
-router.get("/all",authentication.loginRequired,authentication.adminRequired, userController.getAllUsers);
-
+router.get(
+  "/all",
+  authentication.loginRequired,
+  authentication.adminRequired,
+  userController.getAllUsers
+);
 
 /**
  *@route GET /users/me
@@ -37,18 +46,29 @@ router.get("/all",authentication.loginRequired,authentication.adminRequired, use
  * @params  userId
  * @access Login required
  */
- router.get("/me", authentication.loginRequired, userController.getCurrentUser);
+router.get("/me", authentication.loginRequired, userController.getCurrentUser);
 
+/**
+ *@route GET /users/me/full
+ * @description  Get current user with full NhanVien info (for Work Management module)
+ * @access Login required
+ */
+router.get(
+  "/me/full",
+  authentication.loginRequired,
+  userController.getCurrentUserFull
+);
 
- /**
- * @route PUT /user  
+/**
+ * @route PUT /user
  * @description  Update a account
  * @body {userId,UserName,Email,PassWord,KhoaID,HoTen,PhanQuyen}
  * @access Admin require
  */
- router.put(
+router.put(
   "/:id",
-  authentication.loginRequired,authentication.adminRequired,
+  authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     param("id").exists().isString().custom(validators.checkObjectId),
   ]),
@@ -56,20 +76,20 @@ router.get("/all",authentication.loginRequired,authentication.adminRequired, use
 );
 
 /**
- * @route PUT /user/resetpass/:id  
- * @description  reset pass 
+ * @route PUT /user/resetpass/:id
+ * @description  reset pass
  * @body {PassWord}
  * @access Admin require
  */
- router.put(
+router.put(
   "/resetpass/:id",
-  authentication.loginRequired,authentication.adminRequired,
+  authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     param("id").exists().isString().custom(validators.checkObjectId),
   ]),
   userController.resetPass
 );
-
 
 /**
  * @route PUT /user/me/resetpass/
@@ -77,13 +97,12 @@ router.get("/all",authentication.loginRequired,authentication.adminRequired, use
  * @body {PassWord}
  * @access Admin require
  */
- router.put(
+router.put(
   "/me/resetpass",
   authentication.loginRequired,
-  
+
   userController.resetPassMe
 );
-
 
 /**
  * @route DELETE /user/:id
@@ -93,13 +112,12 @@ router.get("/all",authentication.loginRequired,authentication.adminRequired, use
 
 router.delete(
   "/:id",
-  authentication.loginRequired,authentication.adminRequired,
+  authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     param("id").exists().isString().custom(validators.checkObjectId),
-    
   ]),
   userController.deleteUser
 );
-
 
 module.exports = router;

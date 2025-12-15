@@ -2,9 +2,11 @@ const path = require("path");
 const fs = require("fs-extra");
 const mime = require("mime-types");
 const mongoose = require("mongoose");
+const sharp = require("sharp");
 const TepTin = require("../models/TepTin");
 const CongViec = require("../models/CongViec");
 const BinhLuan = require("../models/BinhLuan");
+const YeuCau = require("../models/YeuCau");
 const { AppError } = require("../../../helpers/utils");
 const {
   canAccessCongViec,
@@ -25,6 +27,48 @@ async function assertAccess(congViecId, req) {
   const ok = await canAccessCongViec(congViecId, nhanVienId, isAdmin);
   if (!ok) throw new AppError(403, "Không có quyền truy cập công việc này");
   return { user, isAdmin, nhanVienId };
+}
+
+/**
+ * Kiểm tra quyền truy cập file (hỗ trợ cả CongViec và YeuCau)
+ */
+async function assertAccessForFile(doc, req) {
+  const userModel = require("../../../models/User");
+  const user = await userModel.findById(req.userId).lean();
+  if (!user) throw new AppError(401, "Không xác thực người dùng");
+
+  const isAdmin = user.PhanQuyen === "admin" || user.PhanQuyen === "manager";
+  const nhanVienId = user.NhanVienID;
+
+  // Admin có quyền truy cập tất cả
+  if (isAdmin) return { user, isAdmin, nhanVienId };
+
+  // File thuộc CongViec
+  if (doc.CongViecID) {
+    const ok = await canAccessCongViec(doc.CongViecID, nhanVienId, isAdmin);
+    if (!ok) throw new AppError(403, "Không có quyền truy cập công việc này");
+    return { user, isAdmin, nhanVienId };
+  }
+
+  // File thuộc YeuCau
+  if (doc.YeuCauID) {
+    const yeuCau = await YeuCau.findById(doc.YeuCauID);
+    if (!yeuCau) throw new AppError(404, "Không tìm thấy yêu cầu");
+
+    // Kiểm tra người dùng có liên quan đến yêu cầu không
+    const isRelated = yeuCau.nguoiDungLienQuan(nhanVienId);
+    if (!isRelated) {
+      throw new AppError(403, "Không có quyền truy cập yêu cầu này");
+    }
+    return { user, isAdmin, nhanVienId };
+  }
+
+  // File không thuộc CongViec hoặc YeuCau - cho phép nếu là người upload
+  if (doc.NguoiTaiLenID && String(doc.NguoiTaiLenID) === String(nhanVienId)) {
+    return { user, isAdmin, nhanVienId };
+  }
+
+  throw new AppError(403, "Không có quyền truy cập tệp này");
 }
 
 const service = {};
@@ -264,7 +308,7 @@ service.streamInline = async (fileId, req, res) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
-  await assertAccess(doc.CongViecID, req);
+  await assertAccessForFile(doc, req);
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
     : config.toAbs(doc.DuongDan);
@@ -312,7 +356,7 @@ service.streamDownload = async (fileId, req, res) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
-  await assertAccess(doc.CongViecID, req);
+  await assertAccessForFile(doc, req);
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
     : config.toAbs(doc.DuongDan);
@@ -354,6 +398,94 @@ service.streamDownload = async (fileId, req, res) => {
     }
   });
   return stream;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// 🔓 THUMBNAIL - Public endpoint (không kiểm tra quyền)
+// ═══════════════════════════════════════════════════════════════
+service.streamThumbnail = async (fileId, res) => {
+  console.log("========================================");
+  console.log("[THUMB DEBUG] Request for fileId:", fileId);
+
+  // 1. Tìm file
+  const doc = await TepTin.findById(fileId);
+  console.log("[THUMB DEBUG] File found:", doc ? "YES" : "NO");
+  if (doc) {
+    console.log("[THUMB DEBUG] File info:", {
+      TenGoc: doc.TenGoc,
+      LoaiFile: doc.LoaiFile,
+      DuongDan: doc.DuongDan,
+      TrangThai: doc.TrangThai,
+    });
+  }
+  if (!doc || doc.TrangThai === "DELETED") {
+    console.log("[THUMB DEBUG] ❌ File not found or deleted");
+    throw new AppError(404, "Không tìm thấy tệp");
+  }
+
+  // 2. Kiểm tra có phải ảnh không
+  const isImage = /^image\/(jpeg|jpg|png|gif|webp|bmp)/i.test(doc.LoaiFile);
+  console.log("[THUMB DEBUG] Is image:", isImage, "| LoaiFile:", doc.LoaiFile);
+  if (!isImage) {
+    console.log("[THUMB DEBUG] ❌ Not an image file");
+    // Không phải ảnh → trả 404 để <img> hiển thị broken image thay vì JSON
+    return res.status(404).send("File không phải là ảnh");
+  }
+
+  const filePath = path.isAbsolute(doc.DuongDan)
+    ? doc.DuongDan
+    : config.toAbs(doc.DuongDan);
+
+  // 3. Kiểm tra file tồn tại
+  const fileExists = await fs.pathExists(filePath);
+  if (!fileExists) {
+    throw new AppError(404, "Tệp không tồn tại trên hệ thống");
+  }
+
+  // 4. Kiểm tra kích thước file (chống resize bomb)
+  const stats = await fs.stat(filePath);
+  const fileSizeMB = stats.size / (1024 * 1024);
+
+  if (fileSizeMB > 20) {
+    // File quá lớn → trả 413 plain text để <img> hiển thị broken image
+    return res.status(413).send("File quá lớn để tạo thumbnail");
+  }
+
+  // 5. Set headers
+  const ctype = mime.lookup(doc.TenGoc) || doc.LoaiFile || "image/jpeg";
+  res.setHeader("Content-Type", ctype);
+  res.setHeader("Cache-Control", "public, max-age=86400"); // Cache 24h
+
+  // 6. Resize và stream
+  try {
+    const buffer = await Promise.race([
+      sharp(filePath)
+        .resize(200, 200, {
+          fit: "cover",
+          withoutEnlargement: true, // Không phóng to ảnh nhỏ
+        })
+        .timeout({ seconds: 5 })
+        .toBuffer(),
+
+      // Timeout fallback
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Resize timeout")), 5000)
+      ),
+    ]);
+
+    console.log(
+      "[THUMB DEBUG] ✅ SUCCESS! Thumbnail buffer size:",
+      buffer.length,
+      "bytes"
+    );
+    res.send(buffer);
+  } catch (err) {
+    console.error("[THUMB DEBUG] ❌ ERROR during resize:", err.message);
+    // Trả về 500 plain text thay vì JSON để <img> hiển thị broken image
+    if (!res.headersSent) {
+      res.status(500).send("Lỗi khi tạo thumbnail");
+    }
+  }
 };
 
 service.toDTO = (doc) => {
@@ -409,6 +541,7 @@ service.toDTO = (doc) => {
     MoTa: d.MoTa || "",
     TrangThai: d.TrangThai,
     NgayTaiLen: d.NgayTaiLen || d.createdAt,
+    thumbUrl: `/api/workmanagement/files/${d._id}/thumb`,
     inlineUrl: `/api/workmanagement/files/${d._id}/inline`,
     downloadUrl: `/api/workmanagement/files/${d._id}/download`,
   };

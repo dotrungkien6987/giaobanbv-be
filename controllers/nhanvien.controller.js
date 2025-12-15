@@ -1,6 +1,10 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const { convertToVietnamDate } = require("../helpers/helpfunction");
 const NhanVien = require("../models/NhanVien");
+const path = require("path");
+const fs = require("fs-extra");
+const mime = require("mime-types");
+const uploadConfig = require("../modules/workmanagement/helpers/uploadConfig");
 const LopDaoTaoNhanVien = require("../models/LopDaoTaoNhanVien");
 const LopDaoTao = require("../models/LopDaoTao");
 const DaTaFix = require("../models/DaTaFix");
@@ -9,6 +13,196 @@ const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const nhanvienController = {};
+
+function pickAllowedNhanVienSelfUpdate(payload = {}) {
+  const allowed = [
+    // core profile fields
+    "Ten",
+    "NgaySinh",
+    "Loai",
+    "LoaiChuyenMonID",
+    "TrinhDoChuyenMon",
+    "DanToc",
+    "SoCCHN",
+    "NgayCapCCHN",
+    "PhamViHanhNghe",
+    "PhamViHanhNgheBoSung",
+    "ChucDanh",
+    "ChucVu",
+    "CMND",
+    "SoHoChieu",
+    "SoDienThoai",
+    "Email",
+    "GioiTinh",
+    // user requested: allow other basic flags too
+    "DaNghi",
+    "LyDoNghi",
+    "isDangVien",
+    "TinChiBanDau",
+    "LyDoNghi",
+  ];
+
+  const out = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      out[key] = payload[key];
+    }
+  }
+
+  // Hard blocks: cannot change these via self-service
+  delete out.KhoaID;
+  delete out.MaNhanVien;
+  delete out.isDeleted;
+  delete out.Avatar;
+  delete out.Images;
+
+  return out;
+}
+
+function relAvatarPath(nhanVienId, filename) {
+  // store POSIX-style relative path for portability
+  return path.posix.join("avatars", String(nhanVienId), String(filename));
+}
+
+// ===== Self-service endpoints =====
+nhanvienController.getMe = catchAsync(async (req, res, next) => {
+  const nhanVienId = req.user?.NhanVienID;
+  if (!nhanVienId) {
+    throw new AppError(
+      400,
+      "User chưa được gán nhân viên",
+      "NHANVIEN_NOT_LINKED"
+    );
+  }
+
+  const nhanVien = await NhanVien.findOne({ _id: nhanVienId, isDeleted: false })
+    .populate("KhoaID")
+    .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" });
+
+  if (!nhanVien) {
+    throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    nhanVien,
+    null,
+    "Lấy thông tin nhân viên thành công"
+  );
+});
+
+nhanvienController.updateMe = catchAsync(async (req, res, next) => {
+  const nhanVienId = req.user?.NhanVienID;
+  if (!nhanVienId) {
+    throw new AppError(
+      400,
+      "User chưa được gán nhân viên",
+      "NHANVIEN_NOT_LINKED"
+    );
+  }
+
+  const updateData = pickAllowedNhanVienSelfUpdate(req.body || {});
+
+  const updated = await NhanVien.findOneAndUpdate(
+    { _id: nhanVienId, isDeleted: false },
+    updateData,
+    { new: true, runValidators: true }
+  )
+    .populate("KhoaID")
+    .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" });
+
+  if (!updated) {
+    throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    updated,
+    null,
+    "Cập nhật thông tin nhân viên thành công"
+  );
+});
+
+nhanvienController.uploadMyAvatar = catchAsync(async (req, res, next) => {
+  const nhanVienId = req.user?.NhanVienID;
+  if (!nhanVienId) {
+    throw new AppError(
+      400,
+      "User chưa được gán nhân viên",
+      "NHANVIEN_NOT_LINKED"
+    );
+  }
+  if (!req.file?.filename) {
+    throw new AppError(400, "Chưa có file avatar", "AVATAR_FILE_REQUIRED");
+  }
+
+  const nhanVien = await NhanVien.findOne({
+    _id: nhanVienId,
+    isDeleted: false,
+  }).select("Avatar");
+  if (!nhanVien) {
+    throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
+  }
+
+  const oldAvatar = nhanVien.Avatar;
+  const newRel = relAvatarPath(nhanVienId, req.file.filename);
+  nhanVien.Avatar = newRel;
+  await nhanVien.save();
+
+  // Best-effort cleanup old avatar file
+  if (oldAvatar) {
+    try {
+      await fs.remove(uploadConfig.toAbs(oldAvatar));
+    } catch (_) {}
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { Avatar: nhanVien.Avatar },
+    null,
+    "Cập nhật avatar thành công"
+  );
+});
+
+nhanvienController.getAvatarByNhanVienID = catchAsync(
+  async (req, res, next) => {
+    const nhanVienId = req.params.nhanvienID;
+
+    const nhanVien = await NhanVien.findOne({
+      _id: nhanVienId,
+      isDeleted: false,
+    })
+      .select("Avatar")
+      .lean();
+    if (!nhanVien) {
+      throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
+    }
+    if (!nhanVien.Avatar) {
+      throw new AppError(404, "Nhân viên chưa có avatar", "NO_AVATAR");
+    }
+
+    const abs = uploadConfig.toAbs(nhanVien.Avatar);
+    const exists = await fs.pathExists(abs);
+    if (!exists) {
+      throw new AppError(
+        404,
+        "Không tìm thấy file avatar",
+        "AVATAR_FILE_NOT_FOUND"
+      );
+    }
+
+    const contentType = mime.lookup(abs) || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    return res.sendFile(abs);
+  }
+);
 
 // Helper: build aggregated cơ cấu nguồn nhân lực (theo LoaiChuyenMon + CCHN)
 function buildCoCauNguonNhanLuc(nhanViens, dataFix) {

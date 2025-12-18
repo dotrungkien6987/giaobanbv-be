@@ -146,6 +146,43 @@ assignmentController.nhanVienTuChamDiemBatch = catchAsync(
         assignment.DiemTuDanhGia = DiemTuDanhGia;
         await assignment.save();
 
+        // Fire notification trigger for self-evaluation
+        try {
+          const triggerService = require("../../../services/triggerService");
+          const NhanVien = require("../../../models/NhanVien");
+          const employee = await NhanVien.findById(currentNhanVienId)
+            .select("Ten")
+            .lean();
+          const nhiemVu = await NhiemVuThuongQuy.findById(
+            assignment.NhiemVuThuongQuyID
+          )
+            .select("TenNhiemVu")
+            .lean();
+
+          // Get manager from QuanLyNhanVien
+          const QuanLyNhanVien = require("../models/QuanLyNhanVien");
+          const quanLy = await QuanLyNhanVien.findOne({
+            NhanVienDuocQuanLy: currentNhanVienId,
+            LoaiQuanLy: "KPI",
+            isDeleted: false,
+          }).lean();
+
+          await triggerService.fire("KPI.tuDanhGia", {
+            assignment: assignment.toObject(),
+            performerId: currentNhanVienId,
+            managerId: quanLy?.NhanVienQuanLy,
+            employeeName: employee?.Ten || "Nhân viên",
+            taskName: nhiemVu?.TenNhiemVu || "Nhiệm vụ",
+            selfScore: DiemTuDanhGia,
+          });
+          console.log("[AssignmentController] ✅ Fired trigger: KPI.tuDanhGia");
+        } catch (error) {
+          console.error(
+            "[AssignmentController] ❌ KPI self-evaluation notification trigger failed:",
+            error.message
+          );
+        }
+
         // Reload với populate
         const updatedAssignment = await NhanVienNhiemVu.findById(assignmentId)
           .populate("NhiemVuThuongQuyID")

@@ -14,6 +14,7 @@ const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
 const NhiemVuThuongQuy = require("../models/NhiemVuThuongQuy");
 const triggerService = require("../../../services/triggerService");
 const deadlineScheduler = require("../helpers/deadlineScheduler");
+const dayjs = require("dayjs");
 
 function toObjectId(id) {
   return typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
@@ -434,6 +435,30 @@ service.updateProgress = async (congviecId, payload, req) => {
     });
   }
   await cv.save();
+
+  // Fire notification trigger for progress update
+  try {
+    const performer = await NhanVien.findById(performerId).select("Ten").lean();
+
+    await triggerService.fire("CongViec.capNhatTienDo", {
+      congViec: cv,
+      performerId: performerId,
+      taskCode: cv.MaCongViec,
+      taskTitle: cv.TieuDe,
+      taskId: cv._id.toString(),
+      updaterName: performer?.Ten || "Người cập nhật",
+      oldProgress: old,
+      newProgress: value,
+      note: ghiChu || "",
+    });
+    console.log("[CongViecService] ✅ Fired trigger: CongViec.capNhatTienDo");
+  } catch (error) {
+    console.error(
+      "[CongViecService] ❌ Progress notification trigger failed:",
+      error.message
+    );
+  }
+
   // Populate performers for mapping (only need main & progress performers; reuse get detail populate subset)
   const populated = await CongViec.findById(cv._id)
     .populate({
@@ -2886,6 +2911,69 @@ service.updateCongViec = async (congviecid, updateData, req) => {
     updateData.NguoiThamGia = thamGia;
   }
 
+  // =============================
+  // Track field changes for notifications
+  // =============================
+  const changes = {};
+  const oldValues = {};
+
+  // Track deadline change
+  if (updateData.NgayHetHan && congviec.NgayHetHan) {
+    const oldDeadline = new Date(congviec.NgayHetHan).getTime();
+    const newDeadline = new Date(updateData.NgayHetHan).getTime();
+    if (oldDeadline !== newDeadline) {
+      changes.deadline = true;
+      oldValues.oldDeadline = congviec.NgayHetHan;
+      oldValues.newDeadline = updateData.NgayHetHan;
+    }
+  }
+
+  // Track priority change
+  if (
+    updateData.MucDoUuTien &&
+    updateData.MucDoUuTien !== congviec.MucDoUuTien
+  ) {
+    changes.priority = true;
+    oldValues.oldPriority = congviec.MucDoUuTien;
+    oldValues.newPriority = updateData.MucDoUuTien;
+  }
+
+  // Track main assignee change
+  if (
+    updateData.NguoiChinhID &&
+    String(updateData.NguoiChinhID) !== String(congviec.NguoiChinhID)
+  ) {
+    changes.mainAssignee = true;
+    oldValues.oldMainAssigneeId = congviec.NguoiChinhID;
+    oldValues.newMainAssigneeId = updateData.NguoiChinhID;
+  }
+
+  // Track participants changes (add/remove)
+  if (Array.isArray(updateData.NguoiThamGia)) {
+    const oldParticipantIds = (congviec.NguoiThamGia || []).map((p) =>
+      String(p.NhanVienID)
+    );
+    const newParticipantIds = updateData.NguoiThamGia.map((p) =>
+      String(p.NhanVienID)
+    );
+
+    const addedIds = newParticipantIds.filter(
+      (id) => !oldParticipantIds.includes(id)
+    );
+    const removedIds = oldParticipantIds.filter(
+      (id) => !newParticipantIds.includes(id)
+    );
+
+    if (addedIds.length > 0) {
+      changes.participantsAdded = true;
+      oldValues.addedParticipantIds = addedIds;
+    }
+    if (removedIds.length > 0) {
+      changes.participantsRemoved = true;
+      oldValues.removedParticipantIds = removedIds;
+    }
+  }
+
   // Áp dụng cập nhật (bỏ qua field không có trong schema trừ khi ta xử lý đặc biệt ở trên)
   Object.keys(updateData).forEach((key) => {
     if (updateData[key] !== undefined) {
@@ -2896,6 +2984,117 @@ service.updateCongViec = async (congviecid, updateData, req) => {
   });
 
   await congviec.save();
+
+  // =============================
+  // Fire notification triggers for field changes
+  // =============================
+  try {
+    const populated = await CongViec.findById(congviec._id)
+      .populate("NguoiGiaoViec", "Ten")
+      .populate("NguoiChinh", "Ten")
+      .populate("NguoiThamGia.NhanVienID", "Ten")
+      .lean();
+
+    const performer = await NhanVien.findById(currentUser.NhanVienID)
+      .select("Ten")
+      .lean();
+
+    const baseContext = {
+      congViec: populated,
+      performerId: currentUser.NhanVienID,
+      taskCode: congviec.MaCongViec,
+      taskTitle: congviec.TieuDe,
+      taskId: congviec._id.toString(),
+      performerName: performer?.Ten || "Người cập nhật",
+    };
+
+    // Deadline change notification
+    if (changes.deadline) {
+      await triggerService.fire("CongViec.capNhatDeadline", {
+        ...baseContext,
+        oldDeadline: dayjs(oldValues.oldDeadline).format("DD/MM/YYYY HH:mm"),
+        newDeadline: dayjs(oldValues.newDeadline).format("DD/MM/YYYY HH:mm"),
+      });
+      console.log(
+        "[CongViecService] ✅ Fired trigger: CongViec.capNhatDeadline"
+      );
+    }
+
+    // Priority change notification
+    if (changes.priority) {
+      const priorityLabels = {
+        THAP: "Thấp",
+        BINH_THUONG: "Bình thường",
+        CAO: "Cao",
+        KHAN_CAP: "Khẩn cấp",
+      };
+      await triggerService.fire("CongViec.thayDoiUuTien", {
+        ...baseContext,
+        oldPriority:
+          priorityLabels[oldValues.oldPriority] || oldValues.oldPriority,
+        newPriority:
+          priorityLabels[oldValues.newPriority] || oldValues.newPriority,
+      });
+      console.log("[CongViecService] ✅ Fired trigger: CongViec.thayDoiUuTien");
+    }
+
+    // Main assignee change notification
+    if (changes.mainAssignee) {
+      const oldAssignee = await NhanVien.findById(oldValues.oldMainAssigneeId)
+        .select("Ten")
+        .lean();
+      const newAssignee = await NhanVien.findById(oldValues.newMainAssigneeId)
+        .select("Ten")
+        .lean();
+
+      await triggerService.fire("CongViec.thayDoiNguoiChinh", {
+        ...baseContext,
+        oldAssigneeName: oldAssignee?.Ten || "Người cũ",
+        newAssigneeName: newAssignee?.Ten || "Người mới",
+        newAssigneeId: oldValues.newMainAssigneeId,
+      });
+      console.log(
+        "[CongViecService] ✅ Fired trigger: CongViec.thayDoiNguoiChinh"
+      );
+    }
+
+    // Participants added notification
+    if (changes.participantsAdded) {
+      for (const addedId of oldValues.addedParticipantIds) {
+        const addedNV = await NhanVien.findById(addedId).select("Ten").lean();
+        await triggerService.fire("CongViec.ganNguoiThamGia", {
+          ...baseContext,
+          addedParticipantName: addedNV?.Ten || "Người tham gia",
+          addedParticipantId: addedId,
+        });
+      }
+      console.log(
+        `[CongViecService] ✅ Fired trigger: CongViec.ganNguoiThamGia (${oldValues.addedParticipantIds.length} người)`
+      );
+    }
+
+    // Participants removed notification
+    if (changes.participantsRemoved) {
+      for (const removedId of oldValues.removedParticipantIds) {
+        const removedNV = await NhanVien.findById(removedId)
+          .select("Ten")
+          .lean();
+        await triggerService.fire("CongViec.xoaNguoiThamGia", {
+          ...baseContext,
+          removedParticipantName: removedNV?.Ten || "Người tham gia",
+          removedParticipantId: removedId,
+        });
+      }
+      console.log(
+        `[CongViecService] ✅ Fired trigger: CongViec.xoaNguoiThamGia (${oldValues.removedParticipantIds.length} người)`
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[CongViecService] ❌ Notification trigger failed:",
+      error.message
+    );
+  }
 
   // 📅 Reschedule deadline jobs if dates changed (non-blocking)
   try {

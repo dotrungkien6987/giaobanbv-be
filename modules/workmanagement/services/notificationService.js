@@ -130,20 +130,27 @@ class NotificationService {
    * @returns {Promise<Notification|null>}
    */
   async send({ type, recipientId, data = {}, priority }) {
+    console.log(
+      `[NotificationService] 📨 send() called for recipientId: ${recipientId}, type: ${type}`
+    );
     try {
       // 0. Convert NhanVienID → UserID nếu cần
       let userId = await notificationHelper.resolveNhanVienToUserId(
         recipientId
       );
+      console.log(`[NotificationService] 🔄 After resolve: userId = ${userId}`);
       // Nếu không tìm thấy qua NhanVienID, có thể recipientId đã là UserID
       if (!userId) {
         const User = require("../../../models/User");
         const userExists = await User.exists({ _id: recipientId });
         if (userExists) {
           userId = recipientId;
+          console.log(
+            `[NotificationService] ✅ recipientId is already a valid UserID`
+          );
         } else {
           console.log(
-            `[NotificationService] No user found for recipientId: ${recipientId}`
+            `[NotificationService] ❌ No user found for recipientId: ${recipientId}`
           );
           return null;
         }
@@ -163,9 +170,16 @@ class NotificationService {
       const settings = await UserNotificationSettings.getOrCreate(userId);
 
       // 4. Check if user wants this notification
-      if (!settings.shouldSend(type, "inapp")) {
+      console.log(
+        `[NotificationService] 🔍 Checking settings for user ${userId}, type ${type}`
+      );
+      const shouldSendResult = settings.shouldSend(type, "inapp");
+      console.log(
+        `[NotificationService] 🔔 shouldSend result: ${shouldSendResult}`
+      );
+      if (!shouldSendResult) {
         console.log(
-          `[NotificationService] User ${userId} disabled ${type} notifications`
+          `[NotificationService] ❌ User ${userId} disabled ${type} notifications (settings block)`
         );
         return null;
       }
@@ -213,7 +227,7 @@ class NotificationService {
       }
 
       console.log(
-        `[NotificationService] ✅ Sent ${type} to ${userId} (online: ${isOnline})`
+        `[NotificationService] ✅ Successfully inserted notification to DB: ${notification._id} for user ${userId} (type: ${type}, online: ${isOnline})`
       );
       return notification;
     } catch (error) {
@@ -232,10 +246,19 @@ class NotificationService {
    * @returns {Promise<Notification[]>}
    */
   async sendToMany({ type, recipientIds, data, priority }) {
+    console.log(
+      `[NotificationService] 📮 sendToMany called: type=${type}, recipients=${recipientIds.length}`
+    );
     const results = await Promise.all(
       recipientIds.map((recipientId) =>
         this.send({ type, recipientId, data, priority })
       )
+    );
+    const successCount = results.filter(Boolean).length;
+    console.log(
+      `[NotificationService] 📊 sendToMany result: ${successCount}/${
+        recipientIds.length
+      } successful (${recipientIds.length - successCount} nulls filtered)`
     );
     return results.filter(Boolean); // Remove nulls
   }

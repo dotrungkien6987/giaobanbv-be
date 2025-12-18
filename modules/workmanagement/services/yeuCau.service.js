@@ -23,6 +23,8 @@ const User = require("../../../models/User");
 
 const yeuCauStateMachine = require("./yeuCauStateMachine");
 const notificationService = require("./notificationService");
+const triggerService = require("../../../services/triggerService");
+const dayjs = require("dayjs");
 
 const { TRANG_THAI, LOAI_NGUOI_NHAN } = YeuCau;
 const { HANH_DONG } = LichSuYeuCau;
@@ -154,48 +156,37 @@ async function taoYeuCau(data, nguoiYeuCauId) {
 
   // 9. Gửi thông báo
   try {
-    let recipientNhanVienIds = [];
+    // Populate yêu cầu để lấy thông tin đầy đủ
+    const populated = await YeuCau.findById(yeuCau._id)
+      .populate("NguoiYeuCauID", "Ten")
+      .populate("KhoaNguonID", "TenKhoa")
+      .populate("KhoaDichID", "TenKhoa")
+      .populate("DanhMucYeuCauID", "TenLoaiYeuCau")
+      .lean();
 
-    if (data.LoaiNguoiNhan === LOAI_NGUOI_NHAN.KHOA) {
-      // Gửi cho tất cả người điều phối
-      recipientNhanVienIds = cauHinh.layDanhSachNguoiDieuPhoiIDs();
-    } else {
-      // Gửi cho người nhận cá nhân
-      recipientNhanVienIds = [data.NguoiNhanID];
-    }
+    // Fire trigger YeuCau.TAO_MOI
+    await triggerService.fire("YeuCau.TAO_MOI", {
+      yeuCau: populated,
+      performerId: nguoiYeuCauId,
+      requestCode: yeuCau.MaYeuCau,
+      requestTitle: yeuCau.TieuDe || "Yêu cầu mới",
+      requestId: yeuCau._id.toString(),
+      requesterName: nguoiYeuCau.Ten || nguoiYeuCau.HoTen || "Người yêu cầu",
+      sourceDept: populated.KhoaNguonID?.TenKhoa || "Khoa",
+      targetDept: populated.KhoaDichID?.TenKhoa || "Khoa",
+      requestType: snapshotDanhMuc.TenLoaiYeuCau || "Yêu cầu",
+      deadline: yeuCau.ThoiGianHen
+        ? dayjs(yeuCau.ThoiGianHen).format("DD/MM/YYYY HH:mm")
+        : "Chưa có",
+      content: yeuCau.MoTa || "Không có mô tả",
+    });
 
-    // Chuyển từ NhanVienID sang UserID để gửi thông báo
-    if (recipientNhanVienIds.length > 0) {
-      const User = require("../../../models/User");
-      const Khoa = require("../../../models/Khoa");
-
-      const users = await User.find({
-        NhanVienID: { $in: recipientNhanVienIds },
-      }).select("_id");
-
-      // Lấy tên khoa nguồn
-      const khoaNguon = await Khoa.findById(khoaNguonId).select("TenKhoa");
-
-      const recipientUserIds = users.map((u) => u._id.toString());
-
-      if (recipientUserIds.length > 0) {
-        await notificationService.sendToMany({
-          type: "YEUCAU_MOI",
-          recipientIds: recipientUserIds,
-          data: {
-            MaYeuCau: yeuCau.MaYeuCau,
-            TieuDe: yeuCau.TieuDe,
-            TenLoaiYeuCau: snapshotDanhMuc.TenLoaiYeuCau,
-            NguoiGui: nguoiYeuCau.HoTen,
-            TenKhoaNguon: khoaNguon?.TenKhoa || "Không xác định",
-            yeuCauId: yeuCau._id.toString(),
-          },
-          actionUrl: `/quan-ly-cong-viec/yeu-cau/${yeuCau._id}`,
-        });
-      }
-    }
+    console.log("[YeuCauService] ✅ Fired trigger: YeuCau.TAO_MOI");
   } catch (error) {
-    console.error("[YeuCauService] Notification failed:", error.message);
+    console.error(
+      "[YeuCauService] ❌ Notification trigger failed:",
+      error.message
+    );
   }
 
   // Populate đầy đủ trước khi trả về để frontend hiển thị đúng
@@ -290,6 +281,47 @@ async function suaYeuCau(yeuCauId, data, nguoiSuaId) {
       DanhMucYeuCauID: yeuCau.DanhMucYeuCauID,
     },
   });
+
+  // Fire trigger YeuCau.SUA (only if there are actual changes)
+  const hasChanges = Object.keys(data).some(
+    (key) => allowedFields.includes(key) && data[key] !== undefined
+  );
+
+  if (hasChanges) {
+    try {
+      const populated = await YeuCau.findById(yeuCau._id)
+        .populate("NguoiYeuCauID", "Ten")
+        .populate("KhoaNguonID", "TenKhoa")
+        .populate("KhoaDichID", "TenKhoa")
+        .populate("DanhMucYeuCauID", "TenLoaiYeuCau")
+        .lean();
+
+      const nguoiSua = await NhanVien.findById(nguoiSuaId).select("Ten").lean();
+
+      await triggerService.fire("YeuCau.SUA", {
+        yeuCau: populated,
+        performerId: nguoiSuaId,
+        requestCode: yeuCau.MaYeuCau,
+        requestTitle: yeuCau.TieuDe,
+        requestId: yeuCau._id.toString(),
+        editorName: nguoiSua?.Ten || "Người chỉnh sửa",
+        oldTitle: tuGiaTri.TieuDe,
+        newTitle: yeuCau.TieuDe,
+        changes: Object.keys(data)
+          .filter(
+            (key) => allowedFields.includes(key) && data[key] !== undefined
+          )
+          .join(", "),
+      });
+
+      console.log("[YeuCauService] ✅ Fired trigger: YeuCau.SUA");
+    } catch (error) {
+      console.error(
+        "[YeuCauService] ❌ Notification trigger failed:",
+        error.message
+      );
+    }
+  }
 
   // Populate đầy đủ trước khi trả về
   return populateYeuCau(yeuCau);
@@ -768,29 +800,32 @@ async function themBinhLuan(yeuCauId, data, nguoiBinhLuanId) {
     ghiChu: data.NoiDung?.substring(0, 100),
   });
 
-  // Gửi thông báo (chỉ cho NguoiGui + NguoiXuLy, không gửi điều phối)
+  // Gửi thông báo bình luận mới
   try {
-    const recipientIds = [yeuCau.NguoiYeuCauID, yeuCau.NguoiXuLyID].filter(
-      (id) => id && id.toString() !== nguoiBinhLuanId.toString()
-    );
+    const populated = await YeuCau.findById(yeuCauId)
+      .populate("NguoiYeuCauID", "Ten")
+      .populate("KhoaNguonID", "TenKhoa")
+      .populate("KhoaDichID", "TenKhoa")
+      .lean();
 
-    if (recipientIds.length > 0) {
-      const nguoiBinhLuan = await NhanVien.findById(nguoiBinhLuanId);
-      await notificationService.send({
-        type: "YEUCAU_BINH_LUAN_MOI",
-        recipientIds,
-        data: {
-          MaYeuCau: yeuCau.MaYeuCau,
-          TieuDe: yeuCau.TieuDe,
-          NguoiBinhLuan: nguoiBinhLuan?.HoTen,
-          NoiDung: data.NoiDung?.substring(0, 100),
-        },
-        actionUrl: `/yeucau/${yeuCau._id}`,
-      });
-    }
+    const nguoiBinhLuan = await NhanVien.findById(nguoiBinhLuanId)
+      .select("Ten")
+      .lean();
+
+    await triggerService.fire("YeuCau.BINH_LUAN", {
+      yeuCau: populated,
+      performerId: nguoiBinhLuanId,
+      requestCode: yeuCau.MaYeuCau,
+      requestTitle: yeuCau.TieuDe,
+      requestId: yeuCau._id.toString(),
+      commenterName: nguoiBinhLuan?.Ten || "Người bình luận",
+      commentContent: data.NoiDung?.substring(0, 100) || "Bình luận mới",
+    });
+
+    console.log("[YeuCauService] ✅ Fired trigger: YeuCau.BINH_LUAN");
   } catch (error) {
     console.error(
-      "[YeuCauService] Comment notification failed:",
+      "[YeuCauService] ❌ Comment notification trigger failed:",
       error.message
     );
   }

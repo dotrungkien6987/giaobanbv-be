@@ -468,6 +468,40 @@ kpiController.chamDiemNhiemVu = catchAsync(async (req, res, next) => {
     TongDiemKPI: tongDiemKPI,
   });
 
+  // Fire notification trigger for manager score update
+  try {
+    const NhanVien = require("../../../models/NhanVien");
+    const manager = await NhanVien.findById(currentNhanVienID)
+      .select("Ten")
+      .lean();
+    const employee = await NhanVien.findById(danhGiaKPI.NhanVienID)
+      .select("Ten")
+      .lean();
+    const nhiemVu = await NhiemVuThuongQuy.findById(
+      danhGiaNhiemVu.NhiemVuThuongQuyID
+    )
+      .select("TenNhiemVu")
+      .lean();
+
+    await triggerService.fire("KPI.capNhatDiemQL", {
+      danhGiaKPI,
+      danhGiaNhiemVu,
+      performerId: currentNhanVienID,
+      employeeId: danhGiaKPI.NhanVienID,
+      employeeName: employee?.Ten || "Nhân viên",
+      managerName: manager?.Ten || "Quản lý",
+      taskName: nhiemVu?.TenNhiemVu || "Nhiệm vụ",
+      score: danhGiaNhiemVu.DiemNhiemVu || 0,
+      totalScore: tongDiemKPI,
+    });
+    console.log("[KPIController] ✅ Fired trigger: KPI.capNhatDiemQL");
+  } catch (error) {
+    console.error(
+      "[KPIController] ❌ KPI score notification trigger failed:",
+      error.message
+    );
+  }
+
   return sendResponse(
     res,
     200,
@@ -727,6 +761,33 @@ kpiController.phanHoiDanhGiaKPI = catchAsync(async (req, res, next) => {
 
   danhGiaKPI.PhanHoiNhanVien = PhanHoiNhanVien;
   await danhGiaKPI.save();
+
+  // Fire notification trigger for employee feedback
+  try {
+    const NhanVien = require("../../../models/NhanVien");
+    const employee = await NhanVien.findById(danhGiaKPI.NhanVienID)
+      .select("Ten")
+      .lean();
+    const manager = await NhanVien.findById(danhGiaKPI.NguoiDanhGiaID)
+      .select("Ten")
+      .lean();
+
+    await triggerService.fire("KPI.phanHoi", {
+      danhGiaKPI: danhGiaKPI.toObject(),
+      performerId: danhGiaKPI.NhanVienID,
+      managerId: danhGiaKPI.NguoiDanhGiaID,
+      employeeName: employee?.Ten || "Nhân viên",
+      managerName: manager?.Ten || "Quản lý",
+      feedback: PhanHoiNhanVien?.substring(0, 100) || "Phản hồi mới",
+      totalScore: danhGiaKPI.TongDiemKPI || 0,
+    });
+    console.log("[KPIController] ✅ Fired trigger: KPI.phanHoi");
+  } catch (error) {
+    console.error(
+      "[KPIController] ❌ KPI feedback notification trigger failed:",
+      error.message
+    );
+  }
 
   return sendResponse(
     res,

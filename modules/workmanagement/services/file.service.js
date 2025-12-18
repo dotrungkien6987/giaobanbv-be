@@ -164,6 +164,37 @@ service.uploadForTask = async (
     items.push(doc);
   }
 
+  // Fire notification trigger for file upload
+  if (items.length > 0) {
+    try {
+      const triggerService = require("../../../services/triggerService");
+      const NhanVien = require("../../../models/NhanVien");
+      const cv = await CongViec.findById(congViecId).lean();
+      const uploader = await NhanVien.findById(nhanVienId).select("Ten").lean();
+
+      for (const item of items) {
+        await triggerService.fire("CongViec.uploadFile", {
+          congViec: cv,
+          performerId: nhanVienId,
+          taskCode: cv.MaCongViec,
+          taskTitle: cv.TieuDe,
+          taskId: cv._id.toString(),
+          uploaderName: uploader?.Ten || "Người tải lên",
+          fileName: item.TenGoc,
+          fileSize: Math.round(item.KichThuoc / 1024) + " KB",
+        });
+      }
+      console.log(
+        `[FileService] ✅ Fired trigger: CongViec.uploadFile (${items.length} files)`
+      );
+    } catch (error) {
+      console.error(
+        "[FileService] ❌ File upload notification trigger failed:",
+        error.message
+      );
+    }
+  }
+
   return items.map((d) => service.toDTO(d));
 };
 
@@ -279,6 +310,33 @@ service.softDelete = async (fileId, req) => {
     throw new AppError(403, "Không có quyền xóa");
   doc.TrangThai = "DELETED";
   await doc.save();
+
+  // Fire notification trigger for file deletion
+  if (doc.CongViecID) {
+    try {
+      const triggerService = require("../../../services/triggerService");
+      const NhanVien = require("../../../models/NhanVien");
+      const cv = await CongViec.findById(doc.CongViecID).lean();
+      const deleter = await NhanVien.findById(nhanVienId).select("Ten").lean();
+
+      await triggerService.fire("CongViec.xoaFile", {
+        congViec: cv,
+        performerId: nhanVienId,
+        taskCode: cv?.MaCongViec || "",
+        taskTitle: cv?.TieuDe || "Công việc",
+        taskId: doc.CongViecID.toString(),
+        deleterName: deleter?.Ten || "Người xóa",
+        fileName: doc.TenGoc,
+      });
+      console.log("[FileService] ✅ Fired trigger: CongViec.xoaFile");
+    } catch (error) {
+      console.error(
+        "[FileService] ❌ File delete notification trigger failed:",
+        error.message
+      );
+    }
+  }
+
   return service.toDTO(doc);
 };
 

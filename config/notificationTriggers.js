@@ -20,7 +20,7 @@
 
 module.exports = {
   // ═══════════════════════════════════════════════════════════════════════════
-  // CÔNG VIỆC (CongViec) - 9 triggers
+  // CÔNG VIỆC (CongViec) - 19 triggers (11 workflow + 8 update actions)
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Legacy function giaoViec() dùng key này
@@ -128,9 +128,229 @@ module.exports = {
     excludePerformer: true,
   },
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // CongViec Update Actions - 8 triggers (field changes, participants, files)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  "CongViec.capNhatDeadline": {
+    enabled: true,
+    template: "TASK_DEADLINE_UPDATED",
+    description: "Thông báo khi deadline công việc thay đổi",
+    handler: "congViecUpdate",
+    recipients: "all", // Người chính + người tham gia
+    excludePerformer: true,
+  },
+
+  "CongViec.ganNguoiThamGia": {
+    enabled: true,
+    template: "TASK_PARTICIPANT_ADDED",
+    description: "Thông báo khi thêm người tham gia vào công việc",
+    handler: "congViecUpdate",
+    recipients: "newParticipant", // Người được thêm
+    excludePerformer: true,
+  },
+
+  "CongViec.xoaNguoiThamGia": {
+    enabled: true,
+    template: "TASK_PARTICIPANT_REMOVED",
+    description: "Thông báo khi xóa người tham gia khỏi công việc",
+    handler: "congViecUpdate",
+    recipients: "removedParticipant", // Người bị xóa
+    excludePerformer: true,
+  },
+
+  "CongViec.thayDoiNguoiChinh": {
+    enabled: true,
+    template: "TASK_ASSIGNEE_CHANGED",
+    description: "Thông báo khi thay đổi người chịu trách nhiệm chính",
+    handler: "congViecUpdate",
+    recipients: "newAssignee", // Người được giao mới
+    excludePerformer: true,
+  },
+
+  "CongViec.thayDoiUuTien": {
+    enabled: true,
+    template: "TASK_PRIORITY_CHANGED",
+    description: "Thông báo khi độ ưu tiên công việc thay đổi",
+    handler: "congViecUpdate",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
+  "CongViec.capNhatTienDo": {
+    enabled: true,
+    template: "TASK_PROGRESS_UPDATED",
+    description: "Thông báo khi tiến độ công việc được cập nhật",
+    handler: "congViecUpdate",
+    recipients: "assigner", // Người giao việc
+    excludePerformer: true,
+  },
+
+  "CongViec.uploadFile": {
+    enabled: true,
+    template: "TASK_FILE_UPLOADED",
+    description: "Thông báo khi upload tài liệu vào công việc",
+    handler: "congViecUpdate",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
+  "CongViec.xoaFile": {
+    enabled: true,
+    template: "TASK_FILE_DELETED",
+    description: "Thông báo khi xóa tài liệu khỏi công việc",
+    handler: "congViecUpdate",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // YÊU CẦU (YeuCau) - 1 trigger
+  // YÊU CẦU (YeuCau) - 16 triggers (15 state transitions + 1 comment)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  "YeuCau.TAO_MOI": {
+    enabled: true,
+    template: "YEUCAU_CREATED",
+    description: "Thông báo khi có yêu cầu hỗ trợ mới được tạo",
+    handler: "yeuCauStateMachine",
+    recipients: "targetDept", // Khoa được yêu cầu hoặc điều phối viên
+    excludePerformer: true,
+  },
+
+  "YeuCau.TIEP_NHAN": {
+    enabled: true,
+    template: "YEUCAU_ACCEPTED",
+    description: "Thông báo khi yêu cầu được tiếp nhận",
+    handler: "yeuCauStateMachine",
+    recipients: "requester", // Người yêu cầu
+    excludePerformer: true,
+  },
+
+  "YeuCau.TU_CHOI": {
+    enabled: true,
+    template: "YEUCAU_REJECTED",
+    description: "Thông báo khi yêu cầu bị từ chối",
+    handler: "yeuCauStateMachine",
+    recipients: "requester",
+    excludePerformer: true,
+  },
+
+  "YeuCau.DIEU_PHOI": {
+    enabled: true,
+    template: "YEUCAU_DISPATCHED",
+    description: "Thông báo khi yêu cầu được điều phối cho người xử lý",
+    handler: "yeuCauStateMachine",
+    recipients: "all", // Gửi cho: người yêu cầu + người được giao
+    excludePerformer: true, // Loại trừ người điều phối
+  },
+
+  "YeuCau.GUI_VE_KHOA": {
+    enabled: true,
+    template: "YEUCAU_RETURNED_TO_DEPT",
+    description: "Thông báo khi yêu cầu được gửi về khoa",
+    handler: "yeuCauStateMachine",
+    recipients: "sourceDept", // Khoa yêu cầu
+    excludePerformer: true,
+  },
+
+  "YeuCau.HOAN_THANH": {
+    enabled: true,
+    template: "YEUCAU_COMPLETED",
+    description: "Thông báo khi yêu cầu hoàn thành",
+    handler: "yeuCauStateMachine",
+    recipients: "all", // Người yêu cầu + người xử lý
+    excludePerformer: true,
+  },
+
+  "YeuCau.HUY_TIEP_NHAN": {
+    enabled: true,
+    template: "YEUCAU_CANCELLED",
+    description: "Thông báo khi hủy tiếp nhận yêu cầu",
+    handler: "yeuCauStateMachine",
+    recipients: "requester",
+    excludePerformer: true,
+  },
+
+  "YeuCau.DOI_THOI_GIAN_HEN": {
+    enabled: true,
+    template: "YEUCAU_DEADLINE_CHANGED",
+    description: "Thông báo khi thời gian hẹn thay đổi",
+    handler: "yeuCauStateMachine",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
+  "YeuCau.DANH_GIA": {
+    enabled: true,
+    template: "YEUCAU_RATED",
+    description: "Thông báo khi có đánh giá chất lượng",
+    handler: "yeuCauStateMachine",
+    recipients: "performer", // Người xử lý + khoa
+    excludePerformer: true,
+  },
+
+  "YeuCau.DONG": {
+    enabled: true,
+    template: "YEUCAU_CLOSED",
+    description: "Thông báo khi yêu cầu được đóng",
+    handler: "yeuCauStateMachine",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
+  "YeuCau.MO_LAI": {
+    enabled: true,
+    template: "YEUCAU_REOPENED",
+    description: "Thông báo khi yêu cầu được mở lại",
+    handler: "yeuCauStateMachine",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
+  "YeuCau.YEU_CAU_XU_LY_TIEP": {
+    enabled: true,
+    template: "YEUCAU_REOPENED",
+    description: "Thông báo khi yêu cầu xử lý tiếp",
+    handler: "yeuCauStateMachine",
+    recipients: "performer",
+    excludePerformer: true,
+  },
+
+  "YeuCau.NHAC_LAI": {
+    enabled: true,
+    template: "YEUCAU_REMINDER",
+    description: "Thông báo nhắc lại yêu cầu",
+    handler: "yeuCauStateMachine",
+    recipients: "performer",
+    excludePerformer: true,
+  },
+
+  "YeuCau.BAO_QUAN_LY": {
+    enabled: true,
+    template: "YEUCAU_ESCALATED",
+    description: "Thông báo báo cáo quản lý (escalation)",
+    handler: "yeuCauStateMachine",
+    recipients: "manager", // Trưởng khoa / Giám đốc
+    excludePerformer: true,
+  },
+
+  "YeuCau.XOA": {
+    enabled: true,
+    template: "YEUCAU_DELETED",
+    description: "Thông báo khi yêu cầu bị xóa",
+    handler: "yeuCauStateMachine",
+    recipients: "all",
+    excludePerformer: true,
+  },
+
+  "YeuCau.SUA": {
+    enabled: true,
+    template: "YEUCAU_UPDATED",
+    description: "Thông báo khi thông tin yêu cầu được cập nhật",
+    handler: "yeuCauStateMachine",
+    recipients: "all",
+    excludePerformer: true,
+  },
 
   "YeuCau.comment": {
     enabled: true,
@@ -177,6 +397,37 @@ module.exports = {
     template: "KPI_APPROVAL_REVOKED",
     description: "Thông báo khi KPI bị hủy duyệt",
     handler: "kpi",
+    recipients: "employee",
+    excludePerformer: true,
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // KPI Additional Actions - 3 triggers
+  // ──────────────────────────────────────────────────────────────────────────
+
+  "KPI.capNhatDiemQL": {
+    enabled: true,
+    template: "KPI_SCORE_UPDATED",
+    description: "Thông báo khi điểm quản lý đánh giá được cập nhật",
+    handler: "kpiUpdate",
+    recipients: "employee",
+    excludePerformer: true,
+  },
+
+  "KPI.tuDanhGia": {
+    enabled: true,
+    template: "KPI_SELF_EVALUATED",
+    description: "Thông báo khi nhân viên hoàn thành tự đánh giá",
+    handler: "kpiUpdate",
+    recipients: "manager",
+    excludePerformer: true,
+  },
+
+  "KPI.phanHoi": {
+    enabled: true,
+    template: "KPI_FEEDBACK_ADDED",
+    description: "Thông báo khi có phản hồi về đánh giá KPI",
+    handler: "kpiUpdate",
     recipients: "employee",
     excludePerformer: true,
   },

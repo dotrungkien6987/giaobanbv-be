@@ -1,9 +1,15 @@
 /**
- * Notification Templates Seed File
+ * Unified Notification Templates - Chuẩn hóa Phase 3
  *
- * Run: npm run seed:notifications
+ * Run: node seeds/notificationTemplates.js
  *
- * Creates/Updates 12 default notification templates
+ * Total: 43 templates (15 YeuCau + 21 Task + 6 KPI + 1 System)
+ * - YeuCau: 15 templates (Phase 3 naming: YEUCAU_CREATED, YEUCAU_ACCEPTED...)
+ * - Task: 21 templates (10 workflow + 8 field updates + 2 deadline + 1 comment)
+ * - KPI: 6 templates (3 workflow + 3 updates)
+ * - System: 1 template
+ *
+ * Updated: December 17, 2025
  */
 const mongoose = require("mongoose");
 require("dotenv").config();
@@ -12,7 +18,363 @@ require("dotenv").config();
 const { NotificationTemplate } = require("../modules/workmanagement/models");
 
 const templates = [
-  // ===== TASK NOTIFICATIONS =====
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TICKET (YÊU CẦU HỖ TRỢ) - 15 templates - Phase 3
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  {
+    type: "YEUCAU_CREATED",
+    name: "Yêu cầu hỗ trợ mới",
+    description:
+      "Thông báo khi có yêu cầu hỗ trợ mới được tạo và gửi đến khoa hoặc điều phối viên",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "🆕 Yêu cầu mới: {{requestCode}}",
+    bodyTemplate:
+      '{{requesterName}} ({{sourceDept}}) gửi yêu cầu "{{requestTitle}}" đến {{targetDept}}. Loại yêu cầu: {{requestType}}. Thời gian hẹn: {{deadline}}.',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "ticket",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "requestCode",
+      "requesterName",
+      "sourceDept",
+      "requestTitle",
+      "targetDept",
+      "requestType",
+      "deadline",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_ACCEPTED",
+    name: "Yêu cầu được tiếp nhận",
+    description:
+      "Thông báo người yêu cầu khi yêu cầu của họ được tiếp nhận bởi khoa/điều phối viên",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "✅ Yêu cầu được tiếp nhận",
+    bodyTemplate:
+      '{{accepterName}} đã tiếp nhận yêu cầu "{{requestTitle}}" ({{requestCode}}) của bạn. Thời gian hẹn xử lý: {{deadline}}. Ghi chú: {{note}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "check",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "accepterName",
+      "requestTitle",
+      "requestCode",
+      "deadline",
+      "note",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_REJECTED",
+    name: "Yêu cầu bị từ chối",
+    description: "Thông báo người yêu cầu khi yêu cầu của họ bị từ chối",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "❌ Yêu cầu bị từ chối",
+    bodyTemplate:
+      '{{rejectorName}} đã từ chối yêu cầu "{{requestTitle}}" ({{requestCode}}) của bạn. Lý do: {{reason}}. Vui lòng liên hệ để biết thêm chi tiết.',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "urgent",
+    requiredVariables: [
+      "rejectorName",
+      "requestTitle",
+      "requestCode",
+      "reason",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_DISPATCHED",
+    name: "Yêu cầu được điều phối",
+    description: "Thông báo khi yêu cầu được điều phối cho người xử lý",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "📌 Yêu cầu đã được điều phối",
+    bodyTemplate:
+      'Yêu cầu "{{requestTitle}}" ({{requestCode}}) từ {{sourceDept}} của {{requesterName}} đã được {{dispatcherName}} điều phối cho {{assigneeName}} xử lý. Thời gian hẹn: {{deadline}}. Nội dung: {{content}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "task",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "dispatcherName",
+      "requestTitle",
+      "requestCode",
+      "sourceDept",
+      "requesterName",
+      "assigneeName",
+      "deadline",
+      "content",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_RETURNED_TO_DEPT",
+    name: "Yêu cầu gửi về khoa",
+    description:
+      "Thông báo khoa yêu cầu khi yêu cầu được người xử lý gửi về cho khoa",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "🔄 Yêu cầu gửi về khoa",
+    bodyTemplate:
+      '{{performerName}} đã xử lý và gửi về khoa yêu cầu "{{requestTitle}}" ({{requestCode}}). Kết quả: {{result}}. Vui lòng kiểm tra và xác nhận hoàn thành.',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "task",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "performerName",
+      "requestTitle",
+      "requestCode",
+      "result",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_COMPLETED",
+    name: "Yêu cầu hoàn thành",
+    description:
+      "Thông báo người yêu cầu và người xử lý khi yêu cầu được đánh dấu hoàn thành",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "✅ Yêu cầu hoàn thành",
+    bodyTemplate:
+      '{{completerName}} đã đánh dấu hoàn thành yêu cầu "{{requestTitle}}" ({{requestCode}}). Thời gian hoàn thành: {{completedTime}}. Kết quả: {{result}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "check",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "completerName",
+      "requestTitle",
+      "requestCode",
+      "completedTime",
+      "result",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_CANCELLED",
+    name: "Hủy tiếp nhận yêu cầu",
+    description: "Thông báo người yêu cầu khi yêu cầu đã tiếp nhận bị hủy",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "❌ Hủy tiếp nhận",
+    bodyTemplate:
+      '{{cancellerName}} đã hủy tiếp nhận yêu cầu "{{requestTitle}}" ({{requestCode}}) của bạn. Lý do: {{reason}}. Yêu cầu trở về trạng thái chờ xử lý.',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "urgent",
+    requiredVariables: [
+      "cancellerName",
+      "requestTitle",
+      "requestCode",
+      "reason",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_DEADLINE_CHANGED",
+    name: "Đổi thời gian hẹn",
+    description:
+      "Thông báo người liên quan khi thời gian hẹn của yêu cầu bị thay đổi",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "⏰ Thay đổi thời gian hẹn",
+    bodyTemplate:
+      '{{updaterName}} đã thay đổi thời gian hẹn của yêu cầu "{{requestTitle}}" ({{requestCode}}) từ {{oldDeadline}} thành {{newDeadline}}. Lý do: {{reason}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "clock",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "updaterName",
+      "requestTitle",
+      "requestCode",
+      "oldDeadline",
+      "newDeadline",
+      "reason",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_RATED",
+    name: "Đánh giá chất lượng",
+    description:
+      "Thông báo người xử lý và khoa khi có đánh giá chất lượng từ người yêu cầu",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "⭐ Đánh giá chất lượng",
+    bodyTemplate:
+      '{{raterName}} đã đánh giá {{rating}} sao cho yêu cầu "{{requestTitle}}" ({{requestCode}}). Nhận xét: {{feedback}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "check",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "raterName",
+      "rating",
+      "requestTitle",
+      "requestCode",
+      "feedback",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_CLOSED",
+    name: "Đóng yêu cầu",
+    description: "Thông báo người liên quan khi yêu cầu được đóng",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "🔒 Yêu cầu đã đóng",
+    bodyTemplate:
+      '{{closerName}} đã đóng yêu cầu "{{requestTitle}}" ({{requestCode}}). Trạng thái cuối: {{finalStatus}}. Ghi chú: {{note}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "check",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "closerName",
+      "requestTitle",
+      "requestCode",
+      "finalStatus",
+      "note",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_REOPENED",
+    name: "Mở lại yêu cầu",
+    description:
+      "Thông báo người liên quan khi yêu cầu đã đóng được mở lại hoặc yêu cầu xử lý tiếp",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "🔄 Yêu cầu mở lại",
+    bodyTemplate:
+      '{{reopenerName}} đã mở lại yêu cầu "{{requestTitle}}" ({{requestCode}}). Lý do: {{reason}}. Vui lòng xử lý tiếp.',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "reopenerName",
+      "requestTitle",
+      "requestCode",
+      "reason",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_REMINDER",
+    name: "Nhắc lại yêu cầu",
+    description:
+      "Thông báo người xử lý khi người yêu cầu gửi nhắc lại yêu cầu đang xử lý",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "🔔 Nhắc lại yêu cầu",
+    bodyTemplate:
+      '{{requesterName}} đã gửi nhắc lại cho yêu cầu "{{requestTitle}}" ({{requestCode}}). Thời gian hẹn: {{deadline}}. Nội dung nhắc: {{reminderNote}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "clock",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "requesterName",
+      "requestTitle",
+      "requestCode",
+      "deadline",
+      "reminderNote",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_ESCALATED",
+    name: "Báo cáo quản lý",
+    description:
+      "Thông báo quản lý khi yêu cầu bị báo cáo vượt cấp do chậm xử lý hoặc vấn đề nghiêm trọng",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "⚠️ Báo cáo quản lý",
+    bodyTemplate:
+      '{{requesterName}} đã báo cáo yêu cầu "{{requestTitle}}" ({{requestCode}}) lên quản lý. Lý do: {{escalationReason}}. Thời gian hẹn: {{deadline}}. Cần xử lý khẩn cấp.',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "urgent",
+    requiredVariables: [
+      "requesterName",
+      "requestTitle",
+      "requestCode",
+      "escalationReason",
+      "deadline",
+      "requestId",
+    ],
+  },
+
+  {
+    type: "YEUCAU_DELETED",
+    name: "Xóa yêu cầu",
+    description: "Thông báo người liên quan khi yêu cầu bị xóa",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "🗑️ Yêu cầu đã xóa",
+    bodyTemplate:
+      '{{deleterName}} đã xóa yêu cầu "{{requestTitle}}" ({{requestCode}}). Lý do: {{reason}}',
+    actionUrlTemplate: "/quan-ly-cong-viec/yeu-cau",
+    icon: "warning",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: ["deleterName", "requestTitle", "requestCode", "reason"],
+  },
+
+  {
+    type: "YEUCAU_UPDATED",
+    name: "Cập nhật thông tin yêu cầu",
+    description:
+      "Thông báo người liên quan khi thông tin yêu cầu được cập nhật",
+    category: "ticket",
+    isAutoCreated: false,
+    titleTemplate: "✏️ Cập nhật yêu cầu",
+    bodyTemplate:
+      '{{editorName}} đã cập nhật yêu cầu "{{requestTitle}}" ({{requestCode}}). Nội dung thay đổi: {{changes}}',
+    actionUrlTemplate: "/yeu-cau/{{requestId}}",
+    icon: "task",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "editorName",
+      "requestTitle",
+      "requestCode",
+      "changes",
+      "requestId",
+    ],
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TASK (CÔNG VIỆC) - 21 templates
+  // ═══════════════════════════════════════════════════════════════════════════
+
   {
     type: "TASK_ASSIGNED",
     name: "Được giao việc mới",
@@ -25,7 +387,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["assignerName", "taskName", "taskId"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_STATUS_CHANGED",
     name: "Trạng thái công việc thay đổi",
@@ -38,7 +402,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["taskName", "newStatus", "taskId"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_APPROVED",
     name: "Công việc được duyệt",
@@ -51,7 +417,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["approverName", "taskName", "taskId"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_REJECTED",
     name: "Công việc bị từ chối",
@@ -65,7 +433,9 @@ const templates = [
     defaultPriority: "urgent",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["rejecterName", "taskName", "taskId", "reason"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_CANCELLED",
     name: "Công việc bị hủy giao",
@@ -78,7 +448,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["performerName", "taskName", "taskId", "taskCode"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_ACCEPTED",
     name: "Công việc được tiếp nhận",
@@ -91,7 +463,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["performerName", "taskName", "taskId", "taskCode"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_COMPLETED",
     name: "Công việc hoàn thành",
@@ -104,7 +478,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["performerName", "taskName", "taskId", "taskCode"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_PENDING_APPROVAL",
     name: "Công việc chờ duyệt",
@@ -118,7 +494,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["performerName", "taskName", "taskId", "taskCode"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_REVISION_REQUESTED",
     name: "Yêu cầu làm lại",
@@ -131,7 +509,9 @@ const templates = [
     defaultPriority: "urgent",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["performerName", "taskName", "taskId", "taskCode"],
+    isAutoCreated: false,
   },
+
   {
     type: "TASK_REOPENED",
     name: "Mở lại công việc",
@@ -144,9 +524,215 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/congviec/{{taskId}}",
     requiredVariables: ["performerName", "taskName", "taskId", "taskCode"],
+    isAutoCreated: false,
   },
 
-  // ===== COMMENT NOTIFICATIONS =====
+  {
+    type: "TASK_DEADLINE_UPDATED",
+    name: "Thay đổi deadline công việc",
+    description: "Thông báo người tham gia khi deadline công việc bị thay đổi",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "⏰ Deadline thay đổi",
+    bodyTemplate:
+      '{{performerName}} đã thay đổi deadline công việc "{{taskTitle}}" ({{taskCode}}) từ {{oldDeadline}} thành {{newDeadline}}',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "clock",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "performerName",
+      "taskTitle",
+      "taskCode",
+      "oldDeadline",
+      "newDeadline",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "TASK_PARTICIPANT_ADDED",
+    name: "Thêm người tham gia",
+    description: "Thông báo người được thêm vào công việc",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "👥 Bạn được thêm vào công việc",
+    bodyTemplate:
+      '{{performerName}} đã thêm bạn vào công việc "{{taskTitle}}" ({{taskCode}}). Deadline: {{deadline}}',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "task",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "performerName",
+      "taskTitle",
+      "taskCode",
+      "deadline",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "TASK_PARTICIPANT_REMOVED",
+    name: "Xóa người tham gia",
+    description: "Thông báo người bị xóa khỏi công việc",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "❌ Bạn bị xóa khỏi công việc",
+    bodyTemplate:
+      '{{performerName}} đã xóa bạn khỏi công việc "{{taskTitle}}" ({{taskCode}})',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: ["performerName", "taskTitle", "taskCode", "taskId"],
+  },
+
+  {
+    type: "TASK_ASSIGNEE_CHANGED",
+    name: "Đổi người chịu trách nhiệm chính",
+    description:
+      "Thông báo người được giao làm người chịu trách nhiệm chính của công việc",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "🎯 Bạn là người chính",
+    bodyTemplate:
+      '{{performerName}} đã chuyển trách nhiệm chính công việc "{{taskTitle}}" ({{taskCode}}) cho bạn. Deadline: {{deadline}}',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "task",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "performerName",
+      "taskTitle",
+      "taskCode",
+      "deadline",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "TASK_PRIORITY_CHANGED",
+    name: "Thay đổi độ ưu tiên",
+    description: "Thông báo người tham gia khi độ ưu tiên công việc thay đổi",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "🔴 Đổi độ ưu tiên",
+    bodyTemplate:
+      '{{performerName}} đã thay đổi độ ưu tiên công việc "{{taskTitle}}" ({{taskCode}}) từ {{oldPriority}} thành {{newPriority}}',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "performerName",
+      "taskTitle",
+      "taskCode",
+      "oldPriority",
+      "newPriority",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "TASK_PROGRESS_UPDATED",
+    name: "Cập nhật tiến độ",
+    description:
+      "Thông báo người tạo/quản lý khi tiến độ công việc được cập nhật",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "📊 Cập nhật tiến độ",
+    bodyTemplate:
+      '{{updaterName}} đã cập nhật tiến độ công việc "{{taskTitle}}" ({{taskCode}}) từ {{oldProgress}}% lên {{newProgress}}%',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "task",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "updaterName",
+      "taskTitle",
+      "taskCode",
+      "oldProgress",
+      "newProgress",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "TASK_FILE_UPLOADED",
+    name: "Upload tài liệu",
+    description: "Thông báo người tham gia khi có tài liệu mới được upload",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "📎 Tài liệu mới",
+    bodyTemplate:
+      '{{uploaderName}} đã upload tài liệu mới vào công việc "{{taskTitle}}" ({{taskCode}}). Tên file: {{fileName}}',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "task",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "uploaderName",
+      "taskTitle",
+      "taskCode",
+      "fileName",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "TASK_FILE_DELETED",
+    name: "Xóa tài liệu",
+    description:
+      "Thông báo người tham gia khi có tài liệu bị xóa khỏi công việc",
+    category: "task",
+    isAutoCreated: false,
+    titleTemplate: "🗑️ Tài liệu đã xóa",
+    bodyTemplate:
+      '{{deleterName}} đã xóa tài liệu "{{fileName}}" khỏi công việc "{{taskTitle}}" ({{taskCode}})',
+    actionUrlTemplate: "/quan-ly-cong-viec/cong-viec/{{taskId}}",
+    icon: "warning",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "deleterName",
+      "fileName",
+      "taskTitle",
+      "taskCode",
+      "taskId",
+    ],
+  },
+
+  {
+    type: "DEADLINE_APPROACHING",
+    name: "Deadline sắp đến",
+    description: "Nhắc nhở công việc sắp đến hạn",
+    category: "task",
+    titleTemplate: "⏰ Deadline sắp đến",
+    bodyTemplate: "{{taskName}} còn {{daysLeft}} ngày để hoàn thành",
+    icon: "clock",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "urgent",
+    actionUrlTemplate: "/congviec/{{taskId}}",
+    requiredVariables: ["taskName", "daysLeft", "taskId"],
+    isAutoCreated: false,
+  },
+
+  {
+    type: "DEADLINE_OVERDUE",
+    name: "Quá hạn",
+    description: "Công việc đã quá hạn",
+    category: "task",
+    titleTemplate: "⚠️ Công việc quá hạn!",
+    bodyTemplate: "{{taskName}} đã quá hạn {{daysOverdue}} ngày",
+    icon: "warning",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "urgent",
+    actionUrlTemplate: "/congviec/{{taskId}}",
+    requiredVariables: ["taskName", "daysOverdue", "taskId"],
+    isAutoCreated: false,
+  },
+
   {
     type: "COMMENT_ADDED",
     name: "Bình luận mới",
@@ -166,37 +752,13 @@ const templates = [
       "taskCode",
       "taskName",
     ],
+    isAutoCreated: false,
   },
 
-  // ===== DEADLINE NOTIFICATIONS =====
-  {
-    type: "DEADLINE_APPROACHING",
-    name: "Deadline sắp đến",
-    description: "Nhắc nhở công việc sắp đến hạn",
-    category: "task",
-    titleTemplate: "⏰ Deadline sắp đến",
-    bodyTemplate: "{{taskName}} còn {{daysLeft}} ngày để hoàn thành",
-    icon: "clock",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "urgent",
-    actionUrlTemplate: "/congviec/{{taskId}}",
-    requiredVariables: ["taskName", "daysLeft", "taskId"],
-  },
-  {
-    type: "DEADLINE_OVERDUE",
-    name: "Quá hạn",
-    description: "Công việc đã quá hạn",
-    category: "task",
-    titleTemplate: "⚠️ Công việc quá hạn!",
-    bodyTemplate: "{{taskName}} đã quá hạn {{daysOverdue}} ngày",
-    icon: "warning",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "urgent",
-    actionUrlTemplate: "/congviec/{{taskId}}",
-    requiredVariables: ["taskName", "daysOverdue", "taskId"],
-  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KPI - 6 templates
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // ===== KPI NOTIFICATIONS =====
   {
     type: "KPI_CYCLE_STARTED",
     name: "Chu kỳ đánh giá bắt đầu",
@@ -210,7 +772,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/kpi/tu-danh-gia",
     requiredVariables: ["cycleName", "deadline"],
+    isAutoCreated: false,
   },
+
   {
     type: "KPI_EVALUATED",
     name: "Đã có kết quả KPI",
@@ -223,7 +787,9 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "/kpi/ket-qua/{{evaluationId}}",
     requiredVariables: ["cycleName", "rating", "evaluationId"],
+    isAutoCreated: false,
   },
+
   {
     type: "KPI_APPROVAL_REVOKED",
     name: "Hủy duyệt KPI",
@@ -237,9 +803,68 @@ const templates = [
     defaultPriority: "urgent",
     actionUrlTemplate: "/kpi/chi-tiet/{{evaluationId}}",
     requiredVariables: ["managerName", "cycleName", "reason", "evaluationId"],
+    isAutoCreated: false,
   },
 
-  // ===== SYSTEM NOTIFICATIONS =====
+  {
+    type: "KPI_SCORE_UPDATED",
+    name: "Cập nhật điểm KPI",
+    description:
+      "Thông báo nhân viên khi điểm KPI quản lý đánh giá được cập nhật",
+    category: "kpi",
+    isAutoCreated: false,
+    titleTemplate: "📊 Điểm KPI cập nhật",
+    bodyTemplate:
+      "{{managerName}} đã cập nhật điểm đánh giá KPI của bạn. Nhiệm vụ: {{taskName}}. Điểm: {{score}}",
+    actionUrlTemplate: "/quan-ly-cong-viec/kpi/danh-gia/{{evaluationId}}",
+    icon: "kpi",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: ["managerName", "taskName", "score", "evaluationId"],
+  },
+
+  {
+    type: "KPI_SELF_EVALUATED",
+    name: "Tự đánh giá KPI",
+    description: "Thông báo quản lý khi nhân viên hoàn thành tự đánh giá KPI",
+    category: "kpi",
+    isAutoCreated: false,
+    titleTemplate: "✏️ Tự đánh giá mới",
+    bodyTemplate:
+      "{{employeeName}} đã hoàn thành tự đánh giá KPI. Nhiệm vụ: {{taskName}}. Điểm tự đánh giá: {{selfScore}}",
+    actionUrlTemplate: "/quan-ly-cong-viec/kpi/danh-gia/{{evaluationId}}",
+    icon: "kpi",
+    defaultChannels: ["inapp"],
+    defaultPriority: "normal",
+    requiredVariables: [
+      "employeeName",
+      "taskName",
+      "selfScore",
+      "evaluationId",
+    ],
+  },
+
+  {
+    type: "KPI_FEEDBACK_ADDED",
+    name: "Phản hồi đánh giá KPI",
+    description:
+      "Thông báo quản lý khi nhân viên thêm phản hồi về đánh giá KPI",
+    category: "kpi",
+    isAutoCreated: false,
+    titleTemplate: "💬 Phản hồi KPI",
+    bodyTemplate:
+      "{{employeeName}} đã thêm phản hồi cho đánh giá KPI. Nội dung: {{feedback}}",
+    actionUrlTemplate: "/quan-ly-cong-viec/kpi/danh-gia/{{evaluationId}}",
+    icon: "comment",
+    defaultChannels: ["inapp", "push"],
+    defaultPriority: "normal",
+    requiredVariables: ["employeeName", "feedback", "evaluationId"],
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SYSTEM - 1 template
+  // ═══════════════════════════════════════════════════════════════════════════
+
   {
     type: "SYSTEM_ANNOUNCEMENT",
     name: "Thông báo hệ thống",
@@ -252,80 +877,7 @@ const templates = [
     defaultPriority: "normal",
     actionUrlTemplate: "",
     requiredVariables: ["title", "message"],
-  },
-
-  // ===== YEU CAU (TICKET) NOTIFICATIONS =====
-  {
-    type: "YEUCAU_MOI",
-    name: "Yêu cầu hỗ trợ mới",
-    description: "Khi có yêu cầu hỗ trợ mới gửi đến khoa",
-    category: "yeucau",
-    titleTemplate: "🆕 Yêu cầu mới: {{MaYeuCau}}",
-    bodyTemplate:
-      '{{NguoiGui}} ({{TenKhoaNguon}}) gửi yêu cầu "{{TieuDe}}" - Loại: {{TenLoaiYeuCau}}',
-    icon: "support",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "normal",
-    actionUrlTemplate: "/quan-ly-cong-viec/yeu-cau/{{yeuCauId}}",
-    requiredVariables: [
-      "MaYeuCau",
-      "TieuDe",
-      "TenLoaiYeuCau",
-      "NguoiGui",
-      "TenKhoaNguon",
-    ],
-  },
-  {
-    type: "YEUCAU_TIEP_NHAN",
-    name: "Yêu cầu được tiếp nhận",
-    description: "Khi yêu cầu được tiếp nhận xử lý",
-    category: "yeucau",
-    titleTemplate: "✅ Đã tiếp nhận: {{MaYeuCau}}",
-    bodyTemplate: '{{NguoiXuLy}} đã tiếp nhận yêu cầu "{{TieuDe}}"',
-    icon: "check",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "normal",
-    actionUrlTemplate: "/quan-ly-cong-viec/yeu-cau/{{yeuCauId}}",
-    requiredVariables: ["MaYeuCau", "TieuDe", "NguoiXuLy"],
-  },
-  {
-    type: "YEUCAU_HOAN_THANH",
-    name: "Yêu cầu hoàn thành",
-    description: "Khi yêu cầu được xử lý hoàn thành",
-    category: "yeucau",
-    titleTemplate: "🎉 Hoàn thành: {{MaYeuCau}}",
-    bodyTemplate: 'Yêu cầu "{{TieuDe}}" đã được xử lý hoàn thành',
-    icon: "done",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "normal",
-    actionUrlTemplate: "/quan-ly-cong-viec/yeu-cau/{{yeuCauId}}",
-    requiredVariables: ["MaYeuCau", "TieuDe"],
-  },
-  {
-    type: "YEUCAU_TU_CHOI",
-    name: "Yêu cầu bị từ chối",
-    description: "Khi yêu cầu bị từ chối xử lý",
-    category: "yeucau",
-    titleTemplate: "❌ Từ chối: {{MaYeuCau}}",
-    bodyTemplate: 'Yêu cầu "{{TieuDe}}" đã bị từ chối. Lý do: {{LyDoTuChoi}}',
-    icon: "cancel",
-    defaultChannels: ["inapp", "push"],
-    defaultPriority: "urgent",
-    actionUrlTemplate: "/quan-ly-cong-viec/yeu-cau/{{yeuCauId}}",
-    requiredVariables: ["MaYeuCau", "TieuDe", "LyDoTuChoi"],
-  },
-  {
-    type: "YEUCAU_DA_XOA",
-    name: "Yêu cầu đã bị xóa",
-    description: "Khi người gửi xóa yêu cầu",
-    category: "yeucau",
-    titleTemplate: "🗑️ Đã xóa: {{MaYeuCau}}",
-    bodyTemplate: '{{NguoiGui}} đã xóa yêu cầu "{{TieuDe}}"',
-    icon: "delete",
-    defaultChannels: ["inapp"],
-    defaultPriority: "normal",
-    actionUrlTemplate: null,
-    requiredVariables: ["MaYeuCau", "TieuDe", "NguoiGui"],
+    isAutoCreated: false,
   },
 ];
 
@@ -333,37 +885,57 @@ async function seedTemplates() {
   try {
     // Connect to MongoDB
     const mongoURI =
-      process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/giaobanbv";
+      process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/giaoban_bvt";
     await mongoose.connect(mongoURI);
     console.log("✅ Connected to MongoDB");
 
-    // Upsert templates (update if exists, insert if not)
-    let created = 0;
-    let updated = 0;
+    // Category statistics
+    const stats = {
+      ticket: 0,
+      task: 0,
+      kpi: 0,
+      system: 0,
+      inserted: 0,
+      updated: 0,
+    };
 
+    // Upsert each template
     for (const template of templates) {
       const result = await NotificationTemplate.findOneAndUpdate(
         { type: template.type },
         {
           ...template,
-          isAutoCreated: false, // Đánh dấu là template chính thức
+          isAutoCreated: false,
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
 
       if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-        created++;
-        console.log(`  ➕ Created: ${template.type}`);
+        stats.inserted++;
+        console.log(`  ✅ Inserted: ${template.type}`);
       } else {
-        updated++;
-        console.log(`  🔄 Updated: ${template.type}`);
+        stats.updated++;
+        console.log(`  ♻️  Updated: ${template.type}`);
       }
+
+      // Count by category
+      stats[template.category]++;
     }
 
-    console.log(`\n🎉 Seed completed!`);
-    console.log(`   Created: ${created} templates`);
-    console.log(`   Updated: ${updated} templates`);
-    console.log(`   Total: ${templates.length} templates`);
+    console.log("\n📊 Seeding Summary:");
+    console.log(`  ✅ Inserted: ${stats.inserted} templates`);
+    console.log(`  ♻️  Updated: ${stats.updated} templates`);
+    console.log(`  📋 Total: ${templates.length} templates`);
+    console.log("\n📊 By Category:");
+    console.log(`  🎫 Ticket (YeuCau): ${stats.ticket} templates`);
+    console.log(`  📋 Task (CongViec): ${stats.task} templates`);
+    console.log(`  📊 KPI: ${stats.kpi} templates`);
+    console.log(`  🔧 System: ${stats.system} templates`);
+
+    // Final verification
+    const totalInDB = await NotificationTemplate.countDocuments();
+    console.log(`\n🎉 Total templates in database: ${totalInDB}`);
+    console.log("🎉 Seeding completed successfully!");
 
     process.exit(0);
   } catch (error) {
@@ -373,4 +945,8 @@ async function seedTemplates() {
 }
 
 // Run if executed directly
-seedTemplates();
+if (require.main === module) {
+  seedTemplates();
+}
+
+module.exports = { templates, seedTemplates };

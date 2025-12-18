@@ -263,6 +263,7 @@ notificationTemplateController.deleteTemplate = catchAsync(
  * @desc    Test send notification using template
  * @route   POST /api/notification-templates/:id/test
  * @access  Admin only
+ * @body    { data: Object, dryRun: Boolean, recipientId: String }
  */
 notificationTemplateController.testTemplate = catchAsync(
   async (req, res, next) => {
@@ -272,18 +273,52 @@ notificationTemplateController.testTemplate = catchAsync(
       throw new AppError(404, "Không tìm thấy template", "NOT_FOUND");
     }
 
+    // Extract params
+    const { data: testData = {}, dryRun = true, recipientId } = req.body;
+
     // Generate test data if not provided
-    const testData = req.body.data || {};
     template.requiredVariables.forEach((varName) => {
       if (!testData[varName]) {
         testData[varName] = `[Test ${varName}]`;
       }
     });
 
-    // Send test notification to current user
+    // Render preview
+    const preview = {
+      title: notificationService.renderTemplate(
+        template.titleTemplate,
+        testData
+      ),
+      body: notificationService.renderTemplate(template.bodyTemplate, testData),
+      actionUrl: template.actionUrlTemplate
+        ? notificationService.renderTemplate(
+            template.actionUrlTemplate,
+            testData
+          )
+        : null,
+    };
+
+    // If dry run, return preview only (no DB save)
+    if (dryRun) {
+      return sendResponse(
+        res,
+        200,
+        true,
+        {
+          preview,
+          sent: false,
+          mode: "dryRun",
+        },
+        null,
+        "Preview thành công (chưa gửi thật)"
+      );
+    }
+
+    // Send for real
+    const targetUserId = recipientId || req.userId;
     const notification = await notificationService.send({
       type: template.type,
-      recipientId: req.userId,
+      recipientId: targetUserId,
       data: testData,
       priority: template.defaultPriority,
     });
@@ -293,10 +328,11 @@ notificationTemplateController.testTemplate = catchAsync(
       200,
       true,
       {
-        renderedTitle: notification?.title,
-        renderedBody: notification?.body,
-        sentTo: req.userId,
+        preview,
+        sent: true,
+        sentTo: targetUserId,
         notification,
+        mode: "live",
       },
       null,
       "Đã gửi notification test"

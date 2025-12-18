@@ -38,7 +38,7 @@ notificationHelper.resolveNhanVienToUserId = async (nhanVienId) => {
 
 /**
  * Batch convert nhiều NhanVienIDs → User._ids
- * @param {Array<string|ObjectId>} nhanVienIds - Array of NhanVien._id
+ * @param {Array<string|ObjectId|Object>} nhanVienIds - Array of NhanVien._id hoặc populated objects
  * @returns {Promise<Array<ObjectId>>} Array of User._id (filtered nulls)
  */
 notificationHelper.resolveNhanVienListToUserIds = async (nhanVienIds) => {
@@ -51,9 +51,23 @@ notificationHelper.resolveNhanVienListToUserIds = async (nhanVienIds) => {
     return [];
   }
 
+  // Extract _id from populated objects, handle both ObjectId and populated Object
+  const extractedIds = nhanVienIds.map((item) => {
+    if (!item) return null;
+    // If it's a populated object with _id property (e.g., from YeuCau populate)
+    if (typeof item === "object" && item._id) {
+      return item._id;
+    }
+    // If it's already an ObjectId or string (e.g., from CongViec)
+    return item;
+  });
+
   // Filter out null/undefined and deduplicate
-  const validIds = [...new Set(nhanVienIds.filter((id) => id != null))];
-  console.log(`[notificationHelper] 🔍 validIds after filter:`, validIds);
+  const validIds = [...new Set(extractedIds.filter((id) => id != null))];
+  console.log(
+    `[notificationHelper] 🔍 validIds after extract & filter:`,
+    validIds
+  );
   if (validIds.length === 0) return [];
 
   try {

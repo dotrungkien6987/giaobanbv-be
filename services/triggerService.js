@@ -11,6 +11,7 @@ console.log("🔥🔥🔥 triggerService.js LOADED AT:", new Date().toISOString(
 const triggers = require("../config/notificationTriggers");
 const notificationHelper = require("../helpers/notificationHelper");
 const notificationService = require("../modules/workmanagement/services/notificationService");
+const CauHinhThongBaoKhoa = require("../modules/workmanagement/models/CauHinhThongBaoKhoa");
 
 class TriggerService {
   constructor() {
@@ -102,18 +103,25 @@ class TriggerService {
 
       // Step 4: Exclude performer if configured
       if (config.excludePerformer && context.performerId) {
+        console.log(
+          `[TriggerService] 🔍 Resolving performer NhanVienID to UserID:`,
+          context.performerId
+        );
         const performerUserId =
           await notificationHelper.resolveNhanVienToUserId(context.performerId);
+        console.log(`[TriggerService] 👤 Performer UserID:`, performerUserId);
         if (performerUserId) {
           const originalCount = userIds.length;
           userIds = userIds.filter(
             (id) => String(id) !== String(performerUserId)
           );
-          if (userIds.length < originalCount) {
-            console.log(
-              `[TriggerService] 👤 Excluded performer from recipients`
-            );
-          }
+          console.log(
+            `[TriggerService] 🎯 Recipients after exclude: ${
+              userIds.length
+            }/${originalCount} (removed performer: ${
+              originalCount - userIds.length
+            })`
+          );
         }
       }
 
@@ -153,12 +161,18 @@ class TriggerService {
     switch (handlerType) {
       case "congViec":
         return this._handleCongViec(context, config);
+      case "congViecUpdate":
+        return this._handleCongViecUpdate(context, config);
       case "kpi":
         return this._handleKPI(context, config);
+      case "kpiUpdate":
+        return this._handleKPIUpdate(context, config);
       case "comment":
         return this._handleComment(context, config);
       case "yeuCauComment":
         return this._handleYeuCauComment(context, config);
+      case "yeuCauStateMachine":
+        return this._handleYeuCauStateMachine(context, config);
       case "deadline":
         return this._handleDeadline(context, config);
       default:
@@ -228,11 +242,17 @@ class TriggerService {
       taskId: String(congViec._id),
       taskCode: congViec.MaCongViec || "",
       taskName: congViec.TieuDe || "Công việc",
+      taskTitle: congViec.TieuDe || "Công việc",
       assignerName: assignerName,
       assigneeName: assigneeName,
       performerName: performerName,
       newStatus: this._mapStatus(congViec.TrangThai),
       reason: lyDo || ghiChu || "",
+      deadline: congViec.NgayHetHan
+        ? require("dayjs")(congViec.NgayHetHan).format("DD/MM/YYYY HH:mm")
+        : null,
+      priority: congViec.MucDoUuTien || "Bình thường",
+      progress: congViec.TienDo || 0,
       // For approved/rejected templates
       approverName: assignerName,
       rejecterName: assignerName,
@@ -444,6 +464,293 @@ class TriggerService {
       deadline: congViec.NgayHetHan
         ? new Date(congViec.NgayHetHan).toLocaleDateString("vi-VN")
         : "",
+    };
+
+    return { recipientNhanVienIds, data };
+  }
+
+  /**
+   * Handler for YeuCau state machine transitions
+   * Handles all YeuCau actions: TAO_MOI, TIEP_NHAN, TU_CHOI, etc.
+   * @private
+   */
+  async _handleYeuCauStateMachine(context, config) {
+    const { yeuCau } = context;
+    console.log(`[TriggerService] 🎫 _handleYeuCauStateMachine called`);
+
+    if (!yeuCau) {
+      console.log(
+        `[TriggerService] ⚠️ _handleYeuCauStateMachine: missing yeuCau`
+      );
+      return null;
+    }
+
+    let recipientNhanVienIds = [];
+
+    // Determine recipients based on config.recipients
+    switch (config.recipients) {
+      case "requester":
+        // Người yêu cầu
+        if (yeuCau.NguoiYeuCauID) {
+          recipientNhanVienIds.push(yeuCau.NguoiYeuCauID);
+        }
+        break;
+
+      case "performer":
+        // Người xử lý - ưu tiên NguoiDuocDieuPhoiID (cho DIEU_PHOI), fallback NguoiXuLyID
+        if (yeuCau.NguoiDuocDieuPhoiID) {
+          // Người được điều phối (có giá trị ngay khi DIEU_PHOI)
+          recipientNhanVienIds.push(yeuCau.NguoiDuocDieuPhoiID);
+        } else if (yeuCau.NguoiXuLyID) {
+          // Người xử lý thực sự (có giá trị sau TIEP_NHAN)
+          recipientNhanVienIds.push(yeuCau.NguoiXuLyID);
+        }
+        break;
+
+      case "targetDept":
+        // Khoa được yêu cầu - gửi cho tất cả điều phối viên trong DanhSachNguoiDieuPhoi
+        try {
+          const cauHinh = await CauHinhThongBaoKhoa.findOne({
+            KhoaID: yeuCau.KhoaDichID,
+          });
+          if (
+            cauHinh &&
+            cauHinh.DanhSachNguoiDieuPhoi &&
+            cauHinh.DanhSachNguoiDieuPhoi.length > 0
+          ) {
+            const dieuPhoiIds = cauHinh.DanhSachNguoiDieuPhoi.map(
+              (item) => item.NhanVienID
+            );
+            recipientNhanVienIds.push(...dieuPhoiIds);
+            console.log(
+              `[TriggerService] 📋 Found ${dieuPhoiIds.length} coordinators for KhoaDichID ${yeuCau.KhoaDichID}`
+            );
+          } else {
+            console.warn(
+              `[TriggerService] ⚠️ No coordinators found in CauHinhThongBaoKhoa for KhoaDichID ${yeuCau.KhoaDichID}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `[TriggerService] ❌ Error querying CauHinhThongBaoKhoa:`,
+            error.message
+          );
+        }
+        break;
+
+      case "sourceDept":
+        // Khoa yêu cầu (người yêu cầu + trưởng khoa)
+        if (yeuCau.NguoiYeuCauID) {
+          recipientNhanVienIds.push(yeuCau.NguoiYeuCauID);
+        }
+        break;
+
+      case "manager":
+        // Quản lý (trưởng khoa / giám đốc)
+        // TODO: Implement logic to get manager based on KhoaDuocYeuCauID
+        if (yeuCau.NguoiDieuPhoiID) {
+          recipientNhanVienIds.push(yeuCau.NguoiDieuPhoiID);
+        }
+        break;
+
+      case "all":
+        // Tất cả người liên quan
+        if (yeuCau.NguoiYeuCauID)
+          recipientNhanVienIds.push(yeuCau.NguoiYeuCauID);
+        if (yeuCau.NguoiXuLyID) recipientNhanVienIds.push(yeuCau.NguoiXuLyID);
+        if (yeuCau.NguoiDieuPhoiID)
+          recipientNhanVienIds.push(yeuCau.NguoiDieuPhoiID);
+        if (yeuCau.NguoiDuocDieuPhoiID)
+          recipientNhanVienIds.push(yeuCau.NguoiDuocDieuPhoiID);
+        break;
+
+      default:
+        console.warn(
+          `[TriggerService] Unknown recipients type for YeuCau: ${config.recipients}`
+        );
+        return null;
+    }
+
+    console.log(
+      `[TriggerService] 🎫 YeuCau recipientNhanVienIds:`,
+      recipientNhanVienIds
+    );
+
+    // Build data object - pass context variables directly
+    // Business logic will prepare the variables (requestCode, requestTitle, etc.)
+    const data = { ...context };
+
+    return { recipientNhanVienIds, data };
+  }
+
+  /**
+   * Handler for CongViec update actions
+   * Handles field changes: deadline, priority, participants, progress, files
+   * @private
+   */
+  async _handleCongViecUpdate(context, config) {
+    const { congViec, specificRecipient } = context;
+    console.log(`[TriggerService] 📝 _handleCongViecUpdate called`);
+
+    if (!congViec) {
+      console.log(
+        `[TriggerService] ⚠️ _handleCongViecUpdate: missing congViec`
+      );
+      return null;
+    }
+
+    let recipientNhanVienIds = [];
+
+    // If specific recipient is provided (e.g., new participant), use it
+    if (specificRecipient) {
+      recipientNhanVienIds.push(specificRecipient);
+    } else {
+      // Determine recipients based on config
+      switch (config.recipients) {
+        case "assignee":
+          if (congViec.NguoiChinhID) {
+            recipientNhanVienIds.push(congViec.NguoiChinhID);
+          }
+          break;
+
+        case "assigner":
+          if (congViec.NguoiGiaoViecID) {
+            recipientNhanVienIds.push(congViec.NguoiGiaoViecID);
+          }
+          break;
+
+        case "newAssignee":
+          // For assignee change, send to new assignee
+          if (context.newAssigneeId) {
+            recipientNhanVienIds.push(context.newAssigneeId);
+          }
+          break;
+
+        case "newParticipant":
+          // For participant added
+          if (context.newParticipantId) {
+            recipientNhanVienIds.push(context.newParticipantId);
+          }
+          break;
+
+        case "removedParticipant":
+          // For participant removed
+          if (context.removedParticipantId) {
+            recipientNhanVienIds.push(context.removedParticipantId);
+          }
+          break;
+
+        case "all":
+          // All people related to task
+          if (congViec.NguoiChinhID)
+            recipientNhanVienIds.push(congViec.NguoiChinhID);
+          if (congViec.NguoiGiaoViecID)
+            recipientNhanVienIds.push(congViec.NguoiGiaoViecID);
+          if (Array.isArray(congViec.NguoiThamGia)) {
+            congViec.NguoiThamGia.forEach((p) => {
+              if (p.NhanVienID) recipientNhanVienIds.push(p.NhanVienID);
+              else if (p._id) recipientNhanVienIds.push(p._id);
+            });
+          }
+          break;
+
+        default:
+          console.warn(
+            `[TriggerService] Unknown recipients type: ${config.recipients}`
+          );
+          return null;
+      }
+    }
+
+    console.log(
+      `[TriggerService] 📝 CongViec update recipientNhanVienIds:`,
+      recipientNhanVienIds
+    );
+
+    // Enrich context with common variables
+    const performerName = context.performerId
+      ? await notificationHelper.getDisplayName(context.performerId)
+      : await notificationHelper.getDisplayName(congViec.NguoiGiaoViecID);
+
+    const data = {
+      ...context,
+      taskId: String(congViec._id),
+      taskCode: congViec.MaCongViec || "",
+      taskName: congViec.TieuDe || "Công việc",
+      taskTitle: congViec.TieuDe || "Công việc",
+      performerName,
+      deadline: congViec.NgayHetHan
+        ? require("dayjs")(congViec.NgayHetHan).format("DD/MM/YYYY HH:mm")
+        : null,
+      priority: congViec.MucDoUuTien || "Bình thường",
+      progress: congViec.TienDo || 0,
+    };
+
+    return { recipientNhanVienIds, data };
+  }
+
+  /**
+   * Handler for KPI update actions
+   * Handles: capNhatDiemQL, tuDanhGia, phanHoi
+   * @private
+   */
+  async _handleKPIUpdate(context, config) {
+    const { danhGiaKPI } = context;
+    console.log(`[TriggerService] 📊 _handleKPIUpdate called`);
+
+    if (!danhGiaKPI) {
+      console.log(`[TriggerService] ⚠️ _handleKPIUpdate: missing danhGiaKPI`);
+      return null;
+    }
+
+    let recipientNhanVienIds = [];
+
+    // Determine recipients
+    switch (config.recipients) {
+      case "employee":
+        // Send to employee being evaluated
+        if (danhGiaKPI.NhanVienID) {
+          recipientNhanVienIds.push(danhGiaKPI.NhanVienID);
+        }
+        break;
+
+      case "manager":
+        // Send to manager evaluating
+        if (danhGiaKPI.NguoiDanhGiaID) {
+          recipientNhanVienIds.push(danhGiaKPI.NguoiDanhGiaID);
+        }
+        break;
+
+      default:
+        console.warn(
+          `[TriggerService] Unknown recipients type for KPI: ${config.recipients}`
+        );
+        return null;
+    }
+
+    console.log(
+      `[TriggerService] 📊 KPI update recipientNhanVienIds:`,
+      recipientNhanVienIds
+    );
+
+    // Enrich context with extracted variables
+    const employeeName =
+      context.nhanVien?.HoTen ||
+      (danhGiaKPI.NhanVienID?.HoTen
+        ? danhGiaKPI.NhanVienID.HoTen
+        : "Nhân viên");
+    const managerName = context.performerId
+      ? await notificationHelper.getDisplayName(context.performerId)
+      : danhGiaKPI.NguoiDanhGiaID?.HoTen || "Quản lý";
+
+    const data = {
+      ...context,
+      evaluationId: String(danhGiaKPI._id),
+      cycleName: context.chuKy?.TenChuKy || "Chu kỳ đánh giá",
+      employeeName,
+      managerName,
+      rating: danhGiaKPI.TongDiemKPI || 0,
+      feedback: context.feedback || context.noiDung || "",
     };
 
     return { recipientNhanVienIds, data };

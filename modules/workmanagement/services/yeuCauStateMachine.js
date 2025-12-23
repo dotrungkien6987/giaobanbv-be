@@ -17,7 +17,6 @@ const LichSuYeuCau = require("../models/LichSuYeuCau");
 const LyDoTuChoi = require("../models/LyDoTuChoi");
 const CauHinhThongBaoKhoa = require("../models/CauHinhThongBaoKhoa");
 const notificationService = require("./notificationService");
-const triggerService = require("../../../services/triggerService");
 const NhanVien = require("../../../models/NhanVien");
 
 const { TRANG_THAI } = YeuCau;
@@ -520,8 +519,12 @@ async function fireNotificationTrigger(
         break;
     }
 
-    // Fire trigger
-    console.log(`[YeuCauStateMachine] 🔥 About to fire trigger: ${triggerKey}`);
+    // Fire notification via notificationService
+    console.log(
+      `[YeuCauStateMachine] 🔥 About to send notification: yeucau-${action
+        .toLowerCase()
+        .replace(/_/g, "-")}`
+    );
     console.log(`[YeuCauStateMachine] 📦 Context:`, {
       requestId: context.requestId,
       requestCode: context.requestCode,
@@ -534,9 +537,34 @@ async function fireNotificationTrigger(
       yeuCauNguoiDuocDieuPhoiID: context.yeuCau?.NguoiDuocDieuPhoiID,
     });
 
-    await triggerService.fire(triggerKey, context);
+    // Chuyển action thành type code (ví dụ: TIEP_NHAN -> tiep-nhan)
+    const actionTypeCode = action.toLowerCase().replace(/_/g, "-");
 
-    console.log(`[YeuCauStateMachine] ✅ Fired trigger: ${triggerKey}`);
+    // Lấy danh sách người nhận từ nguoiDungLienQuanAll
+    const arrNguoiLienQuanID = (populated.nguoiDungLienQuanAll?.() || [])
+      .map((id) => id?.toString())
+      .filter((id) => id && id !== context.performerId?.toString());
+
+    await notificationService.send({
+      type: `yeucau-${actionTypeCode}`,
+      data: {
+        _id: populated._id.toString(),
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+        MaYeuCau: populated.MaYeuCau,
+        TieuDe: populated.TieuDe || populated.NoiDung?.substring(0, 50),
+        TenNguoiThucHien:
+          context.performerName || context.requesterName || "Người thực hiện",
+        HanhDong: action,
+        TuTrangThai: context.yeuCau?.TrangThai,
+        DenTrangThai: populated.TrangThai,
+        GhiChu: context.reason || context.ghiChu || "",
+        ...context, // Thêm các context khác như TenNguoiXuLy, deadlines, etc.
+      },
+    });
+
+    console.log(
+      `[YeuCauStateMachine] ✅ Sent notification: yeucau-${actionTypeCode}`
+    );
   } catch (error) {
     // Log but don't throw - notification failure shouldn't block workflow
     console.error(

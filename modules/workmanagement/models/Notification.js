@@ -17,7 +17,13 @@ const notificationSchema = new Schema(
       index: true,
     },
 
-    // Loại thông báo (match với NotificationTemplate.type)
+    // Template đã dùng (optional - để track)
+    templateId: {
+      type: Schema.Types.ObjectId,
+      ref: "NotificationTemplate",
+    },
+
+    // Loại thông báo (match với NotificationType.code)
     type: {
       type: String,
       required: true,
@@ -43,7 +49,7 @@ const notificationSchema = new Schema(
     // Độ ưu tiên
     priority: {
       type: String,
-      enum: ["normal", "urgent"],
+      enum: ["low", "normal", "high", "urgent"],
       default: "normal",
     },
 

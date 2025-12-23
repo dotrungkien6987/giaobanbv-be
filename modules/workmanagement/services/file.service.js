@@ -13,6 +13,7 @@ const {
   canDeleteFile,
 } = require("../helpers/filePermissions");
 const config = require("../helpers/uploadConfig");
+const notificationService = require("./notificationService");
 
 function toObjectId(id) {
   return typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
@@ -167,29 +168,35 @@ service.uploadForTask = async (
   // Fire notification trigger for file upload
   if (items.length > 0) {
     try {
-      const triggerService = require("../../../services/triggerService");
       const NhanVien = require("../../../models/NhanVien");
       const cv = await CongViec.findById(congViecId).lean();
       const uploader = await NhanVien.findById(nhanVienId).select("Ten").lean();
 
-      for (const item of items) {
-        await triggerService.fire("CongViec.uploadFile", {
-          congViec: cv,
-          performerId: nhanVienId,
-          taskCode: cv.MaCongViec,
-          taskTitle: cv.TieuDe,
-          taskId: cv._id.toString(),
-          uploaderName: uploader?.Ten || "Người tải lên",
-          fileName: item.TenGoc,
-          fileSize: Math.round(item.KichThuoc / 1024) + " KB",
-        });
-      }
+      // Lấy danh sách người liên quan (trừ người tải lên)
+      const arrNguoiLienQuanID = [
+        cv?.NguoiGiaoViecID?.toString(),
+        cv?.NguoiChinhID?.toString(),
+        ...(cv?.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+      ].filter((id) => id && id !== nhanVienId?.toString());
+
+      await notificationService.send({
+        type: "congviec-upload-file",
+        data: {
+          _id: cv?._id?.toString(),
+          arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+          MaCongViec: cv?.MaCongViec,
+          TieuDe: cv?.TieuDe || "Công việc",
+          TenNguoiTaiLen: uploader?.Ten || "Người tải lên",
+          SoLuongFile: items.length,
+          TenFile: items[0]?.TenGoc || "Tệp tin",
+        },
+      });
       console.log(
-        `[FileService] ✅ Fired trigger: CongViec.uploadFile (${items.length} files)`
+        `[FileService] ✅ Sent notification: congviec-upload-file (${items.length} files)`
       );
     } catch (error) {
       console.error(
-        "[FileService] ❌ File upload notification trigger failed:",
+        "[FileService] ❌ File upload notification failed:",
         error.message
       );
     }
@@ -234,16 +241,32 @@ service.createCommentWithFiles = async (
 
   // ✅ Fire notification trigger for comment
   try {
-    const triggerService = require("../../../services/triggerService");
     const cv = await CongViec.findById(congViecId).lean();
-    await triggerService.fire("CongViec.comment", {
-      congViec: cv,
-      comment: base,
-      nguoiBinhLuan: { _id: nhanVienId, Ten: tenNguoiBinhLuan },
-      performerId: nhanVienId, // NhanVienID của người bình luận để excludePerformer hoạt động
+
+    // Lấy danh sách người liên quan (trừ người bình luận)
+    const arrNguoiLienQuanID = [
+      cv?.NguoiGiaoViecID?.toString(),
+      cv?.NguoiChinhID?.toString(),
+      ...(cv?.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+    ].filter((id) => id && id !== nhanVienId?.toString());
+
+    await notificationService.send({
+      type: "congviec-binh-luan",
+      data: {
+        _id: cv?._id?.toString(),
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+        MaCongViec: cv?.MaCongViec,
+        TieuDe: cv?.TieuDe || "Công việc",
+        TenNguoiBinhLuan: tenNguoiBinhLuan,
+        NoiDung: base.NoiDung?.substring(0, 200) || "",
+        BinhLuanID: base._id?.toString(),
+        IsReply: !!parentId,
+        SoLuongFile: filesDTO?.length || 0,
+      },
     });
+    console.log("[FileService] ✅ Sent notification: congviec-binh-luan");
   } catch (triggerErr) {
-    console.error("[file.service] Trigger error:", triggerErr.message);
+    console.error("[file.service] Notification error:", triggerErr.message);
   }
 
   return {
@@ -314,24 +337,32 @@ service.softDelete = async (fileId, req) => {
   // Fire notification trigger for file deletion
   if (doc.CongViecID) {
     try {
-      const triggerService = require("../../../services/triggerService");
       const NhanVien = require("../../../models/NhanVien");
       const cv = await CongViec.findById(doc.CongViecID).lean();
       const deleter = await NhanVien.findById(nhanVienId).select("Ten").lean();
 
-      await triggerService.fire("CongViec.xoaFile", {
-        congViec: cv,
-        performerId: nhanVienId,
-        taskCode: cv?.MaCongViec || "",
-        taskTitle: cv?.TieuDe || "Công việc",
-        taskId: doc.CongViecID.toString(),
-        deleterName: deleter?.Ten || "Người xóa",
-        fileName: doc.TenGoc,
+      // Lấy danh sách người liên quan (trừ người xóa)
+      const arrNguoiLienQuanID = [
+        cv?.NguoiGiaoViecID?.toString(),
+        cv?.NguoiChinhID?.toString(),
+        ...(cv?.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+      ].filter((id) => id && id !== nhanVienId?.toString());
+
+      await notificationService.send({
+        type: "congviec-xoa-file",
+        data: {
+          _id: cv?._id?.toString(),
+          arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+          MaCongViec: cv?.MaCongViec || "",
+          TieuDe: cv?.TieuDe || "Công việc",
+          TenNguoiXoa: deleter?.Ten || "Người xóa",
+          TenFile: doc.TenGoc,
+        },
       });
-      console.log("[FileService] ✅ Fired trigger: CongViec.xoaFile");
+      console.log("[FileService] ✅ Sent notification: congviec-xoa-file");
     } catch (error) {
       console.error(
-        "[FileService] ❌ File delete notification trigger failed:",
+        "[FileService] ❌ File delete notification failed:",
         error.message
       );
     }

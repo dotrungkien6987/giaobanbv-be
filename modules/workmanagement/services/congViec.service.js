@@ -12,7 +12,7 @@ const TepTin = require("../models/TepTin");
 const ChuKyDanhGia = require("../models/ChuKyDanhGia");
 const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
 const NhiemVuThuongQuy = require("../models/NhiemVuThuongQuy");
-const triggerService = require("../../../services/triggerService");
+const notificationService = require("./notificationService");
 const deadlineScheduler = require("../helpers/deadlineScheduler");
 const dayjs = require("dayjs");
 
@@ -440,18 +440,29 @@ service.updateProgress = async (congviecId, payload, req) => {
   try {
     const performer = await NhanVien.findById(performerId).select("Ten").lean();
 
-    await triggerService.fire("CongViec.capNhatTienDo", {
-      congViec: cv,
-      performerId: performerId,
-      taskCode: cv.MaCongViec,
-      taskTitle: cv.TieuDe,
-      taskId: cv._id.toString(),
-      updaterName: performer?.Ten || "Người cập nhật",
-      oldProgress: old,
-      newProgress: value,
-      note: ghiChu || "",
+    // Lấy danh sách người liên quan (NguoiGiaoViec, NguoiChinh, NguoiThamGia)
+    const arrNguoiLienQuanID = [
+      cv.NguoiGiaoViecID?.toString(),
+      cv.NguoiChinhID?.toString(),
+      ...(cv.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+    ].filter((id) => id && id !== performerId.toString());
+
+    await notificationService.send({
+      type: "congviec-cap-nhat-tien-do",
+      data: {
+        _id: cv._id.toString(),
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+        MaCongViec: cv.MaCongViec,
+        TieuDe: cv.TieuDe,
+        TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
+        TienDocu: old,
+        TienDoMoi: value,
+        GhiChu: ghiChu || "",
+      },
     });
-    console.log("[CongViecService] ✅ Fired trigger: CongViec.capNhatTienDo");
+    console.log(
+      "[CongViecService] ✅ Sent notification: congviec-cap-nhat-tien-do"
+    );
   } catch (error) {
     console.error(
       "[CongViecService] ❌ Progress notification trigger failed:",
@@ -1710,10 +1721,38 @@ service.giaoViec = async (id, payload = {}, req) => {
   await congviec.save();
 
   // 🔔 Notification trigger - Giao việc
-  await triggerService.fire("CongViec.giaoViec", {
-    congViec: congviec,
-    performerId: req.user?.NhanVienID,
-  });
+  try {
+    const nguoiGiao = await NhanVien.findById(req.user?.NhanVienID)
+      .select("Ten")
+      .lean();
+
+    // Danh sách người nhận: NguoiChinh + NguoiThamGia (trừ NguoiGiao nếu trùng)
+    const arrNguoiNhanViecID = [
+      congviec.NguoiChinhID?.toString(),
+      ...(congviec.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+    ].filter((id) => id && id !== req.user?.NhanVienID?.toString());
+
+    await notificationService.send({
+      type: "congviec-giao-viec",
+      data: {
+        _id: congviec._id.toString(),
+        arrNguoiNhanViecID: [...new Set(arrNguoiNhanViecID)],
+        MaCongViec: congviec.MaCongViec,
+        TieuDe: congviec.TieuDe,
+        TenNguoiGiao: nguoiGiao?.Ten || "Người giao",
+        NgayHetHan: congviec.NgayHetHan
+          ? dayjs(congviec.NgayHetHan).format("DD/MM/YYYY HH:mm")
+          : "",
+        MucDoUuTien: congviec.MucDoUuTien || "BINH_THUONG",
+      },
+    });
+    console.log("[CongViecService] ✅ Sent notification: congviec-giao-viec");
+  } catch (notifyErr) {
+    console.error(
+      "[CongViecService] ❌ giaoViec notification failed:",
+      notifyErr.message
+    );
+  }
 
   const populated = await CongViec.findById(congviec._id)
     .populate({
@@ -2096,21 +2135,39 @@ service.transition = async (id, payload = {}, req) => {
 
   // 🔔 Notification trigger - Transition actions
   try {
-    console.log(
-      "🔥 DEBUG transition: Calling triggerService.fire('CongViec." +
-        action +
-        "')"
-    );
-    await triggerService.fire(`CongViec.${action}`, {
-      congViec: congviec,
-      performerId: performerIdCtx,
-      ghiChu: ghiChu || lyDo,
+    const performer = await NhanVien.findById(performerId).select("Ten").lean();
+
+    // Danh sách người liên quan (NguoiGiaoViec, NguoiChinh, NguoiThamGia) trừ người thực hiện
+    const arrNguoiLienQuanID = [
+      congviec.NguoiGiaoViecID?.toString(),
+      congviec.NguoiChinhID?.toString(),
+      ...(congviec.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+    ].filter((id) => id && id !== performerId?.toString());
+
+    // Chuyển action thành type code (ví dụ: TIEP_NHAN -> tiep-nhan)
+    const actionTypeCode = action.toLowerCase().replace(/_/g, "-");
+
+    await notificationService.send({
+      type: `congviec-${actionTypeCode}`,
+      data: {
+        _id: congviec._id.toString(),
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+        MaCongViec: congviec.MaCongViec,
+        TieuDe: congviec.TieuDe,
+        TenNguoiThucHien: performer?.Ten || "Người thực hiện",
+        HanhDong: action,
+        TuTrangThai: prevState,
+        DenTrangThai: conf.next,
+        GhiChu: ghiChu || lyDo || "",
+      },
     });
-    console.log("🔥 DEBUG transition: triggerService.fire() completed");
+    console.log(
+      `[CongViecService] ✅ Sent notification: congviec-${actionTypeCode}`
+    );
   } catch (triggerErr) {
     console.error(
-      "🔥 DEBUG transition: triggerService.fire() ERROR:",
-      triggerErr
+      "[CongViecService] ❌ Transition notification failed:",
+      triggerErr.message
     );
   }
 
@@ -2999,24 +3056,30 @@ service.updateCongViec = async (congviecid, updateData, req) => {
       .select("Ten")
       .lean();
 
-    const baseContext = {
-      congViec: populated,
-      performerId: currentUser.NhanVienID,
-      taskCode: congviec.MaCongViec,
-      taskTitle: congviec.TieuDe,
-      taskId: congviec._id.toString(),
-      performerName: performer?.Ten || "Người cập nhật",
-    };
+    // Danh sách người liên quan (trừ người cập nhật)
+    const arrNguoiLienQuanID = [
+      congviec.NguoiGiaoViecID?.toString(),
+      congviec.NguoiChinhID?.toString(),
+      ...(congviec.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+    ].filter((id) => id && id !== currentUser.NhanVienID?.toString());
+    const uniqueNguoiLienQuan = [...new Set(arrNguoiLienQuanID)];
 
     // Deadline change notification
     if (changes.deadline) {
-      await triggerService.fire("CongViec.capNhatDeadline", {
-        ...baseContext,
-        oldDeadline: dayjs(oldValues.oldDeadline).format("DD/MM/YYYY HH:mm"),
-        newDeadline: dayjs(oldValues.newDeadline).format("DD/MM/YYYY HH:mm"),
+      await notificationService.send({
+        type: "congviec-cap-nhat-deadline",
+        data: {
+          _id: congviec._id.toString(),
+          arrNguoiLienQuanID: uniqueNguoiLienQuan,
+          MaCongViec: congviec.MaCongViec,
+          TieuDe: congviec.TieuDe,
+          TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
+          DeadlineCu: dayjs(oldValues.oldDeadline).format("DD/MM/YYYY HH:mm"),
+          DeadlineMoi: dayjs(oldValues.newDeadline).format("DD/MM/YYYY HH:mm"),
+        },
       });
       console.log(
-        "[CongViecService] ✅ Fired trigger: CongViec.capNhatDeadline"
+        "[CongViecService] ✅ Sent notification: congviec-cap-nhat-deadline"
       );
     }
 
@@ -3028,14 +3091,23 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         CAO: "Cao",
         KHAN_CAP: "Khẩn cấp",
       };
-      await triggerService.fire("CongViec.thayDoiUuTien", {
-        ...baseContext,
-        oldPriority:
-          priorityLabels[oldValues.oldPriority] || oldValues.oldPriority,
-        newPriority:
-          priorityLabels[oldValues.newPriority] || oldValues.newPriority,
+      await notificationService.send({
+        type: "congviec-thay-doi-uu-tien",
+        data: {
+          _id: congviec._id.toString(),
+          arrNguoiLienQuanID: uniqueNguoiLienQuan,
+          MaCongViec: congviec.MaCongViec,
+          TieuDe: congviec.TieuDe,
+          TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
+          UuTienCu:
+            priorityLabels[oldValues.oldPriority] || oldValues.oldPriority,
+          UuTienMoi:
+            priorityLabels[oldValues.newPriority] || oldValues.newPriority,
+        },
       });
-      console.log("[CongViecService] ✅ Fired trigger: CongViec.thayDoiUuTien");
+      console.log(
+        "[CongViecService] ✅ Sent notification: congviec-thay-doi-uu-tien"
+      );
     }
 
     // Main assignee change notification
@@ -3047,14 +3119,28 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         .select("Ten")
         .lean();
 
-      await triggerService.fire("CongViec.thayDoiNguoiChinh", {
-        ...baseContext,
-        oldAssigneeName: oldAssignee?.Ten || "Người cũ",
-        newAssigneeName: newAssignee?.Ten || "Người mới",
-        newAssigneeId: oldValues.newMainAssigneeId,
+      // Gửi cho cả người cũ và người mới
+      const arrNguoiNhan = [
+        oldValues.oldMainAssigneeId,
+        oldValues.newMainAssigneeId,
+        congviec.NguoiGiaoViecID?.toString(),
+      ].filter((id) => id && id !== currentUser.NhanVienID?.toString());
+
+      await notificationService.send({
+        type: "congviec-thay-doi-nguoi-chinh",
+        data: {
+          _id: congviec._id.toString(),
+          arrNguoiLienQuanID: [...new Set(arrNguoiNhan)],
+          MaCongViec: congviec.MaCongViec,
+          TieuDe: congviec.TieuDe,
+          TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
+          TenNguoiChinhCu: oldAssignee?.Ten || "Người cũ",
+          TenNguoiChinhMoi: newAssignee?.Ten || "Người mới",
+          NguoiChinhMoiID: oldValues.newMainAssigneeId,
+        },
       });
       console.log(
-        "[CongViecService] ✅ Fired trigger: CongViec.thayDoiNguoiChinh"
+        "[CongViecService] ✅ Sent notification: congviec-thay-doi-nguoi-chinh"
       );
     }
 
@@ -3062,14 +3148,20 @@ service.updateCongViec = async (congviecid, updateData, req) => {
     if (changes.participantsAdded) {
       for (const addedId of oldValues.addedParticipantIds) {
         const addedNV = await NhanVien.findById(addedId).select("Ten").lean();
-        await triggerService.fire("CongViec.ganNguoiThamGia", {
-          ...baseContext,
-          addedParticipantName: addedNV?.Ten || "Người tham gia",
-          addedParticipantId: addedId,
+        await notificationService.send({
+          type: "congviec-gan-nguoi-tham-gia",
+          data: {
+            _id: congviec._id.toString(),
+            arrNguoiNhanID: [addedId], // Chỉ gửi cho người được thêm
+            MaCongViec: congviec.MaCongViec,
+            TieuDe: congviec.TieuDe,
+            TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
+            TenNguoiDuocThem: addedNV?.Ten || "Người tham gia",
+          },
         });
       }
       console.log(
-        `[CongViecService] ✅ Fired trigger: CongViec.ganNguoiThamGia (${oldValues.addedParticipantIds.length} người)`
+        `[CongViecService] ✅ Sent notification: congviec-gan-nguoi-tham-gia (${oldValues.addedParticipantIds.length} người)`
       );
     }
 
@@ -3079,14 +3171,20 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         const removedNV = await NhanVien.findById(removedId)
           .select("Ten")
           .lean();
-        await triggerService.fire("CongViec.xoaNguoiThamGia", {
-          ...baseContext,
-          removedParticipantName: removedNV?.Ten || "Người tham gia",
-          removedParticipantId: removedId,
+        await notificationService.send({
+          type: "congviec-xoa-nguoi-tham-gia",
+          data: {
+            _id: congviec._id.toString(),
+            arrNguoiNhanID: [removedId], // Gửi cho người bị xóa
+            MaCongViec: congviec.MaCongViec,
+            TieuDe: congviec.TieuDe,
+            TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
+            TenNguoiBiXoa: removedNV?.Ten || "Người tham gia",
+          },
         });
       }
       console.log(
-        `[CongViecService] ✅ Fired trigger: CongViec.xoaNguoiThamGia (${oldValues.removedParticipantIds.length} người)`
+        `[CongViecService] ✅ Sent notification: congviec-xoa-nguoi-tham-gia (${oldValues.removedParticipantIds.length} người)`
       );
     }
   } catch (error) {
@@ -3206,19 +3304,35 @@ service.addComment = async (congviecid, noiDung, req, parentId = null) => {
 
   // 🔔 Notification trigger - Comment
   try {
-    console.log(
-      "🔥 DEBUG addComment: Calling triggerService.fire('CongViec.comment')"
-    );
-    await triggerService.fire("CongViec.comment", {
-      congViec: congviec,
-      comment: binhLuan,
-      performerId: currentUser.NhanVienID,
+    const nguoiBinhLuan = await NhanVien.findById(currentUser.NhanVienID)
+      .select("Ten")
+      .lean();
+
+    // Danh sách người liên quan (NguoiGiaoViec, NguoiChinh, NguoiThamGia) trừ người bình luận
+    const arrNguoiLienQuanID = [
+      congviec.NguoiGiaoViecID?.toString(),
+      congviec.NguoiChinhID?.toString(),
+      ...(congviec.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
+    ].filter((id) => id && id !== currentUser.NhanVienID?.toString());
+
+    await notificationService.send({
+      type: "congviec-binh-luan",
+      data: {
+        _id: congviec._id.toString(),
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+        MaCongViec: congviec.MaCongViec,
+        TieuDe: congviec.TieuDe,
+        TenNguoiBinhLuan: nguoiBinhLuan?.Ten || "Người bình luận",
+        NoiDung: noiDung.trim().substring(0, 200),
+        BinhLuanID: binhLuan._id.toString(),
+        IsReply: !!parentId,
+      },
     });
-    console.log("🔥 DEBUG addComment: triggerService.fire() completed");
+    console.log("[CongViecService] ✅ Sent notification: congviec-binh-luan");
   } catch (triggerErr) {
     console.error(
-      "🔥 DEBUG addComment: triggerService.fire() ERROR:",
-      triggerErr
+      "[CongViecService] ❌ Comment notification failed:",
+      triggerErr.message
     );
   }
 

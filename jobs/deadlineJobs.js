@@ -5,7 +5,7 @@
  * Được gọi bởi Agenda.js khi đến thời điểm scheduled.
  */
 const { CongViec } = require("../modules/workmanagement/models");
-const triggerService = require("../services/triggerService");
+const notificationService = require("../modules/workmanagement/services/notificationService");
 
 /**
  * Define deadline-related jobs for Agenda
@@ -101,11 +101,24 @@ async function processDeadlineApproaching(taskId) {
   const msLeft = deadline - now;
   const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
 
-  // 5. Fire trigger to send notifications
-  await triggerService.fire("CongViec.DEADLINE_APPROACHING", {
-    congViec: task,
-    daysLeft: Math.max(0, daysLeft),
-    performerId: null, // System triggered, no performer
+  // 5. Fire notification via notificationService
+  // Lấy danh sách người liên quan
+  const arrNguoiLienQuanID = [
+    task.NguoiChinhID?._id?.toString(),
+    task.NguoiGiaoViecID?._id?.toString(),
+    ...(task.NguoiThamGia || []).map((p) => p.NhanVienID?._id?.toString()),
+  ].filter((id) => id);
+
+  await notificationService.send({
+    type: "congviec-deadline-approaching",
+    data: {
+      _id: task._id.toString(),
+      arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+      MaCongViec: task.MaCongViec,
+      TieuDe: task.TieuDe,
+      NgayHetHan: task.NgayHetHan,
+      SoNgayConLai: Math.max(0, daysLeft),
+    },
   });
 
   // 6. Mark as notified to prevent duplicates
@@ -154,11 +167,23 @@ async function processDeadlineOverdue(taskId) {
   const msOverdue = now - deadline;
   const daysOverdue = Math.floor(msOverdue / (1000 * 60 * 60 * 24));
 
-  // 5. Fire trigger
-  await triggerService.fire("CongViec.DEADLINE_OVERDUE", {
-    congViec: task,
-    daysOverdue: Math.max(0, daysOverdue),
-    performerId: null,
+  // 5. Fire notification via notificationService
+  const arrNguoiLienQuanID = [
+    task.NguoiChinhID?._id?.toString(),
+    task.NguoiGiaoViecID?._id?.toString(),
+    ...(task.NguoiThamGia || []).map((p) => p.NhanVienID?._id?.toString()),
+  ].filter((id) => id);
+
+  await notificationService.send({
+    type: "congviec-deadline-overdue",
+    data: {
+      _id: task._id.toString(),
+      arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+      MaCongViec: task.MaCongViec,
+      TieuDe: task.TieuDe,
+      NgayHetHan: task.NgayHetHan,
+      SoNgayQuaHan: Math.max(0, daysOverdue),
+    },
   });
 
   // 6. Mark as notified

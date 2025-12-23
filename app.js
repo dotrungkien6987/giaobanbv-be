@@ -29,11 +29,13 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api", indexRouter);
 
-// Notification System Routes
-const notificationRoutes = require("./modules/workmanagement/routes/notificationRoutes");
-const notificationTemplateRoutes = require("./modules/workmanagement/routes/notificationTemplateRoutes");
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/notification-templates", notificationTemplateRoutes);
+// User-facing Notification Routes (GET notifications, settings, mark as read)
+const notificationUserRoutes = require("./modules/workmanagement/routes/notificationRoutes");
+app.use("/api/notifications", notificationUserRoutes);
+
+// Admin Notification System Routes (Admin-Configurable v2: Types & Templates CRUD)
+const notificationApi = require("./modules/workmanagement/routes/notification.api");
+app.use("/api/workmanagement/notifications", notificationApi);
 
 const mongoose = require("mongoose");
 const mongoURI =

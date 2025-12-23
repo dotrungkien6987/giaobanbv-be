@@ -1,313 +1,378 @@
-const {
-  Notification,
-  NotificationTemplate,
-  UserNotificationSettings,
-} = require("../models");
-const socketService = require("../../../services/socketService");
+const mongoose = require("mongoose");
+const NotificationType = require("../models/NotificationType");
+const NotificationTemplate = require("../models/NotificationTemplate");
+const Notification = require("../models/Notification");
+const UserNotificationSettings = require("../models/UserNotificationSettings");
 const notificationHelper = require("../../../helpers/notificationHelper");
-// const fcmService = require("../../../services/fcmService"); // Uncomment when FCM is ready
+const socketService = require("../../../services/socketService");
 
 /**
- * NotificationService - Main service cho notification system
+ * NotificationService - Admin-Configurable Notification Engine
  *
- * Features:
- * - Template cache để giảm DB queries
- * - Auto-create template nếu không tìm thấy
- * - Usage statistics tracking
- * - Multi-channel delivery (inapp, push)
- * - User preferences checking
+ * Core Responsibilities:
+ * - Load notification types & templates from DB (with cache)
+ * - Build recipients from config + data
+ * - Render templates with simple regex
+ * - Send to users (check settings, create DB, emit socket)
+ *
+ * Usage:
+ * await notificationService.send({
+ *   type: 'yeucau-tao-moi',
+ *   data: { _id, MaYeuCau, TenKhoaGui, arrNguoiDieuPhoiID, ... }
+ * });
  */
 class NotificationService {
   constructor() {
+    this.typeCache = new Map();
     this.templateCache = new Map();
+    this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   }
 
   /**
-   * Load templates from DB into cache
+   * Main entry point - Send notification
+   * @param {Object} params
+   * @param {string} params.type - NotificationType code (e.g., 'yeucau-tao-moi')
+   * @param {Object} params.data - Flatten data với tất cả variables
    */
-  async loadTemplates() {
-    const templates = await NotificationTemplate.find({ isActive: true });
-    templates.forEach((t) => {
-      this.templateCache.set(t.type, t);
-    });
-    console.log(
-      `[NotificationService] Loaded ${templates.length} templates into cache`
-    );
-  }
+  async send({ type, data }) {
+    console.log(`[Notification] Type: ${type}, Data keys:`, Object.keys(data));
 
-  /**
-   * Get template by type - auto-creates if not found
-   * @param {string} type - Template type
-   * @param {string[]} [dataKeys] - Keys from data object (for requiredVariables)
-   * @returns {Promise<NotificationTemplate>}
-   */
-  async getTemplate(type, dataKeys = []) {
-    const upperType = type.toUpperCase();
-
-    // Check cache first
-    if (this.templateCache.has(upperType)) {
-      return this.templateCache.get(upperType);
-    }
-
-    // Try DB
-    let template = await NotificationTemplate.findOne({
-      type: upperType,
-      isActive: true,
-    });
-
-    // Auto-create template if not found
-    if (!template) {
-      console.warn(
-        `[NotificationService] Template "${type}" not found, auto-creating...`
-      );
-
-      // Format name from type (e.g., "TASK_ASSIGNED" → "Task Assigned")
-      const formattedName = type
-        .split("_")
-        .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
-        .join(" ");
-
-      template = await NotificationTemplate.create({
-        type: upperType,
-        name: formattedName,
-        description: `Auto-created template for ${formattedName}. Please configure!`,
-        titleTemplate: "🔔 Thông báo mới",
-        bodyTemplate: `Bạn có thông báo: ${formattedName}`,
-        icon: "notification",
-        defaultChannels: ["inapp", "push"],
-        defaultPriority: "normal",
-        category: "other",
-        isAutoCreated: true, // ⚠️ Flag cần Admin config
-        requiredVariables: dataKeys,
-      });
-
-      console.warn(
-        `[NotificationService] ⚠️ Auto-created template: ${upperType}. ` +
-          `Admin should configure titleTemplate and bodyTemplate!`
-      );
-    }
-
-    // Update cache
-    this.templateCache.set(template.type, template);
-
-    return template;
-  }
-
-  /**
-   * Clear template from cache (call after admin updates template)
-   * @param {string} type
-   */
-  invalidateCache(type) {
-    this.templateCache.delete(type?.toUpperCase());
-  }
-
-  /**
-   * Clear all template cache
-   */
-  clearCache() {
-    this.templateCache.clear();
-  }
-
-  /**
-   * Render template with data
-   * @param {string} templateString - Template với {{placeholder}} syntax
-   * @param {Object} data - Data object
-   * @returns {string}
-   */
-  renderTemplate(templateString, data) {
-    return templateString.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-      return data[key] !== undefined ? data[key] : match;
-    });
-  }
-
-  /**
-   * Send notification to single user
-   * @param {Object} options
-   * @param {string} options.type - Notification type (must match template)
-   * @param {string} options.recipientId - User._id hoặc NhanVien._id (tự động convert)
-   * @param {Object} options.data - Data for template rendering
-   * @param {string} [options.priority] - Override default priority
-   * @returns {Promise<Notification|null>}
-   */
-  async send({ type, recipientId, data = {}, priority }) {
-    console.log(
-      `[NotificationService] 📨 send() called for recipientId: ${recipientId}, type: ${type}`
-    );
     try {
-      // 0. Convert NhanVienID → UserID nếu cần
-      let userId = await notificationHelper.resolveNhanVienToUserId(
-        recipientId
-      );
-      console.log(`[NotificationService] 🔄 After resolve: userId = ${userId}`);
-      // Nếu không tìm thấy qua NhanVienID, có thể recipientId đã là UserID
-      if (!userId) {
-        const User = require("../../../models/User");
-        const userExists = await User.exists({ _id: recipientId });
-        if (userExists) {
-          userId = recipientId;
-          console.log(
-            `[NotificationService] ✅ recipientId is already a valid UserID`
-          );
-        } else {
-          console.log(
-            `[NotificationService] ❌ No user found for recipientId: ${recipientId}`
-          );
-          return null;
-        }
+      // 1. Load type config (with cache)
+      const notifType = await this.getNotificationType(type);
+      if (!notifType || !notifType.isActive) {
+        console.warn(`[Notification] Type ${type} not found or inactive`);
+        return { success: false, reason: "type_not_found" };
       }
 
-      // 1. Get template (auto-creates if not found)
-      const dataKeys = Object.keys(data);
-      const template = await this.getTemplate(type, dataKeys);
+      // 2. Load enabled templates (with cache)
+      const templates = await this.getTemplates(type);
+      if (templates.length === 0) {
+        console.warn(`[Notification] No enabled templates for ${type}`);
+        return { success: false, reason: "no_templates" };
+      }
 
-      // 2. Update usage statistics
-      await NotificationTemplate.findByIdAndUpdate(template._id, {
-        $inc: { usageCount: 1 },
-        $set: { lastUsedAt: new Date() },
+      console.log(`[Notification] Found ${templates.length} template(s)`);
+
+      // 3. Process each template (parallel)
+      const results = await Promise.allSettled(
+        templates.map((template) => this.processTemplate(template, data))
+      );
+
+      const sent = results.filter(
+        (r) => r.status === "fulfilled" && r.value?.success
+      ).length;
+      const failed = results.length - sent;
+
+      console.log(`[Notification] Sent: ${sent}, Failed: ${failed}`);
+      return { success: sent > 0, sent, failed };
+    } catch (error) {
+      console.error(`[Notification] Error sending type ${type}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Process single template
+   */
+  async processTemplate(template, data) {
+    try {
+      // 1. Build recipients from config
+      const recipientNhanVienIds = this.buildRecipients(
+        template.recipientConfig,
+        data
+      );
+
+      if (recipientNhanVienIds.length === 0) {
+        console.warn(`[Template ${template.name}] No recipients found`);
+        return { success: false, reason: "no_recipients" };
+      }
+
+      console.log(
+        `[Template ${template.name}] Recipients (NhanVienIDs):`,
+        recipientNhanVienIds.length
+      );
+
+      // 2. Convert NhanVienID → UserID
+      const userIds = await notificationHelper.resolveNhanVienListToUserIds(
+        recipientNhanVienIds
+      );
+
+      if (userIds.length === 0) {
+        console.warn(`[Template ${template.name}] No users found`);
+        return { success: false, reason: "no_users" };
+      }
+
+      console.log(
+        `[Template ${template.name}] Users (UserIDs):`,
+        userIds.length
+      );
+
+      // 3. Render templates
+      const title = this.renderTemplate(template.titleTemplate, data);
+      const body = this.renderTemplate(template.bodyTemplate, data);
+      const actionUrl = template.actionUrl
+        ? this.renderTemplate(template.actionUrl, data)
+        : null;
+
+      console.log(`[Template ${template.name}] Rendered title:`, title);
+
+      // 4. Send to each user (parallel)
+      const sendResults = await Promise.allSettled(
+        userIds.map((userId) =>
+          this.sendToUser({
+            userId,
+            templateId: template._id,
+            typeCode: template.typeCode,
+            title,
+            body,
+            actionUrl,
+            icon: template.icon,
+            priority: template.priority,
+            metadata: data,
+          })
+        )
+      );
+
+      const sentCount = sendResults.filter(
+        (r) => r.status === "fulfilled" && r.value
+      ).length;
+      console.log(
+        `[Template ${template.name}] Sent to ${sentCount}/${userIds.length} users`
+      );
+
+      return {
+        success: sentCount > 0,
+        sent: sentCount,
+        failed: userIds.length - sentCount,
+      };
+    } catch (error) {
+      console.error(`[Template ${template.name}] Error:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Build recipients from config and data
+   * @param {Object} recipientConfig - { variables: ['arrNguoiDieuPhoiID', 'NguoiYeuCauID'] }
+   * @param {Object} data - Data object with NhanVienIDs
+   * @returns {string[]} - Array of unique NhanVienID strings
+   */
+  buildRecipients(recipientConfig, data) {
+    const recipients = [];
+
+    if (!recipientConfig || !recipientConfig.variables) {
+      return recipients;
+    }
+
+    for (const varName of recipientConfig.variables) {
+      const value = data[varName];
+
+      if (!value) {
+        console.warn(`[BuildRecipients] Variable ${varName} not found in data`);
+        continue;
+      }
+
+      // Handle different data types
+      if (typeof value === "string") {
+        recipients.push(value);
+      } else if (value instanceof mongoose.Types.ObjectId) {
+        recipients.push(value.toString());
+      } else if (Array.isArray(value)) {
+        const ids = value
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (item instanceof mongoose.Types.ObjectId) return item.toString();
+            if (item && item._id) return item._id.toString();
+            return null;
+          })
+          .filter(Boolean);
+        recipients.push(...ids);
+      } else if (value && value._id) {
+        recipients.push(value._id.toString());
+      } else {
+        console.warn(
+          `[BuildRecipients] Unknown value type for ${varName}:`,
+          typeof value
+        );
+      }
+    }
+
+    // Deduplicate
+    return [...new Set(recipients)];
+  }
+
+  /**
+   * Render template with simple regex (flatten variables only)
+   * Supports: {{variableName}} - NO nested access
+   * @param {string} templateString - Template with {{var}} syntax
+   * @param {Object} data - Flat data object
+   * @returns {string} - Rendered string
+   */
+  renderTemplate(templateString, data) {
+    try {
+      return templateString.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+        const value = data[key];
+        if (value === undefined || value === null) return "";
+        if (typeof value === "object") return JSON.stringify(value);
+        return String(value);
       });
+    } catch (error) {
+      console.error("[RenderTemplate] Error:", error);
+      return templateString; // Fallback
+    }
+  }
 
-      // 3. Get user settings
+  /**
+   * Send to single user
+   */
+  async sendToUser({
+    userId,
+    templateId,
+    typeCode,
+    title,
+    body,
+    actionUrl,
+    icon,
+    priority,
+    metadata,
+  }) {
+    try {
+      // Check user settings (per-type support)
       const settings = await UserNotificationSettings.getOrCreate(userId);
-
-      // 4. Check if user wants this notification
-      console.log(
-        `[NotificationService] 🔍 Checking settings for user ${userId}, type ${type}`
-      );
-      const shouldSendResult = settings.shouldSend(type, "inapp");
-      console.log(
-        `[NotificationService] 🔔 shouldSend result: ${shouldSendResult}`
-      );
-      if (!shouldSendResult) {
+      if (!settings.shouldSend(typeCode, "inapp")) {
         console.log(
-          `[NotificationService] ❌ User ${userId} disabled ${type} notifications (settings block)`
+          `[SendToUser] User ${userId} disabled ${typeCode} notifications`
         );
         return null;
       }
 
-      // 5. Render notification
-      const title = this.renderTemplate(template.titleTemplate, data);
-      const body = this.renderTemplate(template.bodyTemplate, data);
-      const actionUrl = template.actionUrlTemplate
-        ? this.renderTemplate(template.actionUrlTemplate, data)
-        : null;
-
-      // 6. Save to database
+      // Create notification document
       const notification = await Notification.create({
         recipientId: userId,
-        type: template.type,
-        title,
-        body,
-        icon: template.icon,
-        priority: priority || template.defaultPriority,
-        actionUrl,
-        metadata: data,
+        templateId: templateId,
+        type: typeCode,
+        title: title,
+        body: body,
+        actionUrl: actionUrl,
+        icon: icon || "notification",
+        priority: priority || "normal",
+        metadata: metadata,
+        isRead: false,
         deliveredVia: ["inapp"],
       });
 
-      // 7. Send via Socket.IO if online
-      const isOnline = socketService.isUserOnline(userId);
-      if (isOnline) {
-        socketService.emitToUser(userId, "notification:new", {
-          notification: notification.toObject(),
-        });
-
-        // Also send updated unread count
-        const unreadCount = await this.getUnreadCount(userId);
-        socketService.emitToUser(userId, "notification:count", {
-          count: unreadCount,
-        });
-      }
-
-      // 8. Send via FCM if offline and push enabled
-      if (!isOnline && settings.shouldSend(type, "push")) {
-        // TODO: Implement FCM in Phase 11 (04_FCM_PUSH_SETUP.md)
-        // await fcmService.sendToUser(recipientId, { title, body, actionUrl });
-        // notification.deliveredVia.push("push");
-        // await notification.save();
-      }
-
       console.log(
-        `[NotificationService] ✅ Successfully inserted notification to DB: ${notification._id} for user ${userId} (type: ${type}, online: ${isOnline})`
+        `[SendToUser] Notification created: ${notification._id} for user ${userId}`
       );
+
+      // Emit socket event using existing socketService
+      try {
+        socketService.emitToUser(userId, "notification:new", {
+          _id: notification._id,
+          title: title,
+          body: body,
+          actionUrl: actionUrl,
+          icon: icon,
+          priority: priority,
+          createdAt: notification.createdAt,
+        });
+
+        console.log(`[SendToUser] Socket event emitted to user:${userId}`);
+      } catch (socketError) {
+        console.error("[SendToUser] Socket emit error:", socketError);
+        // Don't throw - notification already created in DB
+      }
+
       return notification;
     } catch (error) {
-      console.error("[NotificationService] Error sending notification:", error);
-      throw error;
+      console.error(`[SendToUser] Error for user ${userId}:`, error);
+      return null;
     }
   }
 
   /**
-   * Send notification to multiple users
-   * @param {Object} options
-   * @param {string} options.type
-   * @param {string[]} options.recipientIds
-   * @param {Object} options.data
-   * @param {string} [options.priority]
-   * @returns {Promise<Notification[]>}
+   * Get notification type (with cache)
    */
-  async sendToMany({ type, recipientIds, data, priority }) {
-    console.log(
-      `[NotificationService] 📮 sendToMany called: type=${type}, recipients=${recipientIds.length}`
-    );
-    const results = await Promise.all(
-      recipientIds.map((recipientId) =>
-        this.send({ type, recipientId, data, priority })
-      )
-    );
-    const successCount = results.filter(Boolean).length;
-    console.log(
-      `[NotificationService] 📊 sendToMany result: ${successCount}/${
-        recipientIds.length
-      } successful (${recipientIds.length - successCount} nulls filtered)`
-    );
-    return results.filter(Boolean); // Remove nulls
+  async getNotificationType(code) {
+    const cacheKey = `type:${code}`;
+
+    if (this.typeCache.has(cacheKey)) {
+      const cached = this.typeCache.get(cacheKey);
+      if (Date.now() < cached.expires) {
+        return cached.data;
+      }
+    }
+
+    const type = await NotificationType.findOne({ code }).lean();
+
+    if (type) {
+      this.typeCache.set(cacheKey, {
+        data: type,
+        expires: Date.now() + this.CACHE_TTL,
+      });
+    }
+
+    return type;
   }
 
   /**
-   * Send notification to all users in a Khoa
-   * @param {Object} options
-   * @param {string} options.type
-   * @param {string} options.khoaId
-   * @param {Object} options.data
-   * @param {string[]} [options.excludeUserIds]
-   * @returns {Promise<Notification[]>}
+   * Get templates (with cache)
    */
-  async sendToKhoa({ type, khoaId, data, excludeUserIds = [] }) {
-    const User = require("../../../models/User");
-    const users = await User.find({
-      KhoaID: khoaId,
-      _id: { $nin: excludeUserIds },
+  async getTemplates(typeCode) {
+    const cacheKey = `templates:${typeCode}`;
+
+    if (this.templateCache.has(cacheKey)) {
+      const cached = this.templateCache.get(cacheKey);
+      if (Date.now() < cached.expires) {
+        return cached.data;
+      }
+    }
+
+    const templates = await NotificationTemplate.find({
+      typeCode,
+      isEnabled: true,
+    }).lean();
+
+    this.templateCache.set(cacheKey, {
+      data: templates,
+      expires: Date.now() + this.CACHE_TTL,
     });
 
-    return this.sendToMany({
-      type,
-      recipientIds: users.map((u) => u._id),
-      data,
-    });
+    return templates;
   }
 
   /**
-   * Get unread count for user
-   * @param {string} userId
-   * @returns {Promise<number>}
+   * Clear cache (called when admin updates config)
    */
-  async getUnreadCount(userId) {
-    return Notification.countDocuments({
-      recipientId: userId,
-      isRead: false,
-    });
+  clearCache() {
+    this.typeCache.clear();
+    this.templateCache.clear();
+    console.log("[Notification] Cache cleared");
   }
 
   /**
-   * Get notifications for user with pagination
-   * @param {string} userId
-   * @param {Object} options
-   * @param {number} [options.page=1]
-   * @param {number} [options.limit=20]
-   * @param {boolean} [options.isRead]
-   * @returns {Promise<{notifications: Notification[], pagination: Object}>}
+   * Clear cache cho specific type
    */
-  async getNotifications(userId, { page = 1, limit = 20, isRead } = {}) {
+  clearCacheForType(typeCode) {
+    this.typeCache.delete(`type:${typeCode}`);
+    this.templateCache.delete(`templates:${typeCode}`);
+    console.log(`[Notification] Cache cleared for type: ${typeCode}`);
+  }
+
+  // ============================================================================
+  // USER-FACING METHODS (for notificationController.js)
+  // ============================================================================
+
+  /**
+   * Get user's notifications with pagination
+   * @param {string} userId - User ID
+   * @param {Object} options - { page, limit, isRead }
+   */
+  async getNotifications(userId, options = {}) {
+    const { page = 1, limit = 20, isRead } = options;
+    const skip = (page - 1) * limit;
+
     const query = { recipientId: userId };
     if (isRead !== undefined) {
       query.isRead = isRead;
@@ -316,7 +381,7 @@ class NotificationService {
     const [notifications, total] = await Promise.all([
       Notification.find(query)
         .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
+        .skip(skip)
         .limit(limit)
         .lean(),
       Notification.countDocuments(query),
@@ -334,10 +399,17 @@ class NotificationService {
   }
 
   /**
+   * Get unread notification count
+   */
+  async getUnreadCount(userId) {
+    return await Notification.countDocuments({
+      recipientId: userId,
+      isRead: false,
+    });
+  }
+
+  /**
    * Mark notification as read
-   * @param {string} notificationId
-   * @param {string} userId
-   * @returns {Promise<Notification|null>}
    */
   async markAsRead(notificationId, userId) {
     const notification = await Notification.findOneAndUpdate(
@@ -346,21 +418,11 @@ class NotificationService {
       { new: true }
     );
 
-    if (notification) {
-      // Send updated count via socket
-      const unreadCount = await this.getUnreadCount(userId);
-      socketService.emitToUser(userId, "notification:count", {
-        count: unreadCount,
-      });
-    }
-
     return notification;
   }
 
   /**
    * Mark all notifications as read
-   * @param {string} userId
-   * @returns {Promise<{modifiedCount: number}>}
    */
   async markAllAsRead(userId) {
     const result = await Notification.updateMany(
@@ -368,17 +430,11 @@ class NotificationService {
       { isRead: true, readAt: new Date() }
     );
 
-    // Send updated count via socket
-    socketService.emitToUser(userId, "notification:count", { count: 0 });
-
     return result;
   }
 
   /**
    * Delete notification
-   * @param {string} notificationId
-   * @param {string} userId
-   * @returns {Promise<Notification|null>}
    */
   async deleteNotification(notificationId, userId) {
     const notification = await Notification.findOneAndDelete({
@@ -386,16 +442,9 @@ class NotificationService {
       recipientId: userId,
     });
 
-    if (notification) {
-      // Send updated count via socket
-      const unreadCount = await this.getUnreadCount(userId);
-      socketService.emitToUser(userId, "notification:count", {
-        count: unreadCount,
-      });
-    }
-
     return notification;
   }
 }
 
+// Export singleton
 module.exports = new NotificationService();

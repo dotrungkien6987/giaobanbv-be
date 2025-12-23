@@ -16,7 +16,7 @@ const {
   detectCriteriaChanges,
   mergeCriteriaWithPreservedScores,
 } = require("../helpers/criteriaSync.helper");
-const triggerService = require("../../../services/triggerService");
+const notificationService = require("../services/notificationService");
 
 const kpiController = {};
 
@@ -131,11 +131,24 @@ kpiController.taoDanhGiaKPI = catchAsync(async (req, res, next) => {
   }).populate("NhiemVuThuongQuyID", "TenNhiemVu MoTa MucDoKho");
 
   // 🔔 Notification trigger - Tạo đánh giá KPI
-  await triggerService.fire("KPI.taoDanhGia", {
-    danhGiaKPI: danhGiaKPI,
-    chuKy: chuKy,
-    performerId: NguoiDanhGiaID,
-  });
+  try {
+    await notificationService.send({
+      type: "kpi-tao-danh-gia",
+      data: {
+        _id: danhGiaKPI._id.toString(),
+        arrNguoiNhanID: [NhanVienID], // Thông báo cho nhân viên được đánh giá
+        TenChuKy: chuKy?.TenChuKy || "Chu kỳ đánh giá",
+        TenNhanVien: danhGiaKPI.NhanVienID?.HoTen || "Nhân viên",
+        TenNguoiDanhGia: danhGiaKPI.NguoiDanhGiaID?.HoTen || "Người đánh giá",
+      },
+    });
+    console.log("[KpiController] ✅ Sent notification: kpi-tao-danh-gia");
+  } catch (notifyErr) {
+    console.error(
+      "[KpiController] ❌ kpi-tao-danh-gia notification failed:",
+      notifyErr.message
+    );
+  }
 
   return sendResponse(
     res,
@@ -483,21 +496,22 @@ kpiController.chamDiemNhiemVu = catchAsync(async (req, res, next) => {
       .select("TenNhiemVu")
       .lean();
 
-    await triggerService.fire("KPI.capNhatDiemQL", {
-      danhGiaKPI,
-      danhGiaNhiemVu,
-      performerId: currentNhanVienID,
-      employeeId: danhGiaKPI.NhanVienID,
-      employeeName: employee?.Ten || "Nhân viên",
-      managerName: manager?.Ten || "Quản lý",
-      taskName: nhiemVu?.TenNhiemVu || "Nhiệm vụ",
-      score: danhGiaNhiemVu.DiemNhiemVu || 0,
-      totalScore: tongDiemKPI,
+    await notificationService.send({
+      type: "kpi-cap-nhat-diem-ql",
+      data: {
+        _id: danhGiaKPI._id.toString(),
+        arrNguoiNhanID: [danhGiaKPI.NhanVienID?.toString()],
+        TenNhanVien: employee?.Ten || "Nhân viên",
+        TenNguoiDanhGia: manager?.Ten || "Quản lý",
+        TenNhiemVu: nhiemVu?.TenNhiemVu || "Nhiệm vụ",
+        DiemNhiemVu: danhGiaNhiemVu.DiemNhiemVu || 0,
+        TongDiemKPI: tongDiemKPI,
+      },
     });
-    console.log("[KPIController] ✅ Fired trigger: KPI.capNhatDiemQL");
+    console.log("[KPIController] ✅ Sent notification: kpi-cap-nhat-diem-ql");
   } catch (error) {
     console.error(
-      "[KPIController] ❌ KPI score notification trigger failed:",
+      "[KPIController] ❌ KPI score notification failed:",
       error.message
     );
   }
@@ -658,10 +672,26 @@ kpiController.duyetDanhGiaKPI = catchAsync(async (req, res, next) => {
   ]);
 
   // 🔔 Notification trigger - Duyệt KPI
-  await triggerService.fire("KPI.duyetDanhGia", {
-    danhGiaKPI: updatedDanhGiaKPI,
-    performerId: currentNhanVienID,
-  });
+  try {
+    await notificationService.send({
+      type: "kpi-duyet-danh-gia",
+      data: {
+        _id: updatedDanhGiaKPI._id.toString(),
+        arrNguoiNhanID: [updatedDanhGiaKPI.NhanVienID?._id?.toString()],
+        TenNhanVien: updatedDanhGiaKPI.NhanVienID?.HoTen || "Nhân viên",
+        TenNguoiDuyet: updatedDanhGiaKPI.NguoiDuyet?.HoTen || "Người duyệt",
+        TenChuKy:
+          updatedDanhGiaKPI.ChuKyDanhGiaID?.TenChuKy || "Chu kỳ đánh giá",
+        TongDiemKPI: updatedDanhGiaKPI.TongDiemKPI || 0,
+      },
+    });
+    console.log("[KPIController] ✅ Sent notification: kpi-duyet-danh-gia");
+  } catch (notifyErr) {
+    console.error(
+      "[KPIController] ❌ kpi-duyet-danh-gia notification failed:",
+      notifyErr.message
+    );
+  }
 
   return sendResponse(
     res,
@@ -772,19 +802,21 @@ kpiController.phanHoiDanhGiaKPI = catchAsync(async (req, res, next) => {
       .select("Ten")
       .lean();
 
-    await triggerService.fire("KPI.phanHoi", {
-      danhGiaKPI: danhGiaKPI.toObject(),
-      performerId: danhGiaKPI.NhanVienID,
-      managerId: danhGiaKPI.NguoiDanhGiaID,
-      employeeName: employee?.Ten || "Nhân viên",
-      managerName: manager?.Ten || "Quản lý",
-      feedback: PhanHoiNhanVien?.substring(0, 100) || "Phản hồi mới",
-      totalScore: danhGiaKPI.TongDiemKPI || 0,
+    await notificationService.send({
+      type: "kpi-phan-hoi",
+      data: {
+        _id: danhGiaKPI._id.toString(),
+        arrNguoiNhanID: [danhGiaKPI.NguoiDanhGiaID?.toString()], // Gửi cho người đánh giá
+        TenNhanVien: employee?.Ten || "Nhân viên",
+        TenNguoiDanhGia: manager?.Ten || "Quản lý",
+        PhanHoi: PhanHoiNhanVien?.substring(0, 100) || "Phản hồi mới",
+        TongDiemKPI: danhGiaKPI.TongDiemKPI || 0,
+      },
     });
-    console.log("[KPIController] ✅ Fired trigger: KPI.phanHoi");
+    console.log("[KPIController] ✅ Sent notification: kpi-phan-hoi");
   } catch (error) {
     console.error(
-      "[KPIController] ❌ KPI feedback notification trigger failed:",
+      "[KPIController] ❌ KPI feedback notification failed:",
       error.message
     );
   }
@@ -1831,10 +1863,24 @@ kpiController.duyetKPITieuChi = catchAsync(async (req, res, next) => {
     });
 
     // 🔔 Notification trigger - Duyệt KPI Tiêu chí
-    await triggerService.fire("KPI.duyetTieuChi", {
-      danhGiaKPI: danhGiaKPI,
-      performerId: nguoiDanhGiaID,
-    });
+    try {
+      await notificationService.send({
+        type: "kpi-duyet-tieu-chi",
+        data: {
+          _id: danhGiaKPI._id.toString(),
+          arrNguoiNhanID: [danhGiaKPI.NhanVienID?._id?.toString()],
+          TenNhanVien: danhGiaKPI.NhanVienID?.HoTen || "Nhân viên",
+          TenChuKy: danhGiaKPI.ChuKyDanhGiaID?.TenChuKy || "Chu kỳ đánh giá",
+          TongDiemKPI: danhGiaKPI.TongDiemKPI || 0,
+        },
+      });
+      console.log("[KPIController] ✅ Sent notification: kpi-duyet-tieu-chi");
+    } catch (notifyErr) {
+      console.error(
+        "[KPIController] ❌ kpi-duyet-tieu-chi notification failed:",
+        notifyErr.message
+      );
+    }
 
     return sendResponse(
       res,
@@ -2201,11 +2247,26 @@ kpiController.huyDuyetKPI = catchAsync(async (req, res, next) => {
       .lean();
 
     // 🔔 Notification trigger - Hủy duyệt KPI
-    await triggerService.fire("KPI.huyDuyet", {
-      danhGiaKPI: danhGiaKPIPopulated,
-      lyDo: lyDo,
-      performerId: currentUser.NhanVienID,
-    });
+    try {
+      await notificationService.send({
+        type: "kpi-huy-duyet",
+        data: {
+          _id: danhGiaKPIPopulated._id.toString(),
+          arrNguoiNhanID: [danhGiaKPIPopulated.NhanVienID?._id?.toString()],
+          TenNhanVien: danhGiaKPIPopulated.NhanVienID?.HoTen || "Nhân viên",
+          TenNguoiHuyDuyet: currentUser.HoTen || "Người hủy duyệt",
+          TenChuKy:
+            danhGiaKPIPopulated.ChuKyDanhGiaID?.TenChuKy || "Chu kỳ đánh giá",
+          LyDo: lyDo || "Không có lý do",
+        },
+      });
+      console.log("[KPIController] ✅ Sent notification: kpi-huy-duyet");
+    } catch (notifyErr) {
+      console.error(
+        "[KPIController] ❌ kpi-huy-duyet notification failed:",
+        notifyErr.message
+      );
+    }
 
     return sendResponse(
       res,

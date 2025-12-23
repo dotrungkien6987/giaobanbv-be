@@ -402,4 +402,32 @@ notificationTemplateController.getStats = catchAsync(async (req, res, next) => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// DEPRECATED EXPORTS
+// ---------------------------------------------------------------------------
+// This controller backed legacy endpoints under /api/notification-templates.
+// The system is migrated to: /api/workmanagement/notifications/templates
+
+function deprecated(req, res) {
+  return sendResponse(
+    res,
+    410,
+    false,
+    {
+      deprecated: true,
+      newEndpointBase: "/api/workmanagement/notifications/templates",
+    },
+    null,
+    "Endpoint deprecated - use /api/workmanagement/notifications/templates"
+  );
+}
+
+notificationTemplateController.getTemplates = deprecated;
+notificationTemplateController.getTemplate = deprecated;
+notificationTemplateController.createTemplate = deprecated;
+notificationTemplateController.updateTemplate = deprecated;
+notificationTemplateController.deleteTemplate = deprecated;
+notificationTemplateController.testTemplate = deprecated;
+notificationTemplateController.getStats = deprecated;
+
 module.exports = notificationTemplateController;

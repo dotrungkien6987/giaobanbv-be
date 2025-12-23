@@ -6,6 +6,7 @@ const {
 const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
 const ChuKyDanhGia = require("../models/ChuKyDanhGia");
 const DanhGiaKPI = require("../models/DanhGiaKPI");
+const notificationService = require("../services/notificationService");
 
 const assignmentController = {};
 
@@ -148,7 +149,6 @@ assignmentController.nhanVienTuChamDiemBatch = catchAsync(
 
         // Fire notification trigger for self-evaluation
         try {
-          const triggerService = require("../../../services/triggerService");
           const NhanVien = require("../../../models/NhanVien");
           const employee = await NhanVien.findById(currentNhanVienId)
             .select("Ten")
@@ -167,18 +167,24 @@ assignmentController.nhanVienTuChamDiemBatch = catchAsync(
             isDeleted: false,
           }).lean();
 
-          await triggerService.fire("KPI.tuDanhGia", {
-            assignment: assignment.toObject(),
-            performerId: currentNhanVienId,
-            managerId: quanLy?.NhanVienQuanLy,
-            employeeName: employee?.Ten || "Nhân viên",
-            taskName: nhiemVu?.TenNhiemVu || "Nhiệm vụ",
-            selfScore: DiemTuDanhGia,
+          await notificationService.send({
+            type: "kpi-tu-danh-gia",
+            data: {
+              _id: assignment._id.toString(),
+              arrNguoiNhanID: quanLy?.NhanVienQuanLy
+                ? [quanLy.NhanVienQuanLy.toString()]
+                : [],
+              TenNhanVien: employee?.Ten || "Nhân viên",
+              TenNhiemVu: nhiemVu?.TenNhiemVu || "Nhiệm vụ",
+              DiemTuDanhGia: DiemTuDanhGia,
+            },
           });
-          console.log("[AssignmentController] ✅ Fired trigger: KPI.tuDanhGia");
+          console.log(
+            "[AssignmentController] ✅ Sent notification: kpi-tu-danh-gia"
+          );
         } catch (error) {
           console.error(
-            "[AssignmentController] ❌ KPI self-evaluation notification trigger failed:",
+            "[AssignmentController] ❌ KPI self-evaluation notification failed:",
             error.message
           );
         }

@@ -31,10 +31,7 @@ var agendaService = require("../services/agendaService");
 // Initialize Socket.IO with HTTP server
 socketService.init(server);
 
-// Load notification templates into cache
-notificationService.loadTemplates().catch(function (err) {
-  console.error("[NotificationService] Failed to load templates:", err.message);
-});
+// Note: NotificationService v2 uses lazy-loading with cache (no pre-load needed)
 
 // Initialize Agenda.js job scheduler
 agendaService.init().catch(function (err) {

@@ -1,0 +1,30 @@
+﻿D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\assignment.controller.js:170: await triggerService.fire("KPI.tuDanhGia", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\kpi.controller.js:134: await triggerService.fire("KPI.taoDanhGia", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\kpi.controller.js:486: await triggerService.fire("KPI.capNhatDiemQL", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\kpi.controller.js:661: await triggerService.fire("KPI.duyetDanhGia", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\kpi.controller.js:775: await triggerService.fire("KPI.phanHoi", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\kpi.controller.js:1834: await triggerService.fire("KPI.duyetTieuChi", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\controllers\kpi.controller.js:2204: await triggerService.fire("KPI.huyDuyet", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:443: await triggerService.fire("CongViec.capNhatTienDo", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:1713: await triggerService.fire("CongViec.giaoViec", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:2100: "🔥 DEBUG transition: Calling triggerService.fire('CongViec." +
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:2104: await triggerService.fire(`CongViec.${action}`, {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:2109: console.log("🔥 DEBUG transition: triggerService.fire() completed");
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:2112: "🔥 DEBUG transition: triggerService.fire() ERROR:",
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3013: await triggerService.fire("CongViec.capNhatDeadline", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3031: await triggerService.fire("CongViec.thayDoiUuTien", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3050: await triggerService.fire("CongViec.thayDoiNguoiChinh", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3065: await triggerService.fire("CongViec.ganNguoiThamGia", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3082: await triggerService.fire("CongViec.xoaNguoiThamGia", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3210: "🔥 DEBUG addComment: Calling triggerService.fire('CongViec.comment')"
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3212: await triggerService.fire("CongViec.comment", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3217: console.log("🔥 DEBUG addComment: triggerService.fire() completed");
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\congViec.service.js:3220: "🔥 DEBUG addComment: triggerService.fire() ERROR:",
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\file.service.js:176: await triggerService.fire("CongViec.uploadFile", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\file.service.js:239: await triggerService.fire("CongViec.comment", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\file.service.js:322: await triggerService.fire("CongViec.xoaFile", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\yeuCau.service.js:168: await triggerService.fire("YeuCau.TAO_MOI", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\yeuCau.service.js:301: await triggerService.fire("YeuCau.SUA", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\yeuCau.service.js:815: await triggerService.fire("YeuCau.BINH_LUAN", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\yeuCau.service.js:1689: await triggerService.fire("YeuCau.comment", {
+D:\project\webBV\giaobanbv-be\modules\workmanagement\services\yeuCauStateMachine.js:537: await triggerService.fire(triggerKey, context);

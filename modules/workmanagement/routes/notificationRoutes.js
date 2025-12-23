@@ -78,16 +78,15 @@ router.post("/test", notificationController.sendTestNotification);
 
 /**
  * @route   GET /api/notifications/triggers/summary
- * @desc    Get summary of all notification triggers
+ * @desc    Get summary of all notification triggers (deprecated - use notification.api.js instead)
  * @access  Private (Admin/Debug)
  */
 router.get("/triggers/summary", (req, res) => {
-  const triggerService = require("../../../services/triggerService");
-  const summary = triggerService.getSummary();
-
+  // This endpoint is deprecated, use /api/workmanagement/notifications/types for notification type summary
   return res.status(200).json({
     success: true,
-    data: summary,
+    message: "Deprecated - Use /api/workmanagement/notifications/types instead",
+    data: { deprecated: true },
   });
 });
 

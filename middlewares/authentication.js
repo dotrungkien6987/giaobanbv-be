@@ -50,28 +50,35 @@ authentication.loginRequired = async (req, res, next) => {
 
 authentication.adminRequired = catchAsync(async (req, res, next) => {
   try {
+    // Prefer using context from loginRequired when available
+    const role = (req.user?.PhanQuyen || "").toLowerCase();
+    if (role) {
+      if (role === "admin" || role === "superadmin") return next();
+      throw new AppError(403, "Admin required", "AUTHORIZATION_ERROR");
+    }
+
+    // Fallback (if used without loginRequired)
     const tokenString = req.headers.authorization;
-    console.log(req.headers);
-    console.log(tokenString);
     if (!tokenString)
       throw new AppError(401, "Login required", "Authentication Error");
     const token = tokenString.replace("Bearer ", "");
-    jwt.verify(token, JWT_SECRET_KEY, (err, payload) => {
-      if (err) {
-        if (err.name === "TokenExpiredError") {
-          throw new AppError(401, "Token expired", "Authenticate Error");
-        } else {
-          throw new AppError(401, "Token is invalid", "Authentication Error");
-        }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET_KEY);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        throw new AppError(401, "Token expired", "Authenticate Error");
       }
-      req.userId = payload._id;
-      // resolve nhanVienId lazily for admin guard too
-      // (kept for backward compatibility in admin routes)
-    });
-    const user = await User.findById(req.userId);
-    console.log("user", user);
-    if (!(user.PhanQuyen === "admin"))
-      throw new AppError(401, "Admin required", "Authenticate error");
+      throw new AppError(401, "Token is invalid", "Authentication Error");
+    }
+
+    req.userId = payload._id;
+    const user = await User.findById(req.userId).select("PhanQuyen");
+    const fallbackRole = (user?.PhanQuyen || "").toLowerCase();
+    if (!(fallbackRole === "admin" || fallbackRole === "superadmin"))
+      throw new AppError(403, "Admin required", "AUTHORIZATION_ERROR");
+
     next();
   } catch (error) {
     next(error);
@@ -80,30 +87,49 @@ authentication.adminRequired = catchAsync(async (req, res, next) => {
 
 authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
   try {
+    const role = (req.user?.PhanQuyen || "").toLowerCase();
+    if (role) {
+      if (role === "admin" || role === "superadmin" || role === "manager")
+        return next();
+      throw new AppError(
+        403,
+        "Admin or Manager required",
+        "AUTHORIZATION_ERROR"
+      );
+    }
+
     const tokenString = req.headers.authorization;
-    console.log(req.headers);
-    console.log(tokenString);
     if (!tokenString)
       throw new AppError(401, "Login required", "Authentication Error");
     const token = tokenString.replace("Bearer ", "");
-    jwt.verify(token, JWT_SECRET_KEY, (err, payload) => {
-      if (err) {
-        if (err.name === "TokenExpiredError") {
-          throw new AppError(401, "Token expired", "Authenticate Error");
-        } else {
-          throw new AppError(401, "Token is invalid", "Authentication Error");
-        }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET_KEY);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        throw new AppError(401, "Token expired", "Authenticate Error");
       }
-      req.userId = payload._id;
-    });
-    const user = await User.findById(req.userId);
-    console.log("user", user);
-    if (!(user.PhanQuyen === "admin" || user.PhanQuyen === "manager"))
+      throw new AppError(401, "Token is invalid", "Authentication Error");
+    }
+
+    req.userId = payload._id;
+    const user = await User.findById(req.userId).select("PhanQuyen");
+    const fallbackRole = (user?.PhanQuyen || "").toLowerCase();
+    if (
+      !(
+        fallbackRole === "admin" ||
+        fallbackRole === "superadmin" ||
+        fallbackRole === "manager"
+      )
+    ) {
       throw new AppError(
-        401,
+        403,
         "Admin or Manager required",
-        "Authenticate error"
+        "AUTHORIZATION_ERROR"
       );
+    }
+
     next();
   } catch (error) {
     next(error);

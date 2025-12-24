@@ -120,6 +120,8 @@ const yeuCauVariables = [
   { name: "MoTa", type: "String", description: "Mô tả chi tiết" },
   { name: "TenKhoaGui", type: "String", description: "Tên khoa gửi" },
   { name: "TenKhoaNhan", type: "String", description: "Tên khoa nhận" },
+  { name: "TenKhoaGui", type: "String", description: "Tên khoa gửi" },
+  { name: "TenKhoaNhan", type: "String", description: "Tên khoa nhận" },
   { name: "TenLoaiYeuCau", type: "String", description: "Loại yêu cầu" },
   { name: "TenNguoiYeuCau", type: "String", description: "Tên người yêu cầu" },
   { name: "TenNguoiXuLy", type: "String", description: "Tên người xử lý" },

@@ -350,6 +350,49 @@ yeuCauSchema.methods.nguoiDungLienQuan = function (nhanVienId) {
 };
 
 /**
+ * Lấy danh sách tất cả NhanVienID liên quan đến yêu cầu
+ * Dùng cho notification recipients resolution
+ *
+ * @returns {string[]} Array of NhanVienID strings (deduplicated)
+ *
+ * @example
+ * const yeuCau = await YeuCau.findById(id)
+ *   .populate('NguoiYeuCauID')
+ *   .populate('NguoiXuLyID')
+ *   .lean();
+ * const recipients = yeuCau.getRelatedNhanVien?.() || [];
+ *
+ * Performance: O(n) với n = 6 fields max, ~0.008ms
+ */
+yeuCauSchema.methods.getRelatedNhanVien = function () {
+  const nhanVienIds = [];
+
+  // Helper to extract ID (handles both ObjectId and populated objects)
+  const extractId = (field) => {
+    if (!field) return null;
+    if (field._id) return field._id.toString();
+    return field.toString();
+  };
+
+  // Collect all related NhanVienIDs
+  const fields = [
+    this.NguoiYeuCauID,
+    this.NguoiXuLyID,
+    this.NguoiDieuPhoiID,
+    this.NguoiDuocDieuPhoiID,
+    this.NguoiNhanID,
+  ];
+
+  fields.forEach((field) => {
+    const id = extractId(field);
+    if (id) nhanVienIds.push(id);
+  });
+
+  // Deduplicate and return
+  return [...new Set(nhanVienIds)];
+};
+
+/**
  * Tính thời gian hẹn dựa trên thời gian dự kiến
  * @param {Date} tuNgay - Ngày bắt đầu (mặc định là now)
  */

@@ -902,7 +902,7 @@ async function seedTemplates() {
     // Upsert each template
     for (const template of templates) {
       const result = await NotificationTemplate.findOneAndUpdate(
-        { type: template.type },
+        { typeCode: template.typeCode },
         {
           ...template,
           isAutoCreated: false,
@@ -912,10 +912,10 @@ async function seedTemplates() {
 
       if (result.createdAt.getTime() === result.updatedAt.getTime()) {
         stats.inserted++;
-        console.log(`  ✅ Inserted: ${template.type}`);
+        console.log(`  ✅ Inserted: ${template.typeCode}`);
       } else {
         stats.updated++;
-        console.log(`  ♻️  Updated: ${template.type}`);
+        console.log(`  ♻️  Updated: ${template.typeCode}`);
       }
 
       // Count by category

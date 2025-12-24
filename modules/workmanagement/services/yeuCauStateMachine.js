@@ -43,7 +43,7 @@ const TRANSITIONS = {
     XOA: {
       nextState: null, // Hard delete
       hanhDong: HANH_DONG.XOA,
-      notificationType: "YEUCAU_DA_XOA",
+      notificationType: "yeucau-xoa",
     },
     DIEU_PHOI: {
       nextState: TRANG_THAI.MOI,
@@ -488,6 +488,10 @@ async function fireNotificationTrigger(
 
       case "DANH_GIA":
         context.raterName = performer?.Ten || "Người đánh giá";
+        // Vietnamese names for templates
+        context.DiemDanhGia = data?.DanhGia?.SoSao || 0;
+        context.NoiDungDanhGia = data?.DanhGia?.NhanXet || "Không có nhận xét";
+        // Keep English names for backward compatibility
         context.rating = data?.DanhGia?.SoSao || 0;
         context.feedback = data?.DanhGia?.NhanXet || "Không có nhận xét";
         break;
@@ -540,25 +544,58 @@ async function fireNotificationTrigger(
     // Chuyển action thành type code (ví dụ: TIEP_NHAN -> tiep-nhan)
     const actionTypeCode = action.toLowerCase().replace(/_/g, "-");
 
-    // Lấy danh sách người nhận từ nguoiDungLienQuanAll
-    const arrNguoiLienQuanID = (populated.nguoiDungLienQuanAll?.() || [])
-      .map((id) => id?.toString())
-      .filter((id) => id && id !== context.performerId?.toString());
+    // ✅ FIX: Get all related NhanVienIDs using model method
+    const arrNguoiLienQuanID = (populated.getRelatedNhanVien?.() || []).filter(
+      (id) => id && id !== context.performerId?.toString()
+    );
+
+    // Query dispatcher IDs from config for arrNguoiDieuPhoiID recipient field
+    const CauHinhThongBaoKhoa = mongoose.model("CauHinhThongBaoKhoa");
+    const config = await CauHinhThongBaoKhoa.findOne({
+      KhoaID: populated.KhoaDichID,
+    });
+    const dieuPhoiIds = config?.layDanhSachNguoiDieuPhoiIDs?.() || [];
+
+    // Prepare individual recipient fields for templates
+    const recipientData = {
+      NguoiYeuCauID: populated.NguoiYeuCauID?._id?.toString() || null,
+      NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
+      NguoiDieuPhoiID: populated.NguoiDieuPhoiID?._id?.toString() || null,
+      NguoiDuocDieuPhoiID:
+        populated.NguoiDuocDieuPhoiID?._id?.toString() || null,
+      NguoiNhanID: populated.NguoiNhanID?._id?.toString() || null,
+      arrNguoiDieuPhoiID: dieuPhoiIds.map((id) => id?.toString()), // ✅ Added
+    };
 
     await notificationService.send({
       type: `yeucau-${actionTypeCode}`,
       data: {
         _id: populated._id.toString(),
+
+        // Individual recipient fields (for template recipientConfig)
+        ...recipientData,
+
+        // Array of all related people (for legacy templates if any)
         arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+
+        // Display fields
         MaYeuCau: populated.MaYeuCau,
         TieuDe: populated.TieuDe || populated.NoiDung?.substring(0, 50),
+        TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "Khoa",
+        TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "Khoa",
+        TenNguoiYeuCau: populated.NguoiYeuCauID?.Ten || "Người yêu cầu",
+        TenNguoiXuLy: populated.NguoiXuLyID?.Ten || "Người xử lý",
         TenNguoiThucHien:
           context.performerName || context.requesterName || "Người thực hiện",
+
+        // Action context
         HanhDong: action,
         TuTrangThai: context.yeuCau?.TrangThai,
         DenTrangThai: populated.TrangThai,
         GhiChu: context.reason || context.ghiChu || "",
-        ...context, // Thêm các context khác như TenNguoiXuLy, deadlines, etc.
+
+        // Additional context from state machine
+        ...context,
       },
     });
 
@@ -649,60 +686,56 @@ async function executeTransition(
     // Gửi notification TRƯỚC KHI XÓA
     if (transitionConfig.notificationType) {
       try {
-        // Xác định người nhận notification
-        const recipientIds = [];
+        // Lấy thông tin người xóa
+        const NhanVien = mongoose.model("NhanVien");
+        const nguoiXoa = await NhanVien.findById(nguoiThucHienId)
+          .select("Ten")
+          .lean();
 
-        // 1. Thêm NguoiDuocDieuPhoiID (nếu có - người đã được phân công cụ thể)
-        if (yeuCau.NguoiDuocDieuPhoiID) {
-          recipientIds.push(yeuCau.NguoiDuocDieuPhoiID);
-        }
-
-        // 2. Thêm NguoiXuLyID (nếu có - người đang xử lý)
-        if (yeuCau.NguoiXuLyID) {
-          recipientIds.push(yeuCau.NguoiXuLyID);
-        }
-
-        // 3. LUÔN lấy danh sách người điều phối từ cấu hình khoa đích
+        // Lấy danh sách người điều phối từ cấu hình khoa đích
         const config = await CauHinhThongBaoKhoa.findOne({
           KhoaID: yeuCau.KhoaDichID,
         });
-        if (config) {
-          const dieuPhoiIds = config.layDanhSachNguoiDieuPhoiIDs?.() || [];
-          recipientIds.push(...dieuPhoiIds);
-        }
+        const dieuPhoiIds = config?.layDanhSachNguoiDieuPhoiIDs?.() || [];
 
-        // Lấy thông tin người gửi để hiển thị trong notification
-        const NhanVien = mongoose.model("NhanVien");
-        const nguoiGui = await NhanVien.findById(yeuCau.NguoiYeuCauID);
+        // Populate YeuCau để lấy thông tin đầy đủ
+        const populated = await YeuCau.findById(yeuCau._id)
+          .populate("NguoiYeuCauID", "Ten")
+          .populate("NguoiXuLyID", "Ten")
+          .populate("NguoiDuocDieuPhoiID", "Ten")
+          .populate("KhoaNguonID", "TenKhoa")
+          .populate("KhoaDichID", "TenKhoa")
+          .lean();
 
-        // Loại bỏ trùng lặp và loại bỏ người thực hiện (không gửi cho chính mình)
-        const uniqueRecipients = [
-          ...new Set(recipientIds.map((id) => id?.toString())),
+        // Lấy related recipients (trừ người xóa)
+        const arrNguoiLienQuanID = [
+          populated.NguoiXuLyID?._id?.toString(),
+          ...dieuPhoiIds.map((id) => id?.toString()),
         ].filter((id) => id && id !== nguoiThucHienId.toString());
 
-        if (uniqueRecipients.length > 0) {
-          await notificationService.sendToMany({
-            type: transitionConfig.notificationType,
-            recipientIds: uniqueRecipients,
-            data: {
-              MaYeuCau: yeuCau.MaYeuCau,
-              TieuDe: yeuCau.TieuDe,
-              NguoiGui: nguoiGui?.Ten || "Không xác định",
-            },
-            priority: "normal",
-          });
-          console.log(
-            `[YeuCauStateMachine] Delete notification sent to ${uniqueRecipients.length} recipients:`,
-            uniqueRecipients
-          );
-        } else {
-          console.log(
-            `[YeuCauStateMachine] No recipients for delete notification (KhoaDichID: ${yeuCau.KhoaDichID})`
-          );
-        }
+        await notificationService.send({
+          type: "yeucau-xoa",
+          data: {
+            _id: yeuCau._id,
+            NguoiXoaID: nguoiThucHienId,
+            NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
+            arrNguoiDieuPhoiID: dieuPhoiIds.map((id) => id?.toString()),
+            arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+            MaYeuCau: yeuCau.MaYeuCau,
+            TieuDe: yeuCau.TieuDe,
+            TenNguoiXoa: nguoiXoa?.Ten || "Người xóa",
+            TenNguoiYeuCau: populated.NguoiYeuCauID?.Ten || "",
+            TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "",
+            TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "",
+          },
+        });
+
+        console.log(
+          `[YeuCauStateMachine] ✅ Sent notification: yeucau-xoa to ${arrNguoiLienQuanID.length} recipients`
+        );
       } catch (error) {
         console.error(
-          `[YeuCauStateMachine] Delete notification failed:`,
+          `[YeuCauStateMachine] ❌ Delete notification failed:`,
           error.message
         );
         // Không throw lỗi, tiếp tục xóa

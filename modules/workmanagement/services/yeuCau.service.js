@@ -308,7 +308,9 @@ async function suaYeuCau(yeuCauId, data, nguoiSuaId) {
       const nguoiSua = await NhanVien.findById(nguoiSuaId).select("Ten").lean();
 
       // Lấy người liên quan để gửi thông báo
-      const arrNguoiLienQuanID = yeuCau.nguoiDungLienQuanAll();
+      const arrNguoiLienQuanID = (
+        populated.getRelatedNhanVien?.() || []
+      ).filter((id) => id && id !== nguoiSuaId?.toString());
 
       // Send notification via notificationService
       await notificationService.send({
@@ -316,7 +318,11 @@ async function suaYeuCau(yeuCauId, data, nguoiSuaId) {
         data: {
           _id: yeuCau._id,
           NguoiSuaID: nguoiSuaId,
-          arrNguoiLienQuanID: arrNguoiLienQuanID,
+          NguoiYeuCauID: populated.NguoiYeuCauID?._id?.toString() || null,
+          NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
+          NguoiDuocDieuPhoiID:
+            populated.NguoiDuocDieuPhoiID?._id?.toString() || null,
+          arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
           MaYeuCau: yeuCau.MaYeuCau,
           TieuDe: yeuCau.TieuDe,
           TenNguoiSua: nguoiSua?.Ten || "Người chỉnh sửa",
@@ -826,9 +832,9 @@ async function themBinhLuan(yeuCauId, data, nguoiBinhLuanId) {
       .lean();
 
     // Lấy tất cả người liên quan để gửi thông báo (trừ người bình luận)
-    const arrNguoiLienQuanID = yeuCau
-      .nguoiDungLienQuanAll()
-      .filter((id) => id.toString() !== nguoiBinhLuanId.toString());
+    const arrNguoiLienQuanID = (populated.getRelatedNhanVien?.() || []).filter(
+      (id) => id && id !== nguoiBinhLuanId.toString()
+    );
 
     // Send notification via notificationService
     await notificationService.send({
@@ -836,9 +842,15 @@ async function themBinhLuan(yeuCauId, data, nguoiBinhLuanId) {
       data: {
         _id: yeuCau._id,
         NguoiBinhLuanID: nguoiBinhLuanId,
-        arrNguoiLienQuanID: arrNguoiLienQuanID,
+        NguoiYeuCauID: populated.NguoiYeuCauID?._id?.toString() || null,
+        NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
+        NguoiDuocDieuPhoiID:
+          populated.NguoiDuocDieuPhoiID?._id?.toString() || null,
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
         MaYeuCau: yeuCau.MaYeuCau,
         TieuDe: yeuCau.TieuDe,
+        TenNguoiComment: nguoiBinhLuan?.Ten || "Người bình luận",
+        NoiDungComment: data.NoiDung?.substring(0, 100) || "Bình luận mới",
         TenNguoiBinhLuan: nguoiBinhLuan?.Ten || "Người bình luận",
         NoiDungBinhLuan: data.NoiDung?.substring(0, 100) || "Bình luận mới",
         TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "",

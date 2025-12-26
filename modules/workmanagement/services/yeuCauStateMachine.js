@@ -18,6 +18,9 @@ const LyDoTuChoi = require("../models/LyDoTuChoi");
 const CauHinhThongBaoKhoa = require("../models/CauHinhThongBaoKhoa");
 const notificationService = require("./notificationService");
 const NhanVien = require("../../../models/NhanVien");
+const {
+  buildYeuCauNotificationData,
+} = require("../helpers/notificationDataBuilders");
 
 const { TRANG_THAI } = YeuCau;
 const { HANH_DONG } = LichSuYeuCau;
@@ -363,10 +366,7 @@ function applySideEffects(yeuCau, action, data, nguoiThucHienId) {
 }
 
 /**
- * Trigger notifications
- */
-/**
- * Fire notification trigger using new trigger service
+ * Fire notification using centralized builder
  * @private
  */
 async function fireNotificationTrigger(
@@ -377,32 +377,8 @@ async function fireNotificationTrigger(
   data
 ) {
   try {
-    // Map action to trigger key
-    const triggerKeyMap = {
-      TIEP_NHAN: "YeuCau.TIEP_NHAN",
-      TU_CHOI: "YeuCau.TU_CHOI",
-      DIEU_PHOI: "YeuCau.DIEU_PHOI",
-      GUI_VE_KHOA: "YeuCau.GUI_VE_KHOA",
-      HOAN_THANH: "YeuCau.HOAN_THANH",
-      HUY_TIEP_NHAN: "YeuCau.HUY_TIEP_NHAN",
-      DOI_THOI_GIAN_HEN: "YeuCau.DOI_THOI_GIAN_HEN",
-      DANH_GIA: "YeuCau.DANH_GIA",
-      TU_DONG_DONG: "YeuCau.DONG",
-      DONG: "YeuCau.DONG",
-      MO_LAI: "YeuCau.MO_LAI",
-      YEU_CAU_XU_LY_TIEP: "YeuCau.YEU_CAU_XU_LY_TIEP",
-      NHAC_LAI: "YeuCau.NHAC_LAI",
-      BAO_QUAN_LY: "YeuCau.BAO_QUAN_LY",
-      XOA: "YeuCau.XOA",
-    };
-
-    const triggerKey = triggerKeyMap[action];
-    if (!triggerKey) {
-      console.log(
-        `[YeuCauStateMachine] No trigger mapping for action: ${action}`
-      );
-      return;
-    }
+    // Chuyển action thành type code (ví dụ: TIEP_NHAN -> tiep-nhan)
+    const actionTypeCode = action.toLowerCase().replace(/_/g, "-");
 
     // Populate yêu cầu để lấy đủ data
     const populated = await YeuCau.findById(yeuCau._id)
@@ -422,188 +398,58 @@ async function fireNotificationTrigger(
       .select("Ten")
       .lean();
 
-    // Prepare context based on action
-    const context = {
-      yeuCau: populated,
-      performerId: nguoiThucHienId,
-
-      // Common variables
-      requestCode: populated.MaYeuCau || "",
-      requestTitle: populated.TieuDe || "Yêu cầu",
-      requestId: populated._id.toString(),
-      requesterName: populated.NguoiYeuCauID?.Ten || "Người yêu cầu",
-      sourceDept: populated.KhoaNguonID?.TenKhoa || "Khoa",
-      targetDept: populated.KhoaDichID?.TenKhoa || "Khoa",
-      requestType: populated.DanhMucYeuCauID?.TenLoaiYeuCau || "Yêu cầu",
-      deadline: populated.ThoiGianHen
-        ? dayjs(populated.ThoiGianHen).format("DD/MM/YYYY HH:mm")
-        : "Chưa có",
-    };
-
-    // Action-specific variables
-    switch (action) {
-      case "TIEP_NHAN":
-        context.accepterName = performer?.Ten || "Người tiếp nhận";
-        context.note = data.GhiChu || "Không có ghi chú";
-        break;
-
-      case "TU_CHOI":
-        context.rejectorName = performer?.Ten || "Người từ chối";
-        context.reason = data.GhiChuTuChoi || data.GhiChu || "Không có lý do";
-        break;
-
-      case "DIEU_PHOI":
-        context.dispatcherName = performer?.Ten || "Người điều phối";
-        context.assigneeName =
-          populated.NguoiDuocDieuPhoiID?.Ten || "Người được phân công";
-        context.content = populated.MoTa || "Không có nội dung";
-        break;
-
-      case "GUI_VE_KHOA":
-        context.performerName = populated.NguoiXuLyID?.Ten || "Người xử lý";
-        context.result = data.GhiChu || "Đã xử lý";
-        break;
-
-      case "HOAN_THANH":
-        context.completerName = performer?.Ten || "Người hoàn thành";
-        context.completedTime = dayjs().format("DD/MM/YYYY HH:mm");
-        context.result = data.KetQua || data.GhiChu || "Hoàn thành";
-        break;
-
-      case "HUY_TIEP_NHAN":
-        context.cancellerName = performer?.Ten || "Người hủy";
-        context.reason = data.GhiChu || "Không có lý do";
-        break;
-
-      case "DOI_THOI_GIAN_HEN":
-        context.updaterName = performer?.Ten || "Người cập nhật";
-        context.oldDeadline = data.oldDeadline
-          ? dayjs(data.oldDeadline).format("DD/MM/YYYY HH:mm")
-          : "Chưa có";
-        context.newDeadline = dayjs(populated.ThoiGianHen).format(
-          "DD/MM/YYYY HH:mm"
-        );
-        context.reason = data.GhiChu || "Không có lý do";
-        break;
-
-      case "DANH_GIA":
-        context.raterName = performer?.Ten || "Người đánh giá";
-        // Vietnamese names for templates
-        context.DiemDanhGia = data?.DanhGia?.SoSao || 0;
-        context.NoiDungDanhGia = data?.DanhGia?.NhanXet || "Không có nhận xét";
-        // Keep English names for backward compatibility
-        context.rating = data?.DanhGia?.SoSao || 0;
-        context.feedback = data?.DanhGia?.NhanXet || "Không có nhận xét";
-        break;
-
-      case "DONG":
-      case "TU_DONG_DONG":
-        context.closerName = performer?.Ten || "Hệ thống";
-        context.finalStatus = populated.TrangThai;
-        context.note = data.GhiChu || "Đã đóng";
-        break;
-
-      case "MO_LAI":
-      case "YEU_CAU_XU_LY_TIEP":
-        context.reopenerName = performer?.Ten || "Người mở lại";
-        context.reason = data.LyDoMoLai || data.GhiChu || "Không có lý do";
-        break;
-
-      case "NHAC_LAI":
-        context.reminderNote = data.GhiChu || "Nhắc lại yêu cầu";
-        break;
-
-      case "BAO_QUAN_LY":
-        context.escalationReason = data.GhiChu || "Cần xử lý khẩn cấp";
-        break;
-
-      case "XOA":
-        context.deleterName = performer?.Ten || "Người xóa";
-        context.reason = data.GhiChu || "Không có lý do";
-        break;
-    }
-
-    // Fire notification via notificationService
-    console.log(
-      `[YeuCauStateMachine] 🔥 About to send notification: yeucau-${action
-        .toLowerCase()
-        .replace(/_/g, "-")}`
-    );
-    console.log(`[YeuCauStateMachine] 📦 Context:`, {
-      requestId: context.requestId,
-      requestCode: context.requestCode,
-      requesterName: context.requesterName,
-      assigneeName: context.assigneeName,
-      dispatcherName: context.dispatcherName,
-      performerId: context.performerId,
-      hasYeuCau: !!context.yeuCau,
-      yeuCauNguoiYeuCauID: context.yeuCau?.NguoiYeuCauID,
-      yeuCauNguoiDuocDieuPhoiID: context.yeuCau?.NguoiDuocDieuPhoiID,
-    });
-
-    // Chuyển action thành type code (ví dụ: TIEP_NHAN -> tiep-nhan)
-    const actionTypeCode = action.toLowerCase().replace(/_/g, "-");
-
-    // ✅ FIX: Get all related NhanVienIDs using model method
-    const arrNguoiLienQuanID = (populated.getRelatedNhanVien?.() || []).filter(
-      (id) => id && id !== context.performerId?.toString()
-    );
-
-    // Query dispatcher IDs from config for arrNguoiDieuPhoiID recipient field
-    const CauHinhThongBaoKhoa = mongoose.model("CauHinhThongBaoKhoa");
+    // Query dispatcher & manager IDs from config
     const config = await CauHinhThongBaoKhoa.findOne({
       KhoaID: populated.KhoaDichID,
     });
-    const dieuPhoiIds = config?.layDanhSachNguoiDieuPhoiIDs?.() || [];
+    const arrNguoiDieuPhoiID = (
+      config?.layDanhSachNguoiDieuPhoiIDs?.() || []
+    ).map((id) => id?.toString());
+    const arrQuanLyKhoaID = (config?.layDanhSachQuanLyKhoaIDs?.() || []).map(
+      (id) => id?.toString()
+    );
 
-    // Prepare individual recipient fields for templates
-    const recipientData = {
-      NguoiYeuCauID: populated.NguoiYeuCauID?._id?.toString() || null,
-      NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
-      NguoiDieuPhoiID: populated.NguoiDieuPhoiID?._id?.toString() || null,
-      NguoiDuocDieuPhoiID:
-        populated.NguoiDuocDieuPhoiID?._id?.toString() || null,
-      NguoiNhanID: populated.NguoiNhanID?._id?.toString() || null,
-      arrNguoiDieuPhoiID: dieuPhoiIds.map((id) => id?.toString()), // ✅ Added
+    // Build context for centralized builder
+    const context = {
+      populated,
+      tenNguoiThucHien: performer?.Ten || "",
+      arrNguoiDieuPhoiID,
+      arrQuanLyKhoaID,
     };
+
+    // Add action-specific context for builder
+    if (action === "DOI_THOI_GIAN_HEN" && data.oldDeadline) {
+      context.thoiGianHenCu = dayjs(data.oldDeadline).format(
+        "DD/MM/YYYY HH:mm"
+      );
+    }
+
+    // Call centralized builder (builds all 29 fields)
+    const notificationData = await buildYeuCauNotificationData(yeuCau, context);
+
+    // Add action-specific fields not in builder
+    notificationData.HanhDong = action;
+    notificationData.TuTrangThai = populated.TrangThai;
+    notificationData.DenTrangThai = yeuCau.TrangThai;
+    notificationData.GhiChu =
+      data.GhiChu || data.GhiChuTuChoi || data.LyDoMoLai || "";
+
+    // Action-specific overrides
+    if (action === "DANH_GIA") {
+      notificationData.DiemDanhGia = data?.DanhGia?.SoSao || 0;
+      notificationData.NoiDungDanhGia =
+        data?.DanhGia?.NhanXet || "Không có nhận xét";
+    }
 
     await notificationService.send({
       type: `yeucau-${actionTypeCode}`,
-      data: {
-        _id: populated._id.toString(),
-
-        // Individual recipient fields (for template recipientConfig)
-        ...recipientData,
-
-        // Array of all related people (for legacy templates if any)
-        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-
-        // Display fields
-        MaYeuCau: populated.MaYeuCau,
-        TieuDe: populated.TieuDe || populated.NoiDung?.substring(0, 50),
-        TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "Khoa",
-        TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "Khoa",
-        TenNguoiYeuCau: populated.NguoiYeuCauID?.Ten || "Người yêu cầu",
-        TenNguoiXuLy: populated.NguoiXuLyID?.Ten || "Người xử lý",
-        TenNguoiThucHien:
-          context.performerName || context.requesterName || "Người thực hiện",
-
-        // Action context
-        HanhDong: action,
-        TuTrangThai: context.yeuCau?.TrangThai,
-        DenTrangThai: populated.TrangThai,
-        GhiChu: context.reason || context.ghiChu || "",
-
-        // Additional context from state machine
-        ...context,
-      },
+      data: notificationData,
     });
 
     console.log(
       `[YeuCauStateMachine] ✅ Sent notification: yeucau-${actionTypeCode}`
     );
   } catch (error) {
-    // Log but don't throw - notification failure shouldn't block workflow
     console.error(
       `[YeuCauStateMachine] ❌ Notification trigger failed for ${action}:`,
       error.message
@@ -698,41 +544,33 @@ async function executeTransition(
         });
         const dieuPhoiIds = config?.layDanhSachNguoiDieuPhoiIDs?.() || [];
 
-        // Populate YeuCau để lấy thông tin đầy đủ
+        // Populate YeuCau để lấy thông tin đầy đủ trước khi xóa
         const populated = await YeuCau.findById(yeuCau._id)
           .populate("NguoiYeuCauID", "Ten")
           .populate("NguoiXuLyID", "Ten")
           .populate("NguoiDuocDieuPhoiID", "Ten")
           .populate("KhoaNguonID", "TenKhoa")
           .populate("KhoaDichID", "TenKhoa")
+          .populate("DanhMucYeuCauID", "TenLoaiYeuCau")
           .lean();
 
-        // Lấy related recipients (trừ người xóa)
-        const arrNguoiLienQuanID = [
-          populated.NguoiXuLyID?._id?.toString(),
-          ...dieuPhoiIds.map((id) => id?.toString()),
-        ].filter((id) => id && id !== nguoiThucHienId.toString());
+        // Use centralized builder (must build before deletion)
+        const {
+          buildYeuCauNotificationData,
+        } = require("../helpers/notificationDataBuilders");
+        const notificationData = await buildYeuCauNotificationData(yeuCau, {
+          populated,
+          arrNguoiDieuPhoiID: dieuPhoiIds.map((id) => id?.toString()),
+          nguoiXoaId: nguoiThucHienId.toString(),
+          tenNguoiXoa: nguoiXoa?.Ten || "Người xóa",
+        });
 
         await notificationService.send({
           type: "yeucau-xoa",
-          data: {
-            _id: yeuCau._id,
-            NguoiXoaID: nguoiThucHienId,
-            NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
-            arrNguoiDieuPhoiID: dieuPhoiIds.map((id) => id?.toString()),
-            arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-            MaYeuCau: yeuCau.MaYeuCau,
-            TieuDe: yeuCau.TieuDe,
-            TenNguoiXoa: nguoiXoa?.Ten || "Người xóa",
-            TenNguoiYeuCau: populated.NguoiYeuCauID?.Ten || "",
-            TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "",
-            TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "",
-          },
+          data: notificationData,
         });
 
-        console.log(
-          `[YeuCauStateMachine] ✅ Sent notification: yeucau-xoa to ${arrNguoiLienQuanID.length} recipients`
-        );
+        console.log(`[YeuCauStateMachine] ✅ Sent notification: yeucau-xoa`);
       } catch (error) {
         console.error(
           `[YeuCauStateMachine] ❌ Delete notification failed:`,

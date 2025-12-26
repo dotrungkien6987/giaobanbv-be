@@ -263,26 +263,6 @@ controller.layBinhLuan = catchAsync(async (req, res, next) => {
 });
 
 /**
- * Thêm bình luận
- * POST /api/workmanagement/yeucau/:id/binhluan
- */
-controller.themBinhLuan = catchAsync(async (req, res, next) => {
-  const { id } = req.params;
-  const { nhanVienId } = await getNhanVienId(req);
-
-  const binhLuan = await yeuCauService.themBinhLuan(id, req.body, nhanVienId);
-
-  return sendResponse(
-    res,
-    201,
-    true,
-    binhLuan,
-    null,
-    "Thêm bình luận thành công"
-  );
-});
-
-/**
  * Lấy file đính kèm
  * GET /api/workmanagement/yeucau/:id/teptin
  */

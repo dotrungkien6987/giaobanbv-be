@@ -447,18 +447,16 @@ service.updateProgress = async (congviecId, payload, req) => {
       ...(cv.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
     ].filter((id) => id && id !== performerId.toString());
 
+    const {
+      buildCongViecNotificationData,
+    } = require("../helpers/notificationDataBuilders");
+    const notificationData = await buildCongViecNotificationData(cv, {
+      tenNguoiCapNhat: performer?.Ten || "",
+      tienDoMoi: value,
+    });
     await notificationService.send({
       type: "congviec-cap-nhat-tien-do",
-      data: {
-        _id: cv._id.toString(),
-        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-        MaCongViec: cv.MaCongViec,
-        TieuDe: cv.TieuDe,
-        TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
-        TienDocu: old,
-        TienDoMoi: value,
-        GhiChu: ghiChu || "",
-      },
+      data: notificationData,
     });
     console.log(
       "[CongViecService] ✅ Sent notification: congviec-cap-nhat-tien-do"
@@ -1726,25 +1724,16 @@ service.giaoViec = async (id, payload = {}, req) => {
       .select("Ten")
       .lean();
 
-    // Danh sách người nhận: NguoiChinh + NguoiThamGia (trừ NguoiGiao nếu trùng)
-    const arrNguoiNhanViecID = [
-      congviec.NguoiChinhID?.toString(),
-      ...(congviec.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
-    ].filter((id) => id && id !== req.user?.NhanVienID?.toString());
-
+    const {
+      buildCongViecNotificationData,
+    } = require("../helpers/notificationDataBuilders");
+    const notificationData = await buildCongViecNotificationData(congviec, {
+      nguoiGiaoViecId: req.user?.NhanVienID?.toString(),
+      tenNguoiGiao: nguoiGiao?.Ten || "",
+    });
     await notificationService.send({
       type: "congviec-giao-viec",
-      data: {
-        _id: congviec._id.toString(),
-        arrNguoiNhanViecID: [...new Set(arrNguoiNhanViecID)],
-        MaCongViec: congviec.MaCongViec,
-        TieuDe: congviec.TieuDe,
-        TenNguoiGiao: nguoiGiao?.Ten || "Người giao",
-        NgayHetHan: congviec.NgayHetHan
-          ? dayjs(congviec.NgayHetHan).format("DD/MM/YYYY HH:mm")
-          : "",
-        MucDoUuTien: congviec.MucDoUuTien || "BINH_THUONG",
-      },
+      data: notificationData,
     });
     console.log("[CongViecService] ✅ Sent notification: congviec-giao-viec");
   } catch (notifyErr) {
@@ -2147,19 +2136,20 @@ service.transition = async (id, payload = {}, req) => {
     // Chuyển action thành type code (ví dụ: TIEP_NHAN -> tiep-nhan)
     const actionTypeCode = action.toLowerCase().replace(/_/g, "-");
 
+    const {
+      buildCongViecNotificationData,
+    } = require("../helpers/notificationDataBuilders");
+    const notificationData = await buildCongViecNotificationData(congviec, {
+      arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+      nguoiThucHien: performer,
+      HanhDong: action,
+      TuTrangThai: prevState,
+      DenTrangThai: conf.next,
+      GhiChu: ghiChu || lyDo || "",
+    });
     await notificationService.send({
       type: `congviec-${actionTypeCode}`,
-      data: {
-        _id: congviec._id.toString(),
-        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-        MaCongViec: congviec.MaCongViec,
-        TieuDe: congviec.TieuDe,
-        TenNguoiThucHien: performer?.Ten || "Người thực hiện",
-        HanhDong: action,
-        TuTrangThai: prevState,
-        DenTrangThai: conf.next,
-        GhiChu: ghiChu || lyDo || "",
-      },
+      data: notificationData,
     });
     console.log(
       `[CongViecService] ✅ Sent notification: congviec-${actionTypeCode}`
@@ -3066,17 +3056,17 @@ service.updateCongViec = async (congviecid, updateData, req) => {
 
     // Deadline change notification
     if (changes.deadline) {
+      const {
+        buildCongViecNotificationData,
+      } = require("../helpers/notificationDataBuilders");
+      const notificationData = await buildCongViecNotificationData(congviec, {
+        tenNguoiCapNhat: performer?.Ten || "",
+        ngayHetHanCu: oldValues.oldDeadline,
+        ngayHetHanMoi: oldValues.newDeadline,
+      });
       await notificationService.send({
         type: "congviec-cap-nhat-deadline",
-        data: {
-          _id: congviec._id.toString(),
-          arrNguoiLienQuanID: uniqueNguoiLienQuan,
-          MaCongViec: congviec.MaCongViec,
-          TieuDe: congviec.TieuDe,
-          TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
-          DeadlineCu: dayjs(oldValues.oldDeadline).format("DD/MM/YYYY HH:mm"),
-          DeadlineMoi: dayjs(oldValues.newDeadline).format("DD/MM/YYYY HH:mm"),
-        },
+        data: notificationData,
       });
       console.log(
         "[CongViecService] ✅ Sent notification: congviec-cap-nhat-deadline"
@@ -3091,19 +3081,20 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         CAO: "Cao",
         KHAN_CAP: "Khẩn cấp",
       };
+      const {
+        buildCongViecNotificationData,
+      } = require("../helpers/notificationDataBuilders");
+      const notificationData = await buildCongViecNotificationData(congviec, {
+        arrNguoiLienQuanID: uniqueNguoiLienQuan,
+        nguoiCapNhat: performer,
+        UuTienCu:
+          priorityLabels[oldValues.oldPriority] || oldValues.oldPriority,
+        UuTienMoi:
+          priorityLabels[oldValues.newPriority] || oldValues.newPriority,
+      });
       await notificationService.send({
         type: "congviec-thay-doi-uu-tien",
-        data: {
-          _id: congviec._id.toString(),
-          arrNguoiLienQuanID: uniqueNguoiLienQuan,
-          MaCongViec: congviec.MaCongViec,
-          TieuDe: congviec.TieuDe,
-          TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
-          UuTienCu:
-            priorityLabels[oldValues.oldPriority] || oldValues.oldPriority,
-          UuTienMoi:
-            priorityLabels[oldValues.newPriority] || oldValues.newPriority,
-        },
+        data: notificationData,
       });
       console.log(
         "[CongViecService] ✅ Sent notification: congviec-thay-doi-uu-tien"
@@ -3126,18 +3117,19 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         congviec.NguoiGiaoViecID?.toString(),
       ].filter((id) => id && id !== currentUser.NhanVienID?.toString());
 
+      const {
+        buildCongViecNotificationData,
+      } = require("../helpers/notificationDataBuilders");
+      const notificationData = await buildCongViecNotificationData(congviec, {
+        arrNguoiLienQuanID: [...new Set(arrNguoiNhan)],
+        nguoiCapNhat: performer,
+        nguoiChinhCu: oldAssignee,
+        nguoiChinhMoi: newAssignee,
+        NguoiChinhMoiID: oldValues.newMainAssigneeId,
+      });
       await notificationService.send({
         type: "congviec-thay-doi-nguoi-chinh",
-        data: {
-          _id: congviec._id.toString(),
-          arrNguoiLienQuanID: [...new Set(arrNguoiNhan)],
-          MaCongViec: congviec.MaCongViec,
-          TieuDe: congviec.TieuDe,
-          TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
-          TenNguoiChinhCu: oldAssignee?.Ten || "Người cũ",
-          TenNguoiChinhMoi: newAssignee?.Ten || "Người mới",
-          NguoiChinhMoiID: oldValues.newMainAssigneeId,
-        },
+        data: notificationData,
       });
       console.log(
         "[CongViecService] ✅ Sent notification: congviec-thay-doi-nguoi-chinh"
@@ -3148,16 +3140,17 @@ service.updateCongViec = async (congviecid, updateData, req) => {
     if (changes.participantsAdded) {
       for (const addedId of oldValues.addedParticipantIds) {
         const addedNV = await NhanVien.findById(addedId).select("Ten").lean();
+        const {
+          buildCongViecNotificationData,
+        } = require("../helpers/notificationDataBuilders");
+        const notificationData = await buildCongViecNotificationData(congviec, {
+          arrNguoiNhanID: [addedId],
+          nguoiCapNhat: performer,
+          nguoiDuocThem: addedNV,
+        });
         await notificationService.send({
           type: "congviec-gan-nguoi-tham-gia",
-          data: {
-            _id: congviec._id.toString(),
-            arrNguoiNhanID: [addedId], // Chỉ gửi cho người được thêm
-            MaCongViec: congviec.MaCongViec,
-            TieuDe: congviec.TieuDe,
-            TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
-            TenNguoiDuocThem: addedNV?.Ten || "Người tham gia",
-          },
+          data: notificationData,
         });
       }
       console.log(
@@ -3171,16 +3164,17 @@ service.updateCongViec = async (congviecid, updateData, req) => {
         const removedNV = await NhanVien.findById(removedId)
           .select("Ten")
           .lean();
+        const {
+          buildCongViecNotificationData,
+        } = require("../helpers/notificationDataBuilders");
+        const notificationData = await buildCongViecNotificationData(congviec, {
+          arrNguoiNhanID: [removedId],
+          nguoiCapNhat: performer,
+          nguoiBiXoa: removedNV,
+        });
         await notificationService.send({
           type: "congviec-xoa-nguoi-tham-gia",
-          data: {
-            _id: congviec._id.toString(),
-            arrNguoiNhanID: [removedId], // Gửi cho người bị xóa
-            MaCongViec: congviec.MaCongViec,
-            TieuDe: congviec.TieuDe,
-            TenNguoiCapNhat: performer?.Ten || "Người cập nhật",
-            TenNguoiBiXoa: removedNV?.Ten || "Người tham gia",
-          },
+          data: notificationData,
         });
       }
       console.log(
@@ -3315,18 +3309,16 @@ service.addComment = async (congviecid, noiDung, req, parentId = null) => {
       ...(congviec.NguoiThamGia || []).map((p) => p.NhanVienID?.toString()),
     ].filter((id) => id && id !== currentUser.NhanVienID?.toString());
 
+    const {
+      buildCongViecNotificationData,
+    } = require("../helpers/notificationDataBuilders");
+    const notificationData = await buildCongViecNotificationData(congviec, {
+      tenNguoiComment: nguoiBinhLuan?.Ten || "",
+      noiDungComment: noiDung.trim().substring(0, 200),
+    });
     await notificationService.send({
       type: "congviec-binh-luan",
-      data: {
-        _id: congviec._id.toString(),
-        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-        MaCongViec: congviec.MaCongViec,
-        TieuDe: congviec.TieuDe,
-        TenNguoiBinhLuan: nguoiBinhLuan?.Ten || "Người bình luận",
-        NoiDung: noiDung.trim().substring(0, 200),
-        BinhLuanID: binhLuan._id.toString(),
-        IsReply: !!parentId,
-      },
+      data: notificationData,
     });
     console.log("[CongViecService] ✅ Sent notification: congviec-binh-luan");
   } catch (triggerErr) {

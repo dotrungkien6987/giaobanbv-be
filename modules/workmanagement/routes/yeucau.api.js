@@ -234,14 +234,6 @@ router.post("/:id/appeal", yeuCauController.appeal);
  */
 router.get("/:id/binh-luan", yeuCauController.layBinhLuan);
 
-/**
- * @route   POST /api/workmanagement/yeucau/:id/binh-luan
- * @desc    Thêm bình luận vào yêu cầu
- * @access  Private
- * @body    NoiDung
- */
-router.post("/:id/binh-luan", yeuCauController.themBinhLuan);
-
 // ========================================
 // ROUTINE TASK ASSIGNMENT
 // ========================================

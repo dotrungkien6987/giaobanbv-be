@@ -171,26 +171,18 @@ async function taoYeuCau(data, nguoiYeuCauId) {
       ? cauHinhKhoaDich.layDanhSachNguoiDieuPhoiIDs()
       : [];
 
-    // Send notification via notificationService
+    // Send notification via notificationService using centralized builder
+    const {
+      buildYeuCauNotificationData,
+    } = require("../helpers/notificationDataBuilders");
+    const notificationData = await buildYeuCauNotificationData(yeuCau, {
+      arrNguoiDieuPhoiID,
+      populated, // Already has KhoaNguonID, KhoaDichID, NguoiYeuCauID
+      snapshotDanhMuc,
+    });
     await notificationService.send({
       type: "yeucau-tao-moi",
-      data: {
-        // IDs cho recipient resolution
-        _id: yeuCau._id,
-        NguoiYeuCauID: yeuCau.NguoiYeuCauID,
-        arrNguoiDieuPhoiID: arrNguoiDieuPhoiID,
-        // Flatten fields cho template
-        MaYeuCau: yeuCau.MaYeuCau,
-        TieuDe: yeuCau.TieuDe || "Yêu cầu mới",
-        MoTa: yeuCau.MoTa || "",
-        TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "Khoa",
-        TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "Khoa",
-        TenLoaiYeuCau: snapshotDanhMuc.TenLoaiYeuCau || "Yêu cầu",
-        TenNguoiYeuCau: populated.NguoiYeuCauID?.Ten || "Người yêu cầu",
-        ThoiGianHen: yeuCau.ThoiGianHen
-          ? dayjs(yeuCau.ThoiGianHen).format("DD/MM/YYYY HH:mm")
-          : "Chưa có",
-      },
+      data: notificationData,
     });
 
     console.log("[YeuCauService] ✅ Sent notification: yeucau-tao-moi");
@@ -312,28 +304,23 @@ async function suaYeuCau(yeuCauId, data, nguoiSuaId) {
         populated.getRelatedNhanVien?.() || []
       ).filter((id) => id && id !== nguoiSuaId?.toString());
 
-      // Send notification via notificationService
+      // Send notification via notificationService using centralized builder
+      const {
+        buildYeuCauNotificationData,
+      } = require("../helpers/notificationDataBuilders");
+      const notificationData = await buildYeuCauNotificationData(yeuCau, {
+        populated,
+        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
+        nguoiSua,
+        NoiDungThayDoi: Object.keys(data)
+          .filter(
+            (key) => allowedFields.includes(key) && data[key] !== undefined
+          )
+          .join(", "),
+      });
       await notificationService.send({
         type: "yeucau-sua",
-        data: {
-          _id: yeuCau._id,
-          NguoiSuaID: nguoiSuaId,
-          NguoiYeuCauID: populated.NguoiYeuCauID?._id?.toString() || null,
-          NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
-          NguoiDuocDieuPhoiID:
-            populated.NguoiDuocDieuPhoiID?._id?.toString() || null,
-          arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-          MaYeuCau: yeuCau.MaYeuCau,
-          TieuDe: yeuCau.TieuDe,
-          TenNguoiSua: nguoiSua?.Ten || "Người chỉnh sửa",
-          TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "",
-          TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "",
-          NoiDungThayDoi: Object.keys(data)
-            .filter(
-              (key) => allowedFields.includes(key) && data[key] !== undefined
-            )
-            .join(", "),
-        },
+        data: notificationData,
       });
 
       console.log("[YeuCauService] ✅ Sent notification: yeucau-sua");
@@ -764,109 +751,6 @@ async function layBinhLuan(yeuCauId) {
 
     return mappedComment;
   });
-}
-
-/**
- * Thêm bình luận
- * @param {ObjectId} yeuCauId - ID yêu cầu
- * @param {Object} data - Nội dung bình luận
- * @param {ObjectId} nguoiBinhLuanId - ID người bình luận (NhanVienID)
- * @returns {Promise<BinhLuan>}
- */
-async function themBinhLuan(yeuCauId, data, nguoiBinhLuanId) {
-  const yeuCau = await YeuCau.findById(yeuCauId);
-
-  if (!yeuCau || yeuCau.isDeleted) {
-    throw new AppError(404, "Không tìm thấy yêu cầu", "YEUCAU_NOT_FOUND");
-  }
-
-  // Kiểm tra quyền bình luận
-  const isRelated = yeuCau.nguoiDungLienQuan(nguoiBinhLuanId);
-
-  // Kiểm tra có phải điều phối viên không
-  let isDieuPhoi = false;
-  if (yeuCau.LoaiNguoiNhan === "KHOA") {
-    const config = await CauHinhThongBaoKhoa.findOne({
-      KhoaID: yeuCau.KhoaDichID,
-    });
-    isDieuPhoi = config?.laNguoiDieuPhoi(nguoiBinhLuanId) || false;
-  }
-
-  if (!isRelated && !isDieuPhoi) {
-    throw new AppError(
-      403,
-      "Bạn không có quyền bình luận yêu cầu này",
-      "PERMISSION_DENIED"
-    );
-  }
-
-  // Tạo bình luận
-  const binhLuan = new BinhLuan({
-    NoiDung: data.NoiDung,
-    YeuCauID: yeuCauId,
-    NguoiBinhLuanID: nguoiBinhLuanId,
-    BinhLuanChaID: data.BinhLuanChaID || null,
-    LoaiBinhLuan: data.LoaiBinhLuan || "COMMENT",
-  });
-
-  await binhLuan.save();
-
-  // Ghi lịch sử
-  await LichSuYeuCau.ghiLog({
-    yeuCauId,
-    hanhDong: HANH_DONG.THEM_BINH_LUAN,
-    nguoiThucHienId: nguoiBinhLuanId,
-    ghiChu: data.NoiDung?.substring(0, 100),
-  });
-
-  // Gửi thông báo bình luận mới
-  try {
-    const populated = await YeuCau.findById(yeuCauId)
-      .populate("NguoiYeuCauID", "Ten")
-      .populate("KhoaNguonID", "TenKhoa")
-      .populate("KhoaDichID", "TenKhoa")
-      .lean();
-
-    const nguoiBinhLuan = await NhanVien.findById(nguoiBinhLuanId)
-      .select("Ten")
-      .lean();
-
-    // Lấy tất cả người liên quan để gửi thông báo (trừ người bình luận)
-    const arrNguoiLienQuanID = (populated.getRelatedNhanVien?.() || []).filter(
-      (id) => id && id !== nguoiBinhLuanId.toString()
-    );
-
-    // Send notification via notificationService
-    await notificationService.send({
-      type: "yeucau-binh-luan",
-      data: {
-        _id: yeuCau._id,
-        NguoiBinhLuanID: nguoiBinhLuanId,
-        NguoiYeuCauID: populated.NguoiYeuCauID?._id?.toString() || null,
-        NguoiXuLyID: populated.NguoiXuLyID?._id?.toString() || null,
-        NguoiDuocDieuPhoiID:
-          populated.NguoiDuocDieuPhoiID?._id?.toString() || null,
-        arrNguoiLienQuanID: [...new Set(arrNguoiLienQuanID)],
-        MaYeuCau: yeuCau.MaYeuCau,
-        TieuDe: yeuCau.TieuDe,
-        TenNguoiComment: nguoiBinhLuan?.Ten || "Người bình luận",
-        NoiDungComment: data.NoiDung?.substring(0, 100) || "Bình luận mới",
-        TenNguoiBinhLuan: nguoiBinhLuan?.Ten || "Người bình luận",
-        NoiDungBinhLuan: data.NoiDung?.substring(0, 100) || "Bình luận mới",
-        TenKhoaGui: populated.KhoaNguonID?.TenKhoa || "",
-        TenKhoaNhan: populated.KhoaDichID?.TenKhoa || "",
-      },
-    });
-
-    console.log("[YeuCauService] ✅ Sent notification: yeucau-binh-luan");
-  } catch (error) {
-    console.error(
-      "[YeuCauService] ❌ Comment notification failed:",
-      error.message
-    );
-  }
-
-  return binhLuan;
 }
 
 /**
@@ -1550,7 +1434,7 @@ async function assertAccessYeuCau(yeuCauId, req) {
     throw new AppError(400, "Tài khoản chưa liên kết với nhân viên");
   }
 
-  const yeuCau = await YeuCau.findById(yeuCauId).lean();
+  const yeuCau = await YeuCau.findById(yeuCauId);
   if (!yeuCau) throw new AppError(404, "Không tìm thấy yêu cầu");
 
   // Kiểm tra quyền: Admin, người tạo, người xử lý, hoặc điều phối khoa đích
@@ -1721,21 +1605,35 @@ async function createCommentWithFiles(
 
   // Send notification for comment (trừ người bình luận)
   try {
+    // Populate yêu cầu để lấy đủ data (giống state machine pattern)
+    const populated = await YeuCau.findById(yeuCau._id)
+      .populate("NguoiYeuCauID", "Ten")
+      .populate("NguoiXuLyID", "Ten")
+      .populate("NguoiDieuPhoiID", "Ten")
+      .populate("NguoiDuocDieuPhoiID", "Ten")
+      .populate("KhoaNguonID", "TenKhoa")
+      .populate("KhoaDichID", "TenKhoa")
+      .populate("DanhMucYeuCauID", "TenLoaiYeuCau")
+      .lean();
+
     const arrNguoiLienQuanID = yeuCau
-      .nguoiDungLienQuanAll()
+      .getRelatedNhanVien()
       .filter((id) => id.toString() !== nhanVienId.toString());
+
+    const {
+      buildYeuCauNotificationData,
+    } = require("../helpers/notificationDataBuilders");
+    const notificationData = await buildYeuCauNotificationData(yeuCau, {
+      populated,
+      arrNguoiLienQuanID,
+      nguoiBinhLuanId: nhanVienId.toString(),
+      tenNguoiBinhLuan,
+      noiDungComment: base.NoiDung?.substring(0, 100),
+    });
 
     await notificationService.send({
       type: "yeucau-binh-luan",
-      data: {
-        _id: yeuCau._id,
-        NguoiBinhLuanID: nhanVienId,
-        arrNguoiLienQuanID: arrNguoiLienQuanID,
-        MaYeuCau: yeuCau.MaYeuCau,
-        TieuDe: yeuCau.TieuDe,
-        TenNguoiBinhLuan: tenNguoiBinhLuan,
-        NoiDungBinhLuan: base.NoiDung?.substring(0, 100) || "Bình luận mới",
-      },
+      data: notificationData,
     });
 
     console.log("[YeuCauService] ✅ Sent notification: yeucau-binh-luan");
@@ -1882,7 +1780,6 @@ module.exports = {
   layDanhSach,
   layLichSu,
   layBinhLuan,
-  themBinhLuan,
   layTepTin,
   layDashboardMetrics,
   layQuyenCuaToi,

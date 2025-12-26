@@ -13,8 +13,11 @@ const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/giaoban_bvt";
 
 // Common variables for CongViec (1-19, 44-45)
+// Total: 29 fields (6 recipient + 23 display) - matches buildCongViecNotificationData()
 const congViecVariables = [
-  // Recipient Candidates
+  // ============================================
+  // RECIPIENT CANDIDATES (6 fields)
+  // ============================================
   {
     name: "NguoiChinhID",
     type: "ObjectId",
@@ -42,7 +45,7 @@ const congViecVariables = [
     type: "ObjectId",
     ref: "NhanVien",
     isRecipientCandidate: true,
-    description: "Người tham gia mới",
+    description: "Người tham gia mới được thêm",
   },
   {
     name: "NguoiThamGiaBiXoa",
@@ -56,33 +59,66 @@ const congViecVariables = [
     type: "ObjectId",
     ref: "NhanVien",
     isRecipientCandidate: true,
-    description: "Người chính mới",
+    description: "Người chính mới (khi thay đổi người chính)",
   },
-  // Display Fields
+  // ============================================
+  // DISPLAY FIELDS (23 fields)
+  // ============================================
   { name: "_id", type: "ObjectId", description: "ID công việc" },
   { name: "MaCongViec", type: "String", description: "Mã công việc" },
   { name: "TieuDe", type: "String", description: "Tiêu đề công việc" },
   { name: "MoTa", type: "String", description: "Mô tả công việc" },
-  { name: "TenNguoiChinh", type: "String", description: "Tên người được giao" },
+  {
+    name: "TenNguoiChinh",
+    type: "String",
+    description: "Tên người được giao chính",
+  },
   { name: "TenNguoiGiao", type: "String", description: "Tên người giao việc" },
   {
-    name: "DoUuTien",
+    name: "TenNguoiCapNhat",
     type: "String",
-    description: "Độ ưu tiên: cao/trung bình/thấp",
+    description: "Tên người cập nhật",
   },
-  { name: "DoUuTienCu", type: "String", description: "Độ ưu tiên cũ" },
+  {
+    name: "TenNguoiChinhMoi",
+    type: "String",
+    description: "Tên người chính mới",
+  },
+  {
+    name: "TenNguoiThucHien",
+    type: "String",
+    description: "Tên người thực hiện hành động",
+  },
+  {
+    name: "MucDoUuTienMoi",
+    type: "String",
+    description: "Độ ưu tiên mới: THAP/BINH_THUONG/CAO/KHAN_CAP",
+  },
+  { name: "MucDoUuTienCu", type: "String", description: "Độ ưu tiên cũ" },
   { name: "TrangThai", type: "String", description: "Trạng thái hiện tại" },
-  { name: "TienDo", type: "Number", description: "Tiến độ %" },
-  { name: "Deadline", type: "String", description: "Hạn hoàn thành" },
-  { name: "DeadlineCu", type: "String", description: "Deadline cũ" },
-  { name: "TenFile", type: "String", description: "Tên file" },
+  { name: "TienDoMoi", type: "Number", description: "Tiến độ % mới" },
+  {
+    name: "NgayHetHan",
+    type: "String",
+    description: "Ngày hết hạn (DD/MM/YYYY)",
+  },
+  { name: "NgayHetHanCu", type: "String", description: "Ngày hết hạn cũ" },
+  { name: "NgayHetHanMoi", type: "String", description: "Ngày hết hạn mới" },
+  { name: "TenFile", type: "String", description: "Tên file đính kèm" },
   { name: "NoiDungComment", type: "String", description: "Nội dung bình luận" },
-  { name: "TenNguoiComment", type: "String", description: "Người bình luận" },
+  {
+    name: "TenNguoiComment",
+    type: "String",
+    description: "Tên người bình luận",
+  },
 ];
 
 // Common variables for YeuCau (20-36)
+// Total: 30 fields (10 recipient + 20 display) - matches buildYeuCauNotificationData()
 const yeuCauVariables = [
-  // Recipient Candidates
+  // ============================================
+  // RECIPIENT CANDIDATES (10 fields)
+  // ============================================
   {
     name: "NguoiYeuCauID",
     type: "ObjectId",
@@ -95,7 +131,14 @@ const yeuCauVariables = [
     type: "ObjectId",
     ref: "NhanVien",
     isRecipientCandidate: true,
-    description: "Người xử lý",
+    description: "Người xử lý yêu cầu",
+  },
+  {
+    name: "NguoiDuocDieuPhoiID",
+    type: "ObjectId",
+    ref: "NhanVien",
+    isRecipientCandidate: true,
+    description: "Người được điều phối xử lý",
   },
   {
     name: "arrNguoiDieuPhoiID",
@@ -103,7 +146,7 @@ const yeuCauVariables = [
     itemType: "ObjectId",
     ref: "NhanVien",
     isRecipientCandidate: true,
-    description: "Điều phối viên khoa",
+    description: "Danh sách điều phối viên khoa",
   },
   {
     name: "arrQuanLyKhoaID",
@@ -113,60 +156,146 @@ const yeuCauVariables = [
     isRecipientCandidate: true,
     description: "Danh sách quản lý/trưởng khoa",
   },
-  // Display Fields
+  {
+    name: "arrNguoiLienQuanID",
+    type: "Array",
+    itemType: "ObjectId",
+    ref: "NhanVien",
+    isRecipientCandidate: true,
+    description:
+      "Danh sách tất cả người liên quan (auto-computed từ getRelatedNhanVien)",
+  },
+  {
+    name: "NguoiSuaID",
+    type: "ObjectId",
+    ref: "NhanVien",
+    isRecipientCandidate: true,
+    description: "Người chỉnh sửa yêu cầu",
+  },
+  {
+    name: "NguoiBinhLuanID",
+    type: "ObjectId",
+    ref: "NhanVien",
+    isRecipientCandidate: true,
+    description: "Người bình luận",
+  },
+  {
+    name: "NguoiXoaID",
+    type: "ObjectId",
+    ref: "NhanVien",
+    isRecipientCandidate: true,
+    description: "Người xóa yêu cầu",
+  },
+  {
+    name: "NguoiNhanID",
+    type: "ObjectId",
+    ref: "NhanVien",
+    isRecipientCandidate: true,
+    description: "Người nhận (dùng cho các action đặc biệt)",
+  },
+  // ============================================
+  // DISPLAY FIELDS (20 fields)
+  // ============================================
   { name: "_id", type: "ObjectId", description: "ID yêu cầu" },
   { name: "MaYeuCau", type: "String", description: "Mã yêu cầu" },
   { name: "TieuDe", type: "String", description: "Tiêu đề yêu cầu" },
   { name: "MoTa", type: "String", description: "Mô tả chi tiết" },
   { name: "TenKhoaGui", type: "String", description: "Tên khoa gửi" },
   { name: "TenKhoaNhan", type: "String", description: "Tên khoa nhận" },
-  { name: "TenKhoaGui", type: "String", description: "Tên khoa gửi" },
-  { name: "TenKhoaNhan", type: "String", description: "Tên khoa nhận" },
   { name: "TenLoaiYeuCau", type: "String", description: "Loại yêu cầu" },
   { name: "TenNguoiYeuCau", type: "String", description: "Tên người yêu cầu" },
   { name: "TenNguoiXuLy", type: "String", description: "Tên người xử lý" },
-  { name: "ThoiGianHen", type: "String", description: "Thời gian hẹn" },
+  {
+    name: "TenNguoiDuocDieuPhoi",
+    type: "String",
+    description: "Tên người được điều phối",
+  },
+  { name: "TenNguoiSua", type: "String", description: "Tên người chỉnh sửa" },
+  {
+    name: "TenNguoiThucHien",
+    type: "String",
+    description: "Tên người thực hiện hành động",
+  },
+  { name: "TenNguoiXoa", type: "String", description: "Tên người xóa" },
+  {
+    name: "TenNguoiComment",
+    type: "String",
+    description: "Tên người bình luận",
+  },
+  {
+    name: "ThoiGianHen",
+    type: "String",
+    description: "Thời gian hẹn (DD/MM/YYYY HH:mm)",
+  },
   { name: "ThoiGianHenCu", type: "String", description: "Thời gian hẹn cũ" },
   { name: "TrangThai", type: "String", description: "Trạng thái yêu cầu" },
   { name: "LyDoTuChoi", type: "String", description: "Lý do từ chối" },
-  { name: "DiemDanhGia", type: "Number", description: "Điểm đánh giá" },
+  { name: "DiemDanhGia", type: "Number", description: "Điểm đánh giá (1-5)" },
   { name: "NoiDungDanhGia", type: "String", description: "Nội dung đánh giá" },
   { name: "NoiDungComment", type: "String", description: "Nội dung bình luận" },
-  { name: "TenNguoiComment", type: "String", description: "Người bình luận" },
+  {
+    name: "NoiDungThayDoi",
+    type: "String",
+    description: "Mô tả nội dung thay đổi",
+  },
 ];
 
 // Common variables for KPI (37-43)
+// Total: 16 fields (2 recipient + 14 display) - matches buildKPINotificationData()
 const kpiVariables = [
-  // Recipient Candidates
+  // ============================================
+  // RECIPIENT CANDIDATES (2 fields)
+  // ============================================
   {
     name: "NhanVienID",
     type: "ObjectId",
     ref: "NhanVien",
     isRecipientCandidate: true,
-    description: "Nhân viên được đánh giá",
+    description: "Nhân viên được đánh giá KPI",
   },
   {
     name: "NguoiDanhGiaID",
     type: "ObjectId",
     ref: "NhanVien",
     isRecipientCandidate: true,
-    description: "Người đánh giá",
+    description: "Người đánh giá (quản lý trực tiếp)",
   },
-  // Display Fields
+  // ============================================
+  // DISPLAY FIELDS (14 fields)
+  // ============================================
   { name: "_id", type: "ObjectId", description: "ID đánh giá KPI" },
-  { name: "TenNhanVien", type: "String", description: "Tên nhân viên" },
+  {
+    name: "TenNhanVien",
+    type: "String",
+    description: "Tên nhân viên được đánh giá",
+  },
   {
     name: "TenNguoiDanhGia",
     type: "String",
     description: "Tên người đánh giá",
   },
   { name: "TenChuKy", type: "String", description: "Tên chu kỳ đánh giá" },
-  { name: "TenTieuChi", type: "String", description: "Tên tiêu chí" },
+  { name: "TenTieuChi", type: "String", description: "Tên tiêu chí đánh giá" },
+  {
+    name: "TenNhiemVu",
+    type: "String",
+    description: "Tên nhiệm vụ thường quy",
+  },
+  { name: "TenNguoiDuyet", type: "String", description: "Tên người duyệt KPI" },
   { name: "TongDiemKPI", type: "Number", description: "Tổng điểm KPI" },
   { name: "DiemTuDanhGia", type: "Number", description: "Điểm tự đánh giá" },
-  { name: "DiemQL", type: "Number", description: "Điểm quản lý" },
-  { name: "NoiDungPhanHoi", type: "String", description: "Nội dung phản hồi" },
-  { name: "LyDoHuyDuyet", type: "String", description: "Lý do hủy duyệt" },
+  { name: "DiemQL", type: "Number", description: "Điểm quản lý đánh giá" },
+  {
+    name: "DiemNhiemVu",
+    type: "Number",
+    description: "Điểm nhiệm vụ (computed)",
+  },
+  { name: "PhanHoi", type: "String", description: "Phản hồi của nhân viên" },
+  {
+    name: "LyDo",
+    type: "String",
+    description: "Lý do (hủy duyệt, từ chối, etc.)",
+  },
 ];
 
 const notificationTypes = [

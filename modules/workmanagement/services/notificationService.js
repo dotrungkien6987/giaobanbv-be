@@ -214,6 +214,13 @@ class NotificationService {
       return templateString.replace(/\{\{(\w+)\}\}/g, (match, key) => {
         const value = data[key];
         if (value === undefined || value === null) return "";
+
+        // Handle MongoDB ObjectId - convert to string
+        if (value.constructor && value.constructor.name === "ObjectId") {
+          return value.toString();
+        }
+
+        // Handle other objects (not ObjectId)
         if (typeof value === "object") return JSON.stringify(value);
         return String(value);
       });
@@ -269,13 +276,15 @@ class NotificationService {
       // Emit socket event using existing socketService
       try {
         socketService.emitToUser(userId, "notification:new", {
-          _id: notification._id,
-          title: title,
-          body: body,
-          actionUrl: actionUrl,
-          icon: icon,
-          priority: priority,
-          createdAt: notification.createdAt,
+          notification: {
+            _id: notification._id,
+            title: title,
+            body: body,
+            actionUrl: actionUrl,
+            icon: icon,
+            priority: priority,
+            createdAt: notification.createdAt,
+          },
         });
 
         console.log(`[SendToUser] Socket event emitted to user:${userId}`);

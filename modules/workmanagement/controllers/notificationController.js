@@ -1,5 +1,9 @@
 const notificationService = require("../services/notificationService");
-const { UserNotificationSettings, NotificationTemplate } = require("../models");
+const {
+  UserNotificationSettings,
+  NotificationTemplate,
+  NotificationType,
+} = require("../models");
 const {
   sendResponse,
   catchAsync,
@@ -108,10 +112,30 @@ notificationController.getSettings = catchAsync(async (req, res, next) => {
   const userId = req.userId;
   const settings = await UserNotificationSettings.getOrCreate(userId);
 
-  // Get available templates for settings UI
-  const templates = await NotificationTemplate.find({ isActive: true }).select(
-    "type name description defaultChannels"
-  );
+  // Get actual notification types (not templates)
+  const types = await NotificationType.find({ isActive: true })
+    .select("code name description Nhom")
+    .sort({ Nhom: 1, name: 1 })
+    .lean();
+
+  // Count templates per type for display info
+  const templates = await NotificationTemplate.find({ isEnabled: true })
+    .select("typeCode")
+    .lean();
+
+  const templateCounts = templates.reduce((acc, template) => {
+    acc[template.typeCode] = (acc[template.typeCode] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Format types with template count
+  const availableTypes = types.map((type) => ({
+    type: type.code,
+    name: type.name,
+    description: type.description,
+    Nhom: type.Nhom,
+    templateCount: templateCounts[type.code] || 0,
+  }));
 
   return sendResponse(
     res,
@@ -124,7 +148,7 @@ notificationController.getSettings = catchAsync(async (req, res, next) => {
         quietHours: settings.quietHours,
         typePreferences: Object.fromEntries(settings.typePreferences),
       },
-      availableTypes: templates,
+      availableTypes,
     },
     null,
     "Thành công"

@@ -3393,15 +3393,29 @@ service.getDashboardByNhiemVu = async ({
   }
 
   // Base filter: tasks in cycle date range
-  // ✅ FIX: Only use createdAt (NgayGiaoViec may be null/invalid causing CastError)
+  // ✅ OVERLAP LOGIC: Filter by work period (NgayBatDau/NgayHetHan) with fallback to createdAt
   const baseFilter = {
     NhiemVuThuongQuyID: toObjectId(nhiemVuThuongQuyID),
     NguoiChinhID: toObjectId(nhanVienID),
     isDeleted: { $ne: true },
-    createdAt: {
-      $gte: tuNgay,
-      $lte: denNgay,
-    },
+    $or: [
+      // Case 1: Both dates exist - use overlap logic
+      {
+        NgayBatDau: { $ne: null, $lte: denNgay },
+        NgayHetHan: { $ne: null, $gte: tuNgay },
+      },
+      // Case 2: Only NgayHetHan exists
+      {
+        NgayBatDau: null,
+        NgayHetHan: { $ne: null, $gte: tuNgay, $lte: denNgay },
+      },
+      // Case 3: Fallback to createdAt when no work dates
+      {
+        NgayBatDau: null,
+        NgayHetHan: null,
+        createdAt: { $gte: tuNgay, $lte: denNgay },
+      },
+    ],
   };
 
   const now = new Date();
@@ -3649,8 +3663,9 @@ service.getDashboardByNhiemVu = async ({
 };
 
 /**
- * Get summary of "other" tasks (FlagNVTQKhac = true)
+ * Get summary of "other" tasks (ALL tasks without NVTQ assignment)
  * Used by: Compact card in KPI evaluation page
+ * Includes: FlagNVTQKhac=true AND unassigned tasks (FlagNVTQKhac=false)
  * @param {String} nhanVienID - Employee ID
  * @param {String} chuKyDanhGiaID - Evaluation cycle ID
  * @returns {Object} {total, completed, late, active, tasks[]}
@@ -3676,7 +3691,9 @@ service.getOtherTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
   }
 
   const tuNgay = new Date(chuKy.NgayBatDau);
+  tuNgay.setHours(0, 0, 0, 0); // Start of day
   const denNgay = new Date(chuKy.NgayKetThuc);
+  denNgay.setHours(23, 59, 59, 999); // End of day - FIX: include tasks created on last day
 
   if (
     !tuNgay ||
@@ -3691,13 +3708,31 @@ service.getOtherTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
     );
   }
 
-  // Build filter - VAI TRÒ CHÍNH + FLAG "KHÁC"
+  // Build filter - VAI TRÒ CHÍNH + KHÔNG THUỘC NVTQ
+  // ✅ Includes ALL tasks without NVTQ (both FlagNVTQKhac=true and false)
+  // ✅ OVERLAP LOGIC: Filter by work period with fallback to createdAt
   const baseFilter = {
     NguoiChinhID: toObjectId(nhanVienID),
-    FlagNVTQKhac: true,
     NhiemVuThuongQuyID: null,
     isDeleted: { $ne: true },
-    createdAt: { $gte: tuNgay, $lte: denNgay },
+    $or: [
+      // Case 1: Both dates exist - use overlap logic
+      {
+        NgayBatDau: { $ne: null, $lte: denNgay },
+        NgayHetHan: { $ne: null, $gte: tuNgay },
+      },
+      // Case 2: Only NgayHetHan exists
+      {
+        NgayBatDau: null,
+        NgayHetHan: { $ne: null, $gte: tuNgay, $lte: denNgay },
+      },
+      // Case 3: Fallback to createdAt when no work dates
+      {
+        NgayBatDau: null,
+        NgayHetHan: null,
+        createdAt: { $gte: tuNgay, $lte: denNgay },
+      },
+    ],
   };
 
   // Aggregation for counts (lightweight)
@@ -3723,7 +3758,7 @@ service.getOtherTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
   // Get task list (limit 50 for performance)
   const tasks = await CongViec.find(baseFilter)
     .select(
-      "MaCongViec TieuDe TrangThai NgayHetHan SoGioTre HoanThanhTreHan createdAt"
+      "MaCongViec TieuDe MoTa TrangThai NgayHetHan SoGioTre HoanThanhTreHan PhanTramTienDoTong FlagNVTQKhac createdAt"
     )
     .sort({ SoGioTre: -1, NgayHetHan: 1 })
     .limit(50)
@@ -3767,7 +3802,9 @@ service.getCollabTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
   }
 
   const tuNgay = new Date(chuKy.NgayBatDau);
+  tuNgay.setHours(0, 0, 0, 0); // Start of day
   const denNgay = new Date(chuKy.NgayKetThuc);
+  denNgay.setHours(23, 59, 59, 999); // End of day - FIX: include tasks created on last day
 
   if (
     !tuNgay ||
@@ -3783,6 +3820,7 @@ service.getCollabTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
   }
 
   // Build filter - VAI TRÒ PHỐI HỢP
+  // ✅ OVERLAP LOGIC: Filter by work period with fallback to createdAt
   const baseFilter = {
     NguoiThamGia: {
       $elemMatch: {
@@ -3791,7 +3829,24 @@ service.getCollabTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
       },
     },
     isDeleted: { $ne: true },
-    createdAt: { $gte: tuNgay, $lte: denNgay },
+    $or: [
+      // Case 1: Both dates exist - use overlap logic
+      {
+        NgayBatDau: { $ne: null, $lte: denNgay },
+        NgayHetHan: { $ne: null, $gte: tuNgay },
+      },
+      // Case 2: Only NgayHetHan exists
+      {
+        NgayBatDau: null,
+        NgayHetHan: { $ne: null, $gte: tuNgay, $lte: denNgay },
+      },
+      // Case 3: Fallback to createdAt when no work dates
+      {
+        NgayBatDau: null,
+        NgayHetHan: null,
+        createdAt: { $gte: tuNgay, $lte: denNgay },
+      },
+    ],
   };
 
   // Aggregation for counts
@@ -3817,7 +3872,7 @@ service.getCollabTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
   // Get task list with NguoiChinh info
   const tasks = await CongViec.find(baseFilter)
     .select(
-      "MaCongViec TieuDe TrangThai NgayHetHan SoGioTre HoanThanhTreHan NguoiChinhID createdAt"
+      "MaCongViec TieuDe MoTa TrangThai NgayHetHan SoGioTre HoanThanhTreHan PhanTramTienDoTong NguoiChinhID createdAt"
     )
     .populate({
       path: "NguoiChinhID",
@@ -3843,6 +3898,199 @@ service.getCollabTasksSummary = async (nhanVienID, chuKyDanhGiaID) => {
     completed: summary?.completed || 0,
     late: summary?.late || 0,
     active: summary?.active || 0,
+    tasks: tasksWithProfile,
+  };
+};
+
+// ========================================
+// Cross-Cycle Tasks Summary for KPI Evaluation
+// ========================================
+/**
+ * Get summary of tasks assigned to NVTQ from previous cycles
+ * @param {Object} params - { nhanVienID, chuKyDanhGiaID }
+ * @returns {Promise<Object>} Summary with total, completed, late, active, tasks
+ */
+service.getCrossCycleTasksSummary = async ({ nhanVienID, chuKyDanhGiaID }) => {
+  const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+  const NhanVienNhiemVu = require("../models/NhanVienNhiemVu");
+
+  // Validate inputs
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Missing required parameters: nhanVienID, chuKyDanhGiaID"
+    );
+  }
+
+  // Get cycle date range
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(404, "Không tìm thấy chu kỳ đánh giá");
+  }
+
+  const tuNgay = chuKy.NgayBatDau ? new Date(chuKy.NgayBatDau) : null;
+  const denNgay = chuKy.NgayKetThuc ? new Date(chuKy.NgayKetThuc) : null;
+
+  if (
+    !tuNgay ||
+    isNaN(tuNgay.getTime()) ||
+    !denNgay ||
+    isNaN(denNgay.getTime())
+  ) {
+    throw new AppError(400, "Chu kỳ đánh giá có ngày không hợp lệ");
+  }
+
+  // FIX: Set time boundaries for accurate date comparison
+  tuNgay.setHours(0, 0, 0, 0); // Start of day
+  denNgay.setHours(23, 59, 59, 999); // End of day - include tasks created on last day
+
+  // Step 1: Find all NVTQ assignments from OTHER cycles for this employee
+  const otherCycleAssignments = await NhanVienNhiemVu.find({
+    NhanVienID: toObjectId(nhanVienID),
+    ChuKyDanhGiaID: { $ne: toObjectId(chuKyDanhGiaID), $exists: true },
+    isDeleted: false,
+  }).select("NhiemVuThuongQuyID ChuKyDanhGiaID");
+
+  // If no cross-cycle assignments, return empty
+  if (otherCycleAssignments.length === 0) {
+    return {
+      total: 0,
+      completed: 0,
+      late: 0,
+      active: 0,
+      tasks: [],
+    };
+  }
+
+  // FIX: Also get NVTQ assignments from CURRENT cycle to exclude them
+  const currentCycleAssignments = await NhanVienNhiemVu.find({
+    NhanVienID: toObjectId(nhanVienID),
+    ChuKyDanhGiaID: toObjectId(chuKyDanhGiaID),
+    isDeleted: false,
+  }).select("NhiemVuThuongQuyID");
+
+  const currentCycleNVTQIds = currentCycleAssignments.map((a) =>
+    a.NhiemVuThuongQuyID?.toString()
+  );
+
+  // FIX: Filter out NVTQs that are ALSO assigned in current cycle
+  // Only keep truly "cross-cycle" NVTQs (assigned in other cycle but NOT in current)
+  const crossCycleNVTQIds = otherCycleAssignments
+    .map((a) => a.NhiemVuThuongQuyID)
+    .filter((nvtqId) => !currentCycleNVTQIds.includes(nvtqId?.toString()));
+
+  // If all NVTQs are also in current cycle, return empty
+  if (crossCycleNVTQIds.length === 0) {
+    return {
+      total: 0,
+      completed: 0,
+      late: 0,
+      active: 0,
+      tasks: [],
+    };
+  }
+
+  // Step 2: Find tasks that:
+  // - Have NhiemVuThuongQuyID in crossCycleNVTQIds
+  // - NguoiChinhID = nhanVienID
+  // - Date overlap with current cycle
+  const baseFilter = {
+    NhiemVuThuongQuyID: { $in: crossCycleNVTQIds },
+    NguoiChinhID: toObjectId(nhanVienID),
+    isDeleted: { $ne: true },
+    $or: [
+      // Case 1: Both dates exist - overlap logic
+      {
+        NgayBatDau: { $ne: null, $lte: denNgay },
+        NgayHetHan: { $ne: null, $gte: tuNgay },
+      },
+      // Case 2: Only NgayHetHan exists
+      {
+        NgayBatDau: null,
+        NgayHetHan: { $ne: null, $gte: tuNgay, $lte: denNgay },
+      },
+      // Case 3: Fallback to createdAt
+      {
+        NgayBatDau: null,
+        NgayHetHan: null,
+        createdAt: { $gte: tuNgay, $lte: denNgay },
+      },
+    ],
+  };
+
+  // Aggregate for summary
+  const summary = await CongViec.aggregate([
+    { $match: baseFilter },
+    {
+      $facet: {
+        total: [{ $count: "count" }],
+        completed: [
+          { $match: { TrangThai: "HOAN_THANH" } },
+          { $count: "count" },
+        ],
+        late: [
+          {
+            $match: {
+              $or: [
+                { HoanThanhTreHan: true },
+                {
+                  TrangThai: { $ne: "HOAN_THANH" },
+                  NgayHetHan: { $lt: new Date() },
+                },
+              ],
+            },
+          },
+          { $count: "count" },
+        ],
+        active: [
+          {
+            $match: {
+              TrangThai: { $in: ["MOI_TAO", "DANG_THUC_HIEN"] },
+            },
+          },
+          { $count: "count" },
+        ],
+      },
+    },
+    {
+      $project: {
+        total: { $arrayElemAt: ["$total.count", 0] },
+        completed: { $arrayElemAt: ["$completed.count", 0] },
+        late: { $arrayElemAt: ["$late.count", 0] },
+        active: { $arrayElemAt: ["$active.count", 0] },
+      },
+    },
+  ]);
+
+  // Get task list (limit 50 for performance)
+  const tasks = await CongViec.find(baseFilter)
+    .populate({
+      path: "NguoiChinh",
+      select: "Ten Email KhoaID",
+      populate: { path: "KhoaID", select: "TenKhoa MaKhoa" },
+    })
+    .populate({
+      path: "NguoiGiaoViec",
+      select: "Ten Email",
+    })
+    .populate({
+      path: "NhiemVuThuongQuyID",
+      select: "TenNhiemVu MoTa",
+    })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+
+  // Map to DTO
+  const tasksWithProfile = tasks.map((t) => mapCongViecDTO(t));
+
+  const summaryData = summary[0] || {};
+
+  return {
+    total: summaryData.total || 0,
+    completed: summaryData.completed || 0,
+    late: summaryData.late || 0,
+    active: summaryData.active || 0,
     tasks: tasksWithProfile,
   };
 };

@@ -557,7 +557,8 @@ controller.getDashboardByNhiemVu = catchAsync(async (req, res, next) => {
 });
 
 /**
- * Get summary of "other" tasks (FlagNVTQKhac=true)
+ * Get summary of "other" tasks (ALL non-NVTQ tasks)
+ * Includes: FlagNVTQKhac=true AND unassigned tasks
  * @route GET /api/workmanagement/congviec/summary-other-tasks
  * @query {String} nhanVienID - Employee ID (required)
  * @query {String} chuKyDanhGiaID - Evaluation cycle ID (required)
@@ -625,6 +626,40 @@ controller.getCollabTasksSummary = catchAsync(async (req, res) => {
     data,
     null,
     "Lấy tóm tắt công việc phối hợp thành công"
+  );
+});
+
+/**
+ * Get summary of cross-cycle tasks (assigned to NVTQ from previous cycles)
+ * @route GET /api/workmanagement/congviec/summary-cross-cycle-tasks
+ * @access Private
+ */
+controller.getCrossCycleTasksSummary = catchAsync(async (req, res) => {
+  const { nhanVienID, chuKyDanhGiaID } = req.query;
+
+  // Validate query params
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu nhanVienID hoặc chuKyDanhGiaID trong query",
+      "MISSING_PARAMS"
+    );
+  }
+
+  // Call service method
+  const data = await congViecService.getCrossCycleTasksSummary({
+    nhanVienID,
+    chuKyDanhGiaID,
+  });
+
+  // Send response
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Lấy tóm tắt công việc gán NVTQ chu kỳ cũ thành công"
   );
 });
 

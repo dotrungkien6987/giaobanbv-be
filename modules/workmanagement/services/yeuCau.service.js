@@ -1773,6 +1773,480 @@ async function recallCommentText(yeuCauId, commentId, req) {
   };
 }
 
+/**
+ * Get counts of YeuCau grouped by NhiemVuThuongQuyID for KPI evaluation
+ * @param {Array<String>} nhiemVuThuongQuyIDs - Array of NVTQ IDs
+ * @param {String} nhanVienID - Employee ID
+ * @param {String} chuKyDanhGiaID - Evaluation cycle ID
+ * @returns {Object} { "nvtqID1": 12, "nvtqID2": 8, ... }
+ */
+async function layYeuCauCountsByNhiemVu({
+  nhiemVuThuongQuyIDs,
+  nhanVienID,
+  chuKyDanhGiaID,
+}) {
+  const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+
+  // 1. Get ChuKyDanhGia time range
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(404, "Chu kỳ đánh giá không tồn tại", "NOT_FOUND");
+  }
+
+  // 2. Build match filter - dùng NgayTiepNhan để tính yêu cầu được xử lý trong chu kỳ
+  const matchFilter = {
+    NguoiXuLyID: new mongoose.Types.ObjectId(nhanVienID),
+    NgayTiepNhan: {
+      $gte: chuKy.NgayBatDau,
+      $lte: chuKy.NgayKetThuc,
+      $ne: null, // Đã được tiếp nhận
+    },
+    NhiemVuThuongQuyID: {
+      $in: nhiemVuThuongQuyIDs.map((id) => new mongoose.Types.ObjectId(id)),
+    },
+  };
+
+  // 3. Aggregate counts
+  const result = await YeuCau.aggregate([
+    { $match: matchFilter },
+    {
+      $group: {
+        _id: "$NhiemVuThuongQuyID",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // 4. Format response as { nvtqID: count }, initialize all to 0
+  const countsMap = {};
+  nhiemVuThuongQuyIDs.forEach((id) => {
+    countsMap[id] = 0;
+  });
+  result.forEach((item) => {
+    if (item._id) {
+      countsMap[item._id.toString()] = item.count;
+    }
+  });
+
+  return countsMap;
+}
+
+/**
+ * Get dashboard data for YeuCau by NhiemVuThuongQuy for KPI evaluation
+ * @param {String} nhiemVuThuongQuyID - NVTQ ID
+ * @param {String} nhanVienID - Employee ID
+ * @param {String} chuKyDanhGiaID - Evaluation cycle ID
+ * @returns {Object} Dashboard data with summary, distributions, and list
+ */
+async function layYeuCauDashboardByNhiemVu({
+  nhiemVuThuongQuyID,
+  nhanVienID,
+  chuKyDanhGiaID,
+}) {
+  const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+
+  // 1. Get time range
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(404, "Chu kỳ đánh giá không tồn tại", "NOT_FOUND");
+  }
+
+  // 2. Base filter - dùng NgayTiepNhan để tính yêu cầu được xử lý trong chu kỳ
+  const baseFilter = {
+    NguoiXuLyID: new mongoose.Types.ObjectId(nhanVienID),
+    NhiemVuThuongQuyID: new mongoose.Types.ObjectId(nhiemVuThuongQuyID),
+    NgayTiepNhan: {
+      $gte: chuKy.NgayBatDau,
+      $lte: chuKy.NgayKetThuc,
+      $ne: null, // Đã được tiếp nhận
+    },
+  };
+
+  // 3. Summary aggregation
+  const summaryPipeline = [
+    { $match: baseFilter },
+    {
+      $facet: {
+        total: [{ $count: "count" }],
+        completed: [
+          { $match: { TrangThai: TRANG_THAI.DA_HOAN_THANH } },
+          { $count: "count" },
+        ],
+        late: [
+          {
+            $match: {
+              $and: [
+                { TrangThai: TRANG_THAI.DA_HOAN_THANH },
+                { $expr: { $gt: ["$NgayHoanThanh", "$ThoiGianHen"] } },
+              ],
+            },
+          },
+          { $count: "count" },
+        ],
+        active: [
+          { $match: { TrangThai: TRANG_THAI.DANG_XU_LY } },
+          { $count: "count" },
+        ],
+        overdue: [
+          {
+            $match: {
+              TrangThai: {
+                $nin: [
+                  TRANG_THAI.DA_HOAN_THANH,
+                  TRANG_THAI.DA_DONG,
+                  TRANG_THAI.TU_CHOI,
+                ],
+              },
+              ThoiGianHen: { $lt: new Date() },
+            },
+          },
+          { $count: "count" },
+        ],
+      },
+    },
+  ];
+
+  const [summaryResult] = await YeuCau.aggregate(summaryPipeline);
+
+  const total = summaryResult.total[0]?.count || 0;
+  const completed = summaryResult.completed[0]?.count || 0;
+  const late = summaryResult.late[0]?.count || 0;
+  const active = summaryResult.active[0]?.count || 0;
+  const overdue = summaryResult.overdue[0]?.count || 0;
+
+  const summary = {
+    total,
+    completed,
+    completionRate: total > 0 ? ((completed / total) * 100).toFixed(1) : "0.0",
+    late,
+    lateRate: completed > 0 ? ((late / completed) * 100).toFixed(1) : "0.0",
+    active,
+    overdue,
+  };
+
+  // 4. Status distribution
+  const statusDistribution = await YeuCau.aggregate([
+    { $match: baseFilter },
+    {
+      $group: {
+        _id: "$TrangThai",
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        status: "$_id",
+        count: 1,
+        percentage: {
+          $cond: [
+            { $eq: [total, 0] },
+            0,
+            { $multiply: [{ $divide: ["$count", total] }, 100] },
+          ],
+        },
+      },
+    },
+  ]);
+
+  // 5. Priority distribution
+  const priorityDistribution = await YeuCau.aggregate([
+    { $match: baseFilter },
+    {
+      $group: {
+        _id: "$MucDoUuTien",
+        total: { $sum: 1 },
+        completed: {
+          $sum: {
+            $cond: [{ $eq: ["$TrangThai", TRANG_THAI.DA_HOAN_THANH] }, 1, 0],
+          },
+        },
+        late: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$TrangThai", TRANG_THAI.DA_HOAN_THANH] },
+                  { $gt: ["$NgayHoanThanh", "$ThoiGianHen"] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        priority: "$_id",
+        total: 1,
+        completed: 1,
+        late: 1,
+      },
+    },
+  ]);
+
+  // 6. Rating aggregation
+  const ratingPipeline = [
+    {
+      $match: {
+        ...baseFilter,
+        "DanhGia.SoSao": { $exists: true, $ne: null },
+      },
+    },
+    {
+      $facet: {
+        avgScore: [{ $group: { _id: null, avg: { $avg: "$DanhGia.SoSao" } } }],
+        distribution: [
+          {
+            $group: {
+              _id: "$DanhGia.SoSao",
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: -1 } }, // 5 sao -> 1 sao
+        ],
+      },
+    },
+  ];
+
+  const [ratingResult] = await YeuCau.aggregate(ratingPipeline);
+
+  const avgScore = ratingResult.avgScore[0]?.avg || 0;
+  const ratingDistribution = ratingResult.distribution.map((item) => ({
+    stars: item._id,
+    count: item.count,
+  }));
+  const totalRatings = ratingDistribution.reduce(
+    (sum, item) => sum + item.count,
+    0
+  );
+
+  // 7. YeuCau list (max 50)
+  const yeuCauList = await YeuCau.find(baseFilter)
+    .populate("NguoiYeuCauID", "Ten Email")
+    .populate("KhoaDichID", "TenKhoa")
+    .populate("DanhMucYeuCauID", "TenLoaiYeuCau")
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+
+  return {
+    summary,
+    statusDistribution,
+    priorityDistribution,
+    rating: {
+      avgScore: avgScore.toFixed(1),
+      distribution: ratingDistribution,
+      totalRatings,
+    },
+    yeuCauList,
+  };
+}
+
+/**
+ * Get dashboard for YeuCau không thuộc NhiemVuThuongQuy
+ * (NhiemVuThuongQuyID = null - "Yêu cầu khác")
+ * @param {String} nhanVienID - Employee ID
+ * @param {String} chuKyDanhGiaID - Evaluation cycle ID
+ * @returns {Object} Dashboard data with summary, distributions, and list
+ */
+async function layYeuCauOtherSummary({ nhanVienID, chuKyDanhGiaID }) {
+  const ChuKyDanhGia = require("../models/ChuKyDanhGia");
+
+  const chuKy = await ChuKyDanhGia.findById(chuKyDanhGiaID);
+  if (!chuKy) {
+    throw new AppError(404, "Chu kỳ đánh giá không tồn tại", "NOT_FOUND");
+  }
+
+  const baseFilter = {
+    NguoiXuLyID: new mongoose.Types.ObjectId(nhanVienID),
+    NhiemVuThuongQuyID: null, // ← Key difference: only "other" yeucau
+    NgayTiepNhan: {
+      $gte: chuKy.NgayBatDau,
+      $lte: chuKy.NgayKetThuc,
+      $ne: null, // Đã được tiếp nhận
+    },
+  };
+
+  // Reuse same aggregation logic as layYeuCauDashboardByNhiemVu
+  const summaryPipeline = [
+    { $match: baseFilter },
+    {
+      $facet: {
+        total: [{ $count: "count" }],
+        completed: [
+          { $match: { TrangThai: TRANG_THAI.DA_HOAN_THANH } },
+          { $count: "count" },
+        ],
+        late: [
+          {
+            $match: {
+              $and: [
+                { TrangThai: TRANG_THAI.DA_HOAN_THANH },
+                { $expr: { $gt: ["$NgayHoanThanh", "$ThoiGianHen"] } },
+              ],
+            },
+          },
+          { $count: "count" },
+        ],
+        active: [
+          { $match: { TrangThai: TRANG_THAI.DANG_XU_LY } },
+          { $count: "count" },
+        ],
+        overdue: [
+          {
+            $match: {
+              TrangThai: {
+                $nin: [
+                  TRANG_THAI.DA_HOAN_THANH,
+                  TRANG_THAI.DA_DONG,
+                  TRANG_THAI.TU_CHOI,
+                ],
+              },
+              ThoiGianHen: { $lt: new Date() },
+            },
+          },
+          { $count: "count" },
+        ],
+      },
+    },
+  ];
+
+  const [summaryResult] = await YeuCau.aggregate(summaryPipeline);
+
+  const total = summaryResult.total[0]?.count || 0;
+  const completed = summaryResult.completed[0]?.count || 0;
+  const late = summaryResult.late[0]?.count || 0;
+  const active = summaryResult.active[0]?.count || 0;
+  const overdue = summaryResult.overdue[0]?.count || 0;
+
+  const summary = {
+    total,
+    completed,
+    completionRate: total > 0 ? ((completed / total) * 100).toFixed(1) : "0.0",
+    late,
+    lateRate: completed > 0 ? ((late / completed) * 100).toFixed(1) : "0.0",
+    active,
+    overdue,
+  };
+
+  const statusDistribution = await YeuCau.aggregate([
+    { $match: baseFilter },
+    {
+      $group: {
+        _id: "$TrangThai",
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        status: "$_id",
+        count: 1,
+        percentage: {
+          $cond: [
+            { $eq: [total, 0] },
+            0,
+            { $multiply: [{ $divide: ["$count", total] }, 100] },
+          ],
+        },
+      },
+    },
+  ]);
+
+  const priorityDistribution = await YeuCau.aggregate([
+    { $match: baseFilter },
+    {
+      $group: {
+        _id: "$MucDoUuTien",
+        total: { $sum: 1 },
+        completed: {
+          $sum: {
+            $cond: [{ $eq: ["$TrangThai", TRANG_THAI.DA_HOAN_THANH] }, 1, 0],
+          },
+        },
+        late: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$TrangThai", TRANG_THAI.DA_HOAN_THANH] },
+                  { $gt: ["$NgayHoanThanh", "$ThoiGianHen"] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        priority: "$_id",
+        total: 1,
+        completed: 1,
+        late: 1,
+      },
+    },
+  ]);
+
+  const ratingPipeline = [
+    {
+      $match: {
+        ...baseFilter,
+        "DanhGia.SoSao": { $exists: true, $ne: null },
+      },
+    },
+    {
+      $facet: {
+        avgScore: [{ $group: { _id: null, avg: { $avg: "$DanhGia.SoSao" } } }],
+        distribution: [
+          {
+            $group: {
+              _id: "$DanhGia.SoSao",
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: -1 } },
+        ],
+      },
+    },
+  ];
+
+  const [ratingResult] = await YeuCau.aggregate(ratingPipeline);
+
+  const avgScore = ratingResult.avgScore[0]?.avg || 0;
+  const ratingDistribution = ratingResult.distribution.map((item) => ({
+    stars: item._id,
+    count: item.count,
+  }));
+  const totalRatings = ratingDistribution.reduce(
+    (sum, item) => sum + item.count,
+    0
+  );
+
+  const yeuCauList = await YeuCau.find(baseFilter)
+    .populate("NguoiYeuCauID", "Ten Email")
+    .populate("KhoaDichID", "TenKhoa")
+    .populate("DanhMucYeuCauID", "TenLoaiYeuCau")
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+
+  return {
+    summary,
+    statusDistribution,
+    priorityDistribution,
+    rating: {
+      avgScore: avgScore.toFixed(1),
+      distribution: ratingDistribution,
+      totalRatings,
+    },
+    yeuCauList,
+  };
+}
+
 module.exports = {
   taoYeuCau,
   suaYeuCau,
@@ -1795,4 +2269,7 @@ module.exports = {
   deleteFile,
   recallComment,
   recallCommentText,
+  layYeuCauCountsByNhiemVu,
+  layYeuCauDashboardByNhiemVu,
+  layYeuCauOtherSummary,
 };

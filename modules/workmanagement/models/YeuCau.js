@@ -257,6 +257,12 @@ yeuCauSchema.index({ createdAt: -1 });
 yeuCauSchema.index({ NgayDong: 1 });
 yeuCauSchema.index({ TrangThai: 1, NgayHoanThanh: 1 }); // Cho auto-close job
 yeuCauSchema.index({ isDeleted: 1, TrangThai: 1 });
+// Compound index for KPI evaluation dashboard queries (filter by NgayTiepNhan)
+yeuCauSchema.index({
+  NhiemVuThuongQuyID: 1,
+  NguoiXuLyID: 1,
+  NgayTiepNhan: -1,
+});
 
 // Virtuals
 

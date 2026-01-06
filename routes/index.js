@@ -86,6 +86,10 @@ router.use("/lichtruc", lichTrucApi);
 const soThuTuApi = require("./his/sothutu.api");
 router.use("/his/sothutu", soThuTuApi);
 
+// API quản lý dịch vụ trùng
+const dichVuTrungApi = require("./his/dichvutrung.api");
+router.use("/his/dichvutrung", dichVuTrungApi);
+
 // API quản lý đoàn vào
 const doanVaoApi = require("./doanvao.api");
 router.use("/doanvao", doanVaoApi);

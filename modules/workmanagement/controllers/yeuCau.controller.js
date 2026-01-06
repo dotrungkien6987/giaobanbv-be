@@ -145,12 +145,16 @@ const executeAction = (action) =>
     const { id } = req.params;
     const { nhanVienId, userRole } = await getNhanVienId(req);
 
+    // Extract version header for optimistic locking
+    const ifUnmodifiedSince = req.headers["if-unmodified-since"];
+
     const yeuCau = await yeuCauStateMachine.executeTransition(
       id,
       action,
       req.body,
       nhanVienId,
-      userRole
+      userRole,
+      { ifUnmodifiedSince }
     );
 
     const messages = {
@@ -537,6 +541,105 @@ controller.recallCommentText = catchAsync(async (req, res) => {
     result,
     null,
     "Thu hồi nội dung bình luận thành công"
+  );
+});
+
+// ============== KPI EVALUATION DASHBOARD ==============
+
+/**
+ * Get counts of YeuCau grouped by NhiemVuThuongQuyID
+ * GET /api/workmanagement/yeucau/counts-by-nhiemvu
+ * Query: nhiemVuThuongQuyIDs (comma-separated), nhanVienID, chuKyDanhGiaID
+ */
+controller.getCountsByNhiemVu = catchAsync(async (req, res, next) => {
+  const { nhiemVuThuongQuyIDs, nhanVienID, chuKyDanhGiaID } = req.query;
+
+  if (!nhiemVuThuongQuyIDs || !nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu tham số bắt buộc: nhiemVuThuongQuyIDs, nhanVienID, chuKyDanhGiaID",
+      "MISSING_PARAMS"
+    );
+  }
+
+  const nhiemVuIDs = nhiemVuThuongQuyIDs.split(",").map((id) => id.trim());
+
+  const counts = await yeuCauService.layYeuCauCountsByNhiemVu({
+    nhiemVuThuongQuyIDs: nhiemVuIDs,
+    nhanVienID,
+    chuKyDanhGiaID,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    counts,
+    null,
+    "Lấy số lượng yêu cầu thành công"
+  );
+});
+
+/**
+ * Get dashboard data for YeuCau by NhiemVuThuongQuy
+ * GET /api/workmanagement/yeucau/dashboard-by-nhiemvu
+ * Query: nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID
+ */
+controller.getDashboardByNhiemVu = catchAsync(async (req, res, next) => {
+  const { nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID } = req.query;
+
+  if (!nhiemVuThuongQuyID || !nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu tham số bắt buộc: nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID",
+      "MISSING_PARAMS"
+    );
+  }
+
+  const dashboardData = await yeuCauService.layYeuCauDashboardByNhiemVu({
+    nhiemVuThuongQuyID,
+    nhanVienID,
+    chuKyDanhGiaID,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    dashboardData,
+    null,
+    "Lấy dashboard yêu cầu thành công"
+  );
+});
+
+/**
+ * Get dashboard for "other" YeuCau (not linked to NVTQ)
+ * GET /api/workmanagement/yeucau/other-summary
+ * Query: nhanVienID, chuKyDanhGiaID
+ */
+controller.getOtherYeuCauSummary = catchAsync(async (req, res, next) => {
+  const { nhanVienID, chuKyDanhGiaID } = req.query;
+
+  if (!nhanVienID || !chuKyDanhGiaID) {
+    throw new AppError(
+      400,
+      "Thiếu tham số bắt buộc: nhanVienID, chuKyDanhGiaID",
+      "MISSING_PARAMS"
+    );
+  }
+
+  const data = await yeuCauService.layYeuCauOtherSummary({
+    nhanVienID,
+    chuKyDanhGiaID,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    data,
+    null,
+    "Lấy tổng hợp yêu cầu khác thành công"
   );
 });
 

@@ -61,6 +61,7 @@ const LichSuYeuCau = require("./LichSuYeuCau");
 
 // Notification System (New)
 const Notification = require("./Notification");
+const NotificationType = require("./NotificationType");
 const NotificationTemplate = require("./NotificationTemplate");
 const UserNotificationSettings = require("./UserNotificationSettings");
 
@@ -112,6 +113,7 @@ module.exports = {
 
   // Notification System (New)
   Notification,
+  NotificationType,
   NotificationTemplate,
   UserNotificationSettings,
 };

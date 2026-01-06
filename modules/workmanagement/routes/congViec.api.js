@@ -129,7 +129,7 @@ router.get(
 
 /**
  * @route   GET /api/workmanagement/congviec/summary-other-tasks
- * @desc    Get summary of "other" tasks (FlagNVTQKhac=true) for KPI evaluation
+ * @desc    Get summary of "other" tasks (ALL non-NVTQ tasks) for KPI evaluation
  * @access  Private
  * @query   nhanVienID, chuKyDanhGiaID
  */
@@ -147,6 +147,17 @@ router.get(
 router.get(
   "/congviec/summary-collab-tasks",
   congViecController.getCollabTasksSummary
+);
+
+/**
+ * @route   GET /api/workmanagement/congviec/summary-cross-cycle-tasks
+ * @desc    Get summary of tasks assigned to NVTQ from previous cycles
+ * @access  Private
+ * @query   nhanVienID, chuKyDanhGiaID
+ */
+router.get(
+  "/congviec/summary-cross-cycle-tasks",
+  congViecController.getCrossCycleTasksSummary
 );
 
 /**

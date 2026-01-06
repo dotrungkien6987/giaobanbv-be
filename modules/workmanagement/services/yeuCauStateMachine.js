@@ -471,12 +471,29 @@ async function executeTransition(
   action,
   data = {},
   nguoiThucHienId,
-  userRole
+  userRole,
+  options = {}
 ) {
+  const { ifUnmodifiedSince } = options;
+
   // 1. Load yêu cầu
   const yeuCau = await YeuCau.findById(yeuCauId);
   if (!yeuCau) {
     throw new AppError(404, "Không tìm thấy yêu cầu", "YEUCAU_NOT_FOUND");
+  }
+
+  // VERSION CHECK - Optimistic locking
+  if (ifUnmodifiedSince) {
+    const requestTime = new Date(ifUnmodifiedSince);
+    const lastModified = new Date(yeuCau.updatedAt);
+
+    if (lastModified > requestTime) {
+      throw new AppError(
+        409,
+        "Yêu cầu đã được cập nhật bởi người khác. Vui lòng tải lại trang.",
+        "VERSION_CONFLICT"
+      );
+    }
   }
 
   if (yeuCau.isDeleted) {

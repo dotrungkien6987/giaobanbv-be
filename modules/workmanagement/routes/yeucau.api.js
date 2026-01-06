@@ -41,6 +41,34 @@ router.get("/dashboard/xu-ly", yeuCauController.layDashboardXuLy);
 router.get("/dashboard/dieu-phoi", yeuCauController.layDashboardDieuPhoi);
 
 // ========================================
+// KPI EVALUATION DASHBOARD (NEW)
+// ========================================
+
+/**
+ * @route   GET /api/workmanagement/yeucau/counts-by-nhiemvu
+ * @desc    Lấy số lượng yêu cầu nhóm theo NhiemVuThuongQuy (KPI badges)
+ * @access  Private
+ * @query   nhiemVuThuongQuyIDs (comma-separated), nhanVienID, chuKyDanhGiaID
+ */
+router.get("/counts-by-nhiemvu", yeuCauController.getCountsByNhiemVu);
+
+/**
+ * @route   GET /api/workmanagement/yeucau/dashboard-by-nhiemvu
+ * @desc    Lấy dashboard yêu cầu theo NhiemVuThuongQuy (KPI tab 3)
+ * @access  Private
+ * @query   nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID
+ */
+router.get("/dashboard-by-nhiemvu", yeuCauController.getDashboardByNhiemVu);
+
+/**
+ * @route   GET /api/workmanagement/yeucau/other-summary
+ * @desc    Lấy tổng hợp yêu cầu khác (không thuộc NVTQ)
+ * @access  Private
+ * @query   nhanVienID, chuKyDanhGiaID
+ */
+router.get("/other-summary", yeuCauController.getOtherYeuCauSummary);
+
+// ========================================
 // ROLE-BASED FEATURES
 // ========================================
 

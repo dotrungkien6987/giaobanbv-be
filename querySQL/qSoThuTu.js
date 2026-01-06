@@ -35,6 +35,7 @@ WITH filtered_data AS (
     WHERE 
         (m.isdeleted = 0 OR m.isdeleted IS NULL)
         AND m.maubenhphamdate::date = $1
+         AND m.maubenhphamdate > '2025-11-07'::date  -- ✅ THÊM DÒNG NÀY (partial index filter)
         AND m.departmentid_des = ANY($2::int[])
 ),
 latest_processed AS (
@@ -128,6 +129,7 @@ WITH filtered_data AS (
     WHERE 
         (m.isdeleted = 0 OR m.isdeleted IS NULL)
         AND m.maubenhphamdate::date = $1
+        AND m.maubenhphamdate > '2025-11-07'::date  -- ✅ THÊM DÒNG NÀY (partial index filter)
         AND m.departmentid_laymau = ANY($2::int[])
 ),
 latest_processed AS (
@@ -230,6 +232,7 @@ WITH filtered_data AS (
     WHERE 
         (s.isremoved = 0 OR s.isremoved IS NULL)
         AND CAST(s.sothutudate AS date) = $1
+         AND s.sothutudate > '2025-11-07'::date  -- ✅ THÊM DÒNG NÀY (partial index filter)
         AND s.departmentid = ANY($2::int[])
 ),
 latest_processed AS (

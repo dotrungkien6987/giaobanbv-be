@@ -357,4 +357,29 @@ congViecSchema.post("save", async function (doc, next) {
   next();
 });
 
+// ========== INDEXES FOR KPI OVERLAP FILTERING ==========
+// For getDashboardByNhiemVu: Lọc công việc theo NVTQ + NhanVien + overlap date range
+congViecSchema.index({
+  NhiemVuThuongQuyID: 1,
+  NguoiChinhID: 1,
+  NgayBatDau: -1,
+  NgayHetHan: -1,
+});
+
+// For getOtherTasksSummary: Lọc công việc "khác" (FlagNVTQKhac) + overlap date range
+congViecSchema.index({
+  NguoiChinhID: 1,
+  FlagNVTQKhac: 1,
+  NgayBatDau: -1,
+  NgayHetHan: -1,
+});
+
+// For getCollabTasksSummary: Lọc công việc phối hợp theo NguoiThamGia + overlap date range
+congViecSchema.index({
+  "NguoiThamGia.NhanVienID": 1,
+  "NguoiThamGia.VaiTro": 1,
+  NgayBatDau: -1,
+  NgayHetHan: -1,
+});
+
 module.exports = mongoose.model("CongViec", congViecSchema);

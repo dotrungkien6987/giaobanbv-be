@@ -27,7 +27,8 @@ DichVuTrungService.findDuplicateServices = async (
   limit = 50,
   offset = 0,
   filterByService = null,
-  filterByDepartment = null
+  filterByDepartment = null,
+  searchText = null
 ) => {
   try {
     const result = await pool.query(qDichVuTrung.findDuplicates, [
@@ -38,6 +39,7 @@ DichVuTrungService.findDuplicateServices = async (
       offset,
       filterByService,
       filterByDepartment,
+      searchText,
     ]);
 
     return result.rows;
@@ -62,7 +64,8 @@ DichVuTrungService.countDuplicates = async (
   toDate,
   serviceTypes,
   filterByService = null,
-  filterByDepartment = null
+  filterByDepartment = null,
+  searchText = null
 ) => {
   try {
     const result = await pool.query(qDichVuTrung.countDuplicates, [
@@ -71,6 +74,7 @@ DichVuTrungService.countDuplicates = async (
       serviceTypes,
       filterByService,
       filterByDepartment,
+      searchText,
     ]);
 
     return parseInt(result.rows[0]?.total_count || 0, 10);

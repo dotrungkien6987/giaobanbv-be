@@ -10,6 +10,112 @@ const dayjs = require("dayjs");
 const dichVuTrungController = {};
 
 /**
+ * @route POST /api/his/dichvutrung/export-all
+ * @desc Lấy TOÀN BỘ dữ liệu dịch vụ trùng lặp (không phân trang) để export
+ * @access Private (DICHVUTRUNG permission)
+ */
+dichVuTrungController.exportAllDuplicates = catchAsync(
+  async (req, res, next) => {
+    const {
+      fromDate,
+      toDate,
+      serviceTypes,
+      filterByService,
+      filterByDepartment,
+      searchText,
+    } = req.body;
+
+    // Validate required fields
+    if (!fromDate || !toDate) {
+      throw new AppError(
+        400,
+        "fromDate và toDate là bắt buộc",
+        "MISSING_REQUIRED_FIELDS"
+      );
+    }
+
+    // Validate date format (YYYY-MM-DD)
+    const fromDateObj = dayjs(fromDate, "YYYY-MM-DD", true);
+    const toDateObj = dayjs(toDate, "YYYY-MM-DD", true);
+
+    if (!fromDateObj.isValid() || !toDateObj.isValid()) {
+      throw new AppError(
+        400,
+        "Định dạng ngày không hợp lệ. Vui lòng sử dụng YYYY-MM-DD",
+        "INVALID_DATE_FORMAT"
+      );
+    }
+
+    if (toDateObj.isBefore(fromDateObj)) {
+      throw new AppError(
+        400,
+        "Ngày kết thúc phải sau hoặc bằng ngày bắt đầu",
+        "INVALID_DATE_RANGE"
+      );
+    }
+
+    // Validate date range (<= 60 days)
+    const daysDiff = toDateObj.diff(fromDateObj, "day");
+    if (daysDiff > 60) {
+      throw new AppError(
+        400,
+        "Khoảng thời gian tìm kiếm không được vượt quá 60 ngày",
+        "DATE_RANGE_TOO_LARGE"
+      );
+    }
+
+    // Validate & sanitize serviceTypes array
+    const validServiceTypes = ["04CDHA", "03XN", "05TDCN"];
+    let typesToQuery = serviceTypes || validServiceTypes;
+
+    if (!Array.isArray(typesToQuery)) {
+      throw new AppError(
+        400,
+        "serviceTypes phải là một mảng",
+        "INVALID_SERVICE_TYPES_FORMAT"
+      );
+    }
+
+    // Filter invalid service types
+    typesToQuery = typesToQuery.filter((type) =>
+      validServiceTypes.includes(type)
+    );
+
+    if (typesToQuery.length === 0) {
+      throw new AppError(
+        400,
+        "serviceTypes phải chứa ít nhất một loại hợp lệ: 04CDHA, 03XN, 05TDCN",
+        "EMPTY_SERVICE_TYPES"
+      );
+    }
+
+    // Fetch ALL data (no pagination) - Giới hạn tối đa 10000 để tránh quá tải
+    const duplicates = await DichVuTrungService.findDuplicateServices(
+      fromDate,
+      toDate,
+      typesToQuery,
+      10000, // Limit cao để lấy hầu hết data
+      0,
+      filterByService || null,
+      filterByDepartment || null,
+      searchText || null
+    );
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      {
+        duplicates,
+        total: duplicates.length,
+      },
+      null,
+      `Đã lấy ${duplicates.length} bản ghi để export`
+    );
+  }
+);
+
+/**
  * @route POST /api/his/dichvutrung/duplicates
  * @desc Lấy danh sách dịch vụ trùng lặp với phân trang
  * @access Private (DICHVUTRUNG permission)
@@ -24,6 +130,7 @@ dichVuTrungController.getDuplicates = catchAsync(async (req, res, next) => {
     limit = 50,
     filterByService,
     filterByDepartment,
+    searchText,
   } = req.body;
 
   // Validate required fields
@@ -118,14 +225,16 @@ dichVuTrungController.getDuplicates = catchAsync(async (req, res, next) => {
       limitNum,
       offset,
       filterByService || null,
-      filterByDepartment || null
+      filterByDepartment || null,
+      searchText || null
     ),
     DichVuTrungService.countDuplicates(
       fromDate,
       toDate,
       typesToQuery,
       filterByService || null,
-      filterByDepartment || null
+      filterByDepartment || null,
+      searchText || null
     ),
   ]);
 

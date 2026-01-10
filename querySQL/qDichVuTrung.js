@@ -44,7 +44,15 @@ duplicate_records AS (
         sp.servicepricecode,
         sp.servicepricename,
         sp.servicepricedate,
-        sp.servicepricemoney,
+        sp.loaidoituong,
+        -- Đơn giá phụ thuộc loại đối tượng: 0=BHYT, 1=Nhân dân, còn lại=mặc định
+        CASE 
+            WHEN sp.loaidoituong = 0 THEN sp.servicepricemoney_bhyt
+            WHEN sp.loaidoituong = 1 THEN sp.servicepricemoney_nhandan
+            ELSE sp.servicepricemoney
+        END AS servicepricemoney,
+        sp.servicepricemoney_bhyt,
+        sp.servicepricemoney_nhandan,
         sp.soluong,
         sp.departmentid,
         sp.departmentgroupid,
@@ -77,6 +85,14 @@ SELECT * FROM duplicate_records
 WHERE
     ($6::text IS NULL OR servicepricename = $6)
     AND ($7::text IS NULL OR departmentgroupname = $7)
+    AND (
+        $8::text IS NULL 
+        OR patientcode ILIKE '%' || $8 || '%'
+        OR patientname ILIKE '%' || $8 || '%'
+        OR servicepricename ILIKE '%' || $8 || '%'
+        OR departmentgroupname ILIKE '%' || $8 || '%'
+        OR CAST(vienphiid AS TEXT) ILIKE '%' || $8 || '%'
+    )
 ORDER BY vienphiid, servicepricecode, servicepricedate
 LIMIT $4 OFFSET $5;
 `;
@@ -108,12 +124,21 @@ FROM serviceprice sp
 INNER JOIN duplicate_candidates dc
     ON sp.vienphiid = dc.vienphiid
     AND sp.servicepricecode = dc.servicepricecode
+LEFT JOIN hosobenhan hsba ON sp.hosobenhanid = hsba.hosobenhanid
 LEFT JOIN departmentgroup dg ON sp.departmentgroupid = dg.departmentgroupid
 WHERE
     sp.servicepricedate BETWEEN $1 AND $2
     AND sp.bhyt_groupcode = ANY($3::text[])
     AND ($4::text IS NULL OR sp.servicepricename = $4)
-    AND ($5::text IS NULL OR dg.departmentgroupname = $5);
+    AND ($5::text IS NULL OR dg.departmentgroupname = $5)
+    AND (
+        $6::text IS NULL 
+        OR hsba.patientcode ILIKE '%' || $6 || '%'
+        OR hsba.patientname ILIKE '%' || $6 || '%'
+        OR sp.servicepricename ILIKE '%' || $6 || '%'
+        OR dg.departmentgroupname ILIKE '%' || $6 || '%'
+        OR CAST(sp.vienphiid AS TEXT) ILIKE '%' || $6 || '%'
+    );
 `;
 
 /**
@@ -145,7 +170,14 @@ SELECT
     sp.bhyt_groupcode AS service_type,
     COUNT(*) AS duplicate_count,
     COUNT(DISTINCT sp.vienphiid) AS affected_patients,
-    SUM(sp.servicepricemoney * sp.soluong) AS total_cost
+    -- Tính tổng tiền với đơn giá đúng theo loại đối tượng
+    SUM(
+        CASE 
+            WHEN sp.loaidoituong = 0 THEN sp.servicepricemoney_bhyt * sp.soluong
+            WHEN sp.loaidoituong = 1 THEN sp.servicepricemoney_nhandan * sp.soluong
+            ELSE sp.servicepricemoney * sp.soluong
+        END
+    ) AS total_cost
 FROM serviceprice sp
 INNER JOIN duplicate_candidates dc
     ON sp.vienphiid = dc.vienphiid
@@ -186,7 +218,14 @@ SELECT
     dg.departmentgroupname,
     COUNT(*) AS duplicate_count,
     COUNT(DISTINCT sp.vienphiid) AS affected_patients,
-    SUM(sp.servicepricemoney * sp.soluong) AS total_cost
+    -- Tính tổng tiền với đơn giá đúng theo loại đối tượng
+    SUM(
+        CASE 
+            WHEN sp.loaidoituong = 0 THEN sp.servicepricemoney_bhyt * sp.soluong
+            WHEN sp.loaidoituong = 1 THEN sp.servicepricemoney_nhandan * sp.soluong
+            ELSE sp.servicepricemoney * sp.soluong
+        END
+    ) AS total_cost
 FROM serviceprice sp
 INNER JOIN duplicate_candidates dc
     ON sp.vienphiid = dc.vienphiid

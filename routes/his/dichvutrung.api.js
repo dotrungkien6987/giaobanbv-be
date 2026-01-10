@@ -9,6 +9,18 @@ const dichVuTrungController = require("../../controllers/his/dichvutrung.control
 const authentication = require("../../middlewares/authentication");
 
 /**
+ * @route POST /api/his/dichvutrung/export-all
+ * @desc Lấy TOÀN BỘ dữ liệu để export (không phân trang)
+ * @body {fromDate, toDate, serviceTypes, filterByService, filterByDepartment, searchText}
+ * @access Private - Requires DICHVUTRUNG permission
+ */
+router.post(
+  "/export-all",
+  authentication.loginRequired,
+  dichVuTrungController.exportAllDuplicates
+);
+
+/**
  * @route POST /api/his/dichvutrung/duplicates
  * @desc Lấy danh sách dịch vụ trùng lặp với phân trang
  * @body {fromDate, toDate, serviceTypes, page, limit}

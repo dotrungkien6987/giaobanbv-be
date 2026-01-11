@@ -37,7 +37,7 @@ async function checkTaskViewPermission(congviec, req) {
   const isAssigner = String(congviec.NguoiGiaoViecID) === currentNhanVienId;
   const isMain = String(congviec.NguoiChinhID) === currentNhanVienId;
   const isParticipant = congviec.NguoiThamGia?.some(
-    (p) => String(p.NhanVienID || p.NhanVienID?._id) === currentNhanVienId
+    (p) => String(p.NhanVienID?._id || p.NhanVienID) === currentNhanVienId
   );
 
   const vaiTro = currentUser.PhanQuyen?.toLowerCase();
@@ -237,10 +237,10 @@ function mapCongViecDTO(doc) {
         const hetHan = doc.NgayHetHan ? new Date(doc.NgayHetHan) : null;
         const canhBao = doc.NgayCanhBao ? new Date(doc.NgayCanhBao) : null;
         if (isDone) return null;
-        if (hetHan && now > hetHan) return "QUA_HAN";
-        if (canhBao && hetHan && now >= canhBao && now < hetHan)
-          return "SAP_QUA_HAN";
-        return null;
+        if (!hetHan) return null;
+        if (now > hetHan) return "QUA_HAN";
+        if (canhBao && now >= canhBao && now < hetHan) return "SAP_QUA_HAN";
+        return "DUNG_HAN"; // Công việc còn thời gian, chưa vào ngưỡng cảnh báo
       } catch (_) {
         return null;
       }
@@ -848,6 +848,20 @@ service.buildCongViecFilter = (filters = {}) => {
     query.NgayHetHan = { $lte: new Date(filters.NgayHetHan) };
   }
 
+  // Filter theo NgayHoanThanh (completion date range for archive)
+  if (filters.NgayHoanThanhFrom || filters.NgayHoanThanhTo) {
+    query.NgayHoanThanh = {};
+    if (filters.NgayHoanThanhFrom) {
+      query.NgayHoanThanh.$gte = new Date(filters.NgayHoanThanhFrom);
+    }
+    if (filters.NgayHoanThanhTo) {
+      // Set to end of day for inclusive range
+      const endDate = new Date(filters.NgayHoanThanhTo);
+      endDate.setHours(23, 59, 59, 999);
+      query.NgayHoanThanh.$lte = endDate;
+    }
+  }
+
   // Filter theo MaCongViec (ưu tiên khớp tiền tố, không phân biệt hoa thường)
   if (filters.MaCongViec) {
     const code = String(filters.MaCongViec).trim();
@@ -1036,8 +1050,8 @@ service.getReceivedCongViecs = async (
         PhanTramTienDoTong: { $ifNull: ["$PhanTramTienDoTong", 0] },
       },
     },
-    // Ẩn bớt các mảng lớn, giữ lại *Info để mapper tạo Profile
-    { $project: { NguoiThamGia: 0, LichSuTrangThai: 0 } },
+    // Ẩn bớt LichSuTrangThai (lớn), giữ lại NguoiThamGia cho filter frontend
+    { $project: { LichSuTrangThai: 0 } },
     { $sort: { updatedAt: -1 } },
     { $skip: skip },
     { $limit: safeLimit },
@@ -1207,7 +1221,8 @@ service.getAssignedCongViecs = async (
         PhanTramTienDoTong: { $ifNull: ["$PhanTramTienDoTong", 0] },
       },
     },
-    { $project: { NguoiThamGia: 0, LichSuTrangThai: 0 } },
+    // Ẩn bớt LichSuTrangThai (lớn), giữ lại NguoiThamGia cho filter frontend
+    { $project: { LichSuTrangThai: 0 } },
     { $sort: { updatedAt: -1 } },
     { $skip: skip },
     { $limit: safeLimit },

@@ -629,6 +629,257 @@ controller.getCollabTasksSummary = catchAsync(async (req, res) => {
   );
 });
 
+// ============================================
+// GENERAL DASHBOARD APIs (without KPI context)
+// ============================================
+
+/**
+ * Get detailed dashboard for work management (general, not KPI-specific)
+ * @route GET /api/workmanagement/congviec/dashboard/:nhanVienId
+ * @desc Get comprehensive dashboard stats (received + assigned tasks)
+ * @access Private
+ * @param {String} nhanVienId - Employee ID
+ */
+controller.getCongViecDashboard = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = req.params;
+
+  if (!nhanVienId) {
+    throw new AppError(400, "Thiếu nhanVienId trong params", "MISSING_PARAMS");
+  }
+
+  const mongoose = require("mongoose");
+  const CongViec = require("../models/CongViec");
+  const objectId = mongoose.Types.ObjectId;
+
+  // Parallel aggregations for performance
+  const [receivedStats, assignedStats] = await Promise.all([
+    // Received tasks (Công việc tôi nhận)
+    CongViec.aggregate([
+      {
+        $match: {
+          NguoiNhanID: objectId(nhanVienId),
+          isDeleted: { $ne: true },
+        },
+      },
+      {
+        $facet: {
+          byStatus: [
+            {
+              $group: {
+                _id: "$TrangThai",
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          byDeadline: [
+            {
+              $match: {
+                TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+                NgayHetHan: { $exists: true },
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+                NgayHetHan: 1,
+                isOverdue: {
+                  $lt: ["$NgayHetHan", new Date()],
+                },
+                isDueSoon: {
+                  $and: [
+                    { $gte: ["$NgayHetHan", new Date()] },
+                    {
+                      $lte: [
+                        "$NgayHetHan",
+                        new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                overdueCount: {
+                  $sum: { $cond: ["$isOverdue", 1, 0] },
+                },
+                dueSoonCount: {
+                  $sum: { $cond: ["$isDueSoon", 1, 0] },
+                },
+              },
+            },
+          ],
+          total: [{ $count: "count" }],
+          active: [
+            {
+              $match: {
+                TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+              },
+            },
+            { $count: "count" },
+          ],
+        },
+      },
+    ]),
+
+    // Assigned tasks (Việc tôi giao)
+    CongViec.aggregate([
+      {
+        $match: {
+          NguoiGiaoID: objectId(nhanVienId),
+          isDeleted: { $ne: true },
+        },
+      },
+      {
+        $facet: {
+          byStatus: [
+            {
+              $group: {
+                _id: "$TrangThai",
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          byDeadline: [
+            {
+              $match: {
+                TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+                NgayHetHan: { $exists: true },
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+                NgayHetHan: 1,
+                isOverdue: {
+                  $lt: ["$NgayHetHan", new Date()],
+                },
+                isDueSoon: {
+                  $and: [
+                    { $gte: ["$NgayHetHan", new Date()] },
+                    {
+                      $lte: [
+                        "$NgayHetHan",
+                        new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                overdueCount: {
+                  $sum: { $cond: ["$isOverdue", 1, 0] },
+                },
+                dueSoonCount: {
+                  $sum: { $cond: ["$isDueSoon", 1, 0] },
+                },
+              },
+            },
+          ],
+          total: [{ $count: "count" }],
+          active: [
+            {
+              $match: {
+                TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+              },
+            },
+            { $count: "count" },
+          ],
+        },
+      },
+    ]),
+  ]);
+
+  // Format response
+  const formatStats = (stats) => {
+    const result = stats[0] || {};
+    return {
+      byStatus:
+        result.byStatus?.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}) || {},
+      overdueCount: result.byDeadline?.[0]?.overdueCount || 0,
+      dueSoonCount: result.byDeadline?.[0]?.dueSoonCount || 0,
+      total: result.total?.[0]?.count || 0,
+      active: result.active?.[0]?.count || 0,
+    };
+  };
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      received: formatStats(receivedStats),
+      assigned: formatStats(assignedStats),
+    },
+    null,
+    "Lấy dashboard công việc thành công"
+  );
+});
+
+/**
+ * Get lightweight summary for Trang chủ (UnifiedDashboardPage)
+ * @route GET /api/workmanagement/congviec/summary/:nhanVienId
+ * @desc Get quick counts (total, urgent) for dashboard cards
+ * @access Private
+ * @param {String} nhanVienId - Employee ID
+ */
+controller.getCongViecSummary = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = req.params;
+
+  if (!nhanVienId) {
+    throw new AppError(400, "Thiếu nhanVienId trong params", "MISSING_PARAMS");
+  }
+
+  const mongoose = require("mongoose");
+  const CongViec = require("../models/CongViec");
+  const objectId = mongoose.Types.ObjectId;
+
+  // Count total active tasks (received OR assigned)
+  const [total, urgent] = await Promise.all([
+    CongViec.countDocuments({
+      $or: [
+        { NguoiNhanID: objectId(nhanVienId) },
+        { NguoiGiaoID: objectId(nhanVienId) },
+      ],
+      TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+      isDeleted: { $ne: true },
+    }),
+
+    CongViec.countDocuments({
+      $or: [
+        { NguoiNhanID: objectId(nhanVienId) },
+        { NguoiGiaoID: objectId(nhanVienId) },
+      ],
+      TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+      NgayHetHan: {
+        $exists: true,
+        $lte: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days
+      },
+      isDeleted: { $ne: true },
+    }),
+  ]);
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      total,
+      urgent,
+      completionRate: 0, // Calculate if needed
+    },
+    null,
+    "Lấy tóm tắt công việc thành công"
+  );
+});
+
 /**
  * Get summary of cross-cycle tasks (assigned to NVTQ from previous cycles)
  * @route GET /api/workmanagement/congviec/summary-cross-cycle-tasks

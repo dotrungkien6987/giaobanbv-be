@@ -264,6 +264,10 @@ yeuCauSchema.index({
   NgayTiepNhan: -1,
 });
 
+// ========== DASHBOARD INDEXES (getYeuCauSummary) ==========
+yeuCauSchema.index({ NguoiGuiID: 1, isDeleted: 1 }); // Sent requests
+yeuCauSchema.index({ KhoaNhanID: 1, TrangThai: 1, isDeleted: 1 }); // Received by department
+
 // Virtuals
 
 /**

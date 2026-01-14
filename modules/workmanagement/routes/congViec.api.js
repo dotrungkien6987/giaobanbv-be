@@ -150,6 +150,28 @@ router.get(
 );
 
 /**
+ * @route   GET /api/workmanagement/congviec/dashboard/:nhanVienId
+ * @desc    Get comprehensive dashboard stats (general, not KPI-specific)
+ * @access  Private
+ * @param   nhanVienId - Employee ID
+ */
+router.get(
+  "/congviec/dashboard/:nhanVienId",
+  congViecController.getCongViecDashboard
+);
+
+/**
+ * @route   GET /api/workmanagement/congviec/summary/:nhanVienId
+ * @desc    Get lightweight summary for Trang chủ (total, urgent counts)
+ * @access  Private
+ * @param   nhanVienId - Employee ID
+ */
+router.get(
+  "/congviec/summary/:nhanVienId",
+  congViecController.getCongViecSummary
+);
+
+/**
  * @route   GET /api/workmanagement/congviec/summary-cross-cycle-tasks
  * @desc    Get summary of tasks assigned to NVTQ from previous cycles
  * @access  Private

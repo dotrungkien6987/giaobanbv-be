@@ -211,6 +211,10 @@ congViecSchema.index({ SoThuTu: -1 });
 congViecSchema.index({ MaCongViec: 1 }, { unique: true, sparse: true });
 congViecSchema.index({ CoDuyetHoanThanh: 1, TrangThai: 1 });
 
+// ========== DASHBOARD INDEXES (getCongViecDashboard, getCongViecSummary) ==========
+congViecSchema.index({ NguoiGiaoViecID: 1, TrangThai: 1, isDeleted: 1 }); // Received tasks
+congViecSchema.index({ NguoiChinhID: 1, TrangThai: 1, isDeleted: 1 }); // Assigned tasks
+
 // Virtuals để populate thuận tiện (giữ tương thích code cũ dùng NguoiGiaoViec / NguoiChinh)
 congViecSchema.virtual("NguoiGiaoViec", {
   ref: "NhanVien",

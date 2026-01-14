@@ -28,6 +28,54 @@ router.get(
   kpiController.getDashboard
 );
 
+/** * @route   GET /api/workmanagement/kpi/personal/:nhanVienId
+ * @desc    Get personal KPI dashboard (auto-detect latest cycle, or use ?chuKyId=xxx)
+ * @access  Private
+ * @param   nhanVienId - Employee ID
+ * @query   chuKyId - Optional cycle ID (if not provided, use latest)
+ */
+router.get(
+  "/personal/:nhanVienId",
+  authentication.loginRequired,
+  kpiController.getPersonalDashboard
+);
+
+/**
+ * @route   GET /api/workmanagement/kpi/summary/:nhanVienId
+ * @desc    Get lightweight KPI summary for Trang chủ (score, status, cycleName)
+ * @access  Private
+ * @param   nhanVienId - Employee ID
+ */
+router.get(
+  "/summary/:nhanVienId",
+  authentication.loginRequired,
+  kpiController.getKPISummary
+);
+
+/** * @route GET /api/workmanagement/kpi/personal/:nhanVienId
+ * @desc Get personal KPI dashboard (auto-detect latest cycle, or use ?chuKyId=xxx)
+ * @access Private
+ * @param nhanVienId - Employee ID
+ * @query chuKyId - Optional cycle ID (if not provided, use latest)
+ */
+router.get(
+  "/personal/:nhanVienId",
+  authentication.loginRequired,
+  kpiController.getPersonalDashboard
+);
+
+/**
+ * @route GET /api/workmanagement/kpi/summary/:nhanVienId
+ * @desc Get lightweight KPI summary for Trang chủ (score, status, cycleName)
+ * @access Private
+ * @param nhanVienId - Employee ID
+ */
+router.get(
+  "/summary/:nhanVienId",
+  authentication.loginRequired,
+  kpiController.getKPISummary
+);
+
 /**
  * @route GET /api/workmanagement/kpi/cham-diem
  * @desc Lấy hoặc tạo đánh giá KPI (V2 - Auto-create)

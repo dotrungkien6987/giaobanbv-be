@@ -304,6 +304,75 @@ controller.layDashboardMetrics = catchAsync(async (req, res, next) => {
   );
 });
 
+/**
+ * Get lightweight summary for Trang chủ (UnifiedDashboardPage)
+ * GET /api/workmanagement/yeucau/summary/:nhanVienId
+ * @desc Get quick counts for dashboard cards
+ * @access Private
+ * @param {String} nhanVienId - Employee ID
+ */
+controller.getYeuCauSummary = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = req.params;
+
+  if (!nhanVienId) {
+    throw new AppError(400, "Thiếu nhanVienId trong params", "MISSING_PARAMS");
+  }
+
+  // Get user info to find KhoaID
+  const user = await User.findOne({ NhanVienID: nhanVienId }).lean();
+  if (!user) {
+    throw new AppError(404, "Không tìm thấy user", "USER_NOT_FOUND");
+  }
+
+  const YeuCau = require("../models/YeuCau");
+  const mongoose = require("mongoose");
+  const objectId = mongoose.Types.ObjectId;
+
+  // Parallel queries for performance
+  const [sent, needAction, inProgress, completed] = await Promise.all([
+    // Yêu cầu tôi gửi
+    YeuCau.countDocuments({
+      NguoiGuiID: objectId(nhanVienId),
+      isDeleted: { $ne: true },
+    }),
+
+    // Cần xử lý (khoa tôi nhận, chưa xử lý)
+    YeuCau.countDocuments({
+      KhoaNhanID: user.KhoaID,
+      TrangThai: "CHO_XU_LY",
+      isDeleted: { $ne: true },
+    }),
+
+    // Đang xử lý
+    YeuCau.countDocuments({
+      KhoaNhanID: user.KhoaID,
+      TrangThai: "DANG_XU_LY",
+      isDeleted: { $ne: true },
+    }),
+
+    // Hoàn thành (khoa tôi xử lý)
+    YeuCau.countDocuments({
+      KhoaNhanID: user.KhoaID,
+      TrangThai: "HOAN_THANH",
+      isDeleted: { $ne: true },
+    }),
+  ]);
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      sent,
+      needAction,
+      inProgress,
+      completed,
+    },
+    null,
+    "Lấy tóm tắt yêu cầu thành công"
+  );
+});
+
 // ============== ROLE-BASED FEATURES ==============
 
 /**

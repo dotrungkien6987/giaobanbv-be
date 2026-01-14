@@ -1126,6 +1126,189 @@ kpiController.getDashboard = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * Get personal KPI dashboard (auto-detect latest cycle)
+ * GET /api/workmanagement/kpi/personal/:nhanVienId
+ * @desc Get detailed KPI evaluation for logged-in employee
+ * @access Private
+ * @param {String} nhanVienId - Employee ID
+ * @returns { danhGiaKPI, chuKy, nhiemVuList, summary }
+ */
+kpiController.getPersonalDashboard = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = req.params;
+  const { chuKyId } = req.query; // Optional - if not provided, use latest
+
+  if (!nhanVienId) {
+    throw new AppError(400, "Thiếu nhanVienId trong params", "MISSING_PARAMS");
+  }
+
+  let targetChuKyId = chuKyId;
+
+  // 1. If no chuKyId provided, find latest cycle
+  if (!targetChuKyId) {
+    const latestChuKy = await ChuKyDanhGia.findOne({ isDeleted: { $ne: true } })
+      .sort({ NgayBatDau: -1 })
+      .select("_id TenChuKy NgayBatDau NgayKetThuc isDong")
+      .lean();
+
+    if (!latestChuKy) {
+      throw new AppError(
+        404,
+        "Không tìm thấy chu kỳ đánh giá",
+        "NO_CYCLE_FOUND"
+      );
+    }
+
+    targetChuKyId = latestChuKy._id;
+  }
+
+  // 2. Get DanhGiaKPI for this employee + cycle
+  const danhGiaKPI = await DanhGiaKPI.findOne({
+    NhanVienID: nhanVienId,
+    ChuKyDanhGiaID: targetChuKyId,
+    isDeleted: { $ne: true },
+  })
+    .populate("NhanVienID", "Ten MaNhanVien Email ChucDanh")
+    .populate("NguoiDanhGiaID", "Ten MaNhanVien")
+    .populate(
+      "ChuKyDanhGiaID",
+      "TenChuKy NgayBatDau NgayKetThuc isDong TieuChiCauHinh"
+    )
+    .lean();
+
+  // 3. Get assigned routine duties (NhanVienNhiemVu)
+  const assignedNhiemVu = await NhanVienNhiemVu.find({
+    NhanVienID: nhanVienId,
+    ChuKyDanhGiaID: targetChuKyId,
+    TrangThaiHoatDong: true,
+    isDeleted: false,
+  })
+    .populate({
+      path: "NhiemVuThuongQuyID",
+      select: "TenNhiemVu MoTa TrongSo LoaiNhiemVu",
+    })
+    .lean();
+
+  // 4. Get evaluations for these duties (DanhGiaNhiemVuThuongQuy)
+  const nhiemVuIds = assignedNhiemVu.map((nv) => nv.NhiemVuThuongQuyID._id);
+  const danhGiaNhiemVuList = await DanhGiaNhiemVuThuongQuy.find({
+    NhanVienID: nhanVienId,
+    ChuKyDanhGiaID: targetChuKyId,
+    NhiemVuThuongQuyID: { $in: nhiemVuIds },
+    isDeleted: { $ne: true },
+  }).lean();
+
+  // Map evaluations by NhiemVuThuongQuyID
+  const danhGiaMap = {};
+  danhGiaNhiemVuList.forEach((dg) => {
+    danhGiaMap[dg.NhiemVuThuongQuyID.toString()] = dg;
+  });
+
+  // 5. Combine data
+  const nhiemVuList = assignedNhiemVu.map((nv) => {
+    const danhGia = danhGiaMap[nv.NhiemVuThuongQuyID._id.toString()];
+    return {
+      ...nv,
+      danhGia: danhGia || null,
+    };
+  });
+
+  // 6. Calculate summary
+  const totalNhiemVu = nhiemVuList.length;
+  const scoredNhiemVu = nhiemVuList.filter(
+    (nv) =>
+      nv.danhGia &&
+      (nv.danhGia.DiemQuanLyDanhGia > 0 ||
+        nv.danhGia.DiemTuDanhGia > 0 ||
+        (nv.danhGia.ChiTietDiem && nv.danhGia.ChiTietDiem.length > 0))
+  ).length;
+  const progressPercentage =
+    totalNhiemVu > 0 ? Math.round((scoredNhiemVu / totalNhiemVu) * 100) : 0;
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      danhGiaKPI: danhGiaKPI || null,
+      chuKy: danhGiaKPI?.ChuKyDanhGiaID || null,
+      nhiemVuList,
+      summary: {
+        totalNhiemVu,
+        scoredNhiemVu,
+        progressPercentage,
+        TongDiemKPI: danhGiaKPI?.TongDiemKPI || null,
+        TrangThai: danhGiaKPI?.TrangThai || "CHUA_DUYET",
+      },
+    },
+    null,
+    "Lấy dashboard KPI cá nhân thành công"
+  );
+});
+
+/**
+ * Get lightweight KPI summary for Trang chủ (UnifiedDashboardPage)
+ * GET /api/workmanagement/kpi/summary/:nhanVienId
+ * @desc Get quick KPI score and status for dashboard card
+ * @access Private
+ * @param {String} nhanVienId - Employee ID
+ * @returns { score, status, cycleName, isDone }
+ */
+kpiController.getKPISummary = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = req.params;
+
+  if (!nhanVienId) {
+    throw new AppError(400, "Thiếu nhanVienId trong params", "MISSING_PARAMS");
+  }
+
+  // 1. Find latest cycle
+  const latestChuKy = await ChuKyDanhGia.findOne({ isDeleted: { $ne: true } })
+    .sort({ NgayBatDau: -1 })
+    .select("_id TenChuKy NgayBatDau NgayKetThuc isDong")
+    .lean();
+
+  if (!latestChuKy) {
+    return sendResponse(
+      res,
+      200,
+      true,
+      {
+        score: null,
+        status: "NO_CYCLE",
+        cycleName: null,
+        isDone: false,
+      },
+      null,
+      "Chưa có chu kỳ đánh giá"
+    );
+  }
+
+  // 2. Get DanhGiaKPI for this employee + latest cycle
+  const danhGiaKPI = await DanhGiaKPI.findOne({
+    NhanVienID: nhanVienId,
+    ChuKyDanhGiaID: latestChuKy._id,
+    isDeleted: { $ne: true },
+  })
+    .select("TongDiemKPI TrangThai")
+    .lean();
+
+  // 3. Return summary
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      score: danhGiaKPI?.TongDiemKPI || null,
+      status: danhGiaKPI?.TrangThai || "CHUA_DUYET",
+      cycleName: latestChuKy.TenChuKy,
+      isDone: latestChuKy.isDong,
+      hasEvaluation: !!danhGiaKPI,
+    },
+    null,
+    "Lấy tóm tắt KPI thành công"
+  );
+});
+
+/**
  * ❌ DEPRECATED: Old endpoint /cham-diem (không tương thích với model mới)
  * @route GET /api/workmanagement/kpi/cham-diem
  * @desc [REMOVED] Old logic - Model mới yêu cầu ChuKyDanhGiaID

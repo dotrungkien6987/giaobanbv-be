@@ -40,6 +40,14 @@ router.get("/dashboard/xu-ly", yeuCauController.layDashboardXuLy);
  */
 router.get("/dashboard/dieu-phoi", yeuCauController.layDashboardDieuPhoi);
 
+/**
+ * @route   GET /api/workmanagement/yeucau/summary/:nhanVienId
+ * @desc    Get lightweight summary for Trang chủ (sent, needAction, inProgress, completed)
+ * @access  Private
+ * @param   nhanVienId - Employee ID
+ */
+router.get("/summary/:nhanVienId", yeuCauController.getYeuCauSummary);
+
 // ========================================
 // KPI EVALUATION DASHBOARD (NEW)
 // ========================================

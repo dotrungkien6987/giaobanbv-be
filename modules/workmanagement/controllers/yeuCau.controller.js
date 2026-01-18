@@ -712,4 +712,80 @@ controller.getOtherYeuCauSummary = catchAsync(async (req, res, next) => {
   );
 });
 
+// ============== NEW DASHBOARD NATIVE APIs ==============
+
+/**
+ * B1: Lấy hoạt động gần đây
+ * GET /api/workmanagement/yeucau/hoat-dong-gan-day
+ * Query: limit (default 20), tuNgay, denNgay
+ */
+controller.layHoatDongGanDay = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = await getNhanVienId(req);
+  const { limit = 20, tuNgay, denNgay } = req.query;
+
+  const activities = await yeuCauService.layHoatDongGanDay(nhanVienId, {
+    limit: parseInt(limit),
+    tuNgay,
+    denNgay,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    activities,
+    null,
+    "Lấy hoạt động gần đây thành công"
+  );
+});
+
+/**
+ * B2: Lấy phân bố trạng thái
+ * GET /api/workmanagement/yeucau/phan-bo-trang-thai
+ * Query: loai (gui|xu-ly|khoa, default: xu-ly), tuNgay, denNgay
+ */
+controller.layPhanBoTrangThai = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = await getNhanVienId(req);
+  const { loai = "xu-ly", tuNgay, denNgay } = req.query;
+
+  const distribution = await yeuCauService.layPhanBoTrangThai(nhanVienId, {
+    loai,
+    tuNgay,
+    denNgay,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    distribution,
+    null,
+    "Lấy phân bố trạng thái thành công"
+  );
+});
+
+/**
+ * B3: Badge counts nâng cao với date filtering
+ * GET /api/workmanagement/yeucau/badge-counts-nang-cao
+ * Query: tuNgay, denNgay
+ */
+controller.layBadgeCountsNangCao = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = await getNhanVienId(req);
+  const { tuNgay, denNgay } = req.query;
+
+  const badges = await yeuCauService.layBadgeCountsNangCao(nhanVienId, {
+    tuNgay,
+    denNgay,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    badges,
+    null,
+    "Lấy badge counts nâng cao thành công"
+  );
+});
+
 module.exports = controller;

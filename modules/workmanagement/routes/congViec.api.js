@@ -248,4 +248,12 @@ router.patch("/binhluan/:id/text", congViecController.recallCommentText);
 // Danh sách trả lời của bình luận
 router.get("/binhluan/:id/replies", congViecController.listReplies);
 
+/**
+ * @route   GET /api/workmanagement/congviec/hoat-dong-gan-day
+ * @desc    📊 DASHBOARD: Lấy hoạt động gần đây (LichSuTrangThai, LichSuTienDo, BinhLuan)
+ * @access  Private
+ * @query   limit (default 20), tuNgay, denNgay
+ */
+router.get("/congviec/hoat-dong-gan-day", congViecController.layHoatDongGanDay);
+
 module.exports = router;

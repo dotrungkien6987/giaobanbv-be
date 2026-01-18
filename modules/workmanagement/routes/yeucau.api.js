@@ -40,6 +40,34 @@ router.get("/dashboard/xu-ly", yeuCauController.layDashboardXuLy);
  */
 router.get("/dashboard/dieu-phoi", yeuCauController.layDashboardDieuPhoi);
 
+// ========================================
+// DASHBOARD NATIVE MOBILE (NEW)
+// ========================================
+
+/**
+ * @route   GET /api/workmanagement/yeucau/hoat-dong-gan-day
+ * @desc    Lấy hoạt động gần đây (Recent Activities)
+ * @access  Private
+ * @query   limit (default 20, max 100), tuNgay, denNgay
+ */
+router.get("/hoat-dong-gan-day", yeuCauController.layHoatDongGanDay);
+
+/**
+ * @route   GET /api/workmanagement/yeucau/phan-bo-trang-thai
+ * @desc    Lấy phân bố trạng thái (Status Distribution)
+ * @access  Private
+ * @query   loai (gui|xu-ly|khoa, default: xu-ly), tuNgay, denNgay
+ */
+router.get("/phan-bo-trang-thai", yeuCauController.layPhanBoTrangThai);
+
+/**
+ * @route   GET /api/workmanagement/yeucau/badge-counts-nang-cao
+ * @desc    Badge counts nâng cao với date filtering
+ * @access  Private
+ * @query   tuNgay, denNgay
+ */
+router.get("/badge-counts-nang-cao", yeuCauController.layBadgeCountsNangCao);
+
 /**
  * @route   GET /api/workmanagement/yeucau/summary/:nhanVienId
  * @desc    Get lightweight summary for Trang chủ (sent, needAction, inProgress, completed)

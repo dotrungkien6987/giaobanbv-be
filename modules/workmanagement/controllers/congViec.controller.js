@@ -914,6 +914,43 @@ controller.getCrossCycleTasksSummary = catchAsync(async (req, res) => {
   );
 });
 
+/**
+ * 📊 DASHBOARD API: Lấy hoạt động gần đây
+ * GET /api/workmanagement/congviec/hoat-dong-gan-day
+ */
+controller.layHoatDongGanDay = catchAsync(async (req, res, next) => {
+  // Get NhanVienID from authenticated user
+  const User = require("../../../models/User");
+  const { AppError } = require("../../../helpers/utils");
+
+  const user = await User.findById(req.userId).lean();
+  if (!user?.NhanVienID) {
+    throw new AppError(
+      400,
+      "Tài khoản chưa liên kết với nhân viên",
+      "USER_NO_NHANVIEN"
+    );
+  }
+
+  const nhanVienId = user.NhanVienID;
+  const { limit, tuNgay, denNgay } = req.query;
+
+  const activities = await congViecService.layHoatDongGanDay(nhanVienId, {
+    limit: limit ? parseInt(limit) : 20,
+    tuNgay,
+    denNgay,
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { activities },
+    null,
+    "Lấy hoạt động gần đây thành công"
+  );
+});
+
 module.exports = controller;
 /** Flow actions (LEGACY – will be deprecated after unified transition completes) **/
 // @deprecated Use POST /congviec/:id/transition instead. Retained temporarily for backward compatibility.

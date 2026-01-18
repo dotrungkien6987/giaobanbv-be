@@ -2247,6 +2247,374 @@ async function layYeuCauOtherSummary({ nhanVienID, chuKyDanhGiaID }) {
   };
 }
 
+/**
+ * B1: Lấy hoạt động gần đây
+ * Query LichSuYeuCau để lấy danh sách activities gần đây
+ *
+ * @param {ObjectId} nhanVienId - ID nhân viên (NhanVienID, NOT User._id)
+ * @param {Object} options - { limit, tuNgay, denNgay }
+ * @returns {Promise<Array>} - Danh sách hoạt động
+ */
+async function layHoatDongGanDay(nhanVienId, options = {}) {
+  const { limit = 20, tuNgay, denNgay } = options;
+
+  // Build filter
+  const filter = {
+    NguoiThucHienID: nhanVienId,
+  };
+
+  // Add date filter if provided
+  if (tuNgay || denNgay) {
+    filter.ThoiGian = {};
+    if (tuNgay) {
+      filter.ThoiGian.$gte = new Date(tuNgay);
+    }
+    if (denNgay) {
+      const endDate = new Date(denNgay);
+      endDate.setHours(23, 59, 59, 999); // Include full day
+      filter.ThoiGian.$lte = endDate;
+    }
+  }
+
+  // Query with population
+  const activities = await LichSuYeuCau.find(filter)
+    .populate("NguoiThucHienID", "Ten MaNhanVien Images")
+    .populate({
+      path: "YeuCauID",
+      select: "MaYeuCau TieuDe TrangThai KhoaDichID NguoiYeuCauID",
+      populate: [
+        { path: "KhoaDichID", select: "TenKhoa MaKhoa" },
+        { path: "NguoiYeuCauID", select: "Ten MaNhanVien" },
+      ],
+    })
+    .sort({ ThoiGian: -1 })
+    .limit(Math.min(limit, 100)) // Max 100
+    .lean();
+
+  return activities;
+}
+
+/**
+ * B2: Lấy phân bố trạng thái
+ * Aggregation $facet để group theo TrangThai
+ *
+ * @param {ObjectId} nhanVienId - ID nhân viên
+ * @param {Object} options - { loai, tuNgay, denNgay }
+ * @returns {Promise<Object>} - { total, distribution }
+ */
+async function layPhanBoTrangThai(nhanVienId, options = {}) {
+  const { loai = "xu-ly", tuNgay, denNgay } = options;
+
+  // 1. Get NhanVien to access KhoaID
+  const nhanVien = await NhanVien.findById(nhanVienId).lean();
+  if (!nhanVien) {
+    throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
+  }
+
+  // 2. Build base filter based on loai
+  let baseFilter = { isDeleted: false };
+
+  if (loai === "gui") {
+    // Yêu cầu tôi gửi
+    baseFilter.NguoiYeuCauID = nhanVienId;
+  } else if (loai === "xu-ly") {
+    // Yêu cầu tôi xử lý
+    baseFilter.$or = [
+      { NguoiDuocDieuPhoiID: nhanVienId },
+      { NguoiNhanID: nhanVienId },
+      { NguoiXuLyID: nhanVienId },
+    ];
+  } else if (loai === "khoa") {
+    // Toàn khoa
+    if (!nhanVien.KhoaID) {
+      throw new AppError(
+        400,
+        "Nhân viên chưa được gán khoa",
+        "NHANVIEN_NO_KHOA"
+      );
+    }
+    baseFilter.KhoaDichID = nhanVien.KhoaID;
+  } else {
+    throw new AppError(
+      400,
+      "Loại không hợp lệ (gui/xu-ly/khoa)",
+      "INVALID_LOAI"
+    );
+  }
+
+  // 3. Add date filter
+  // Use different date fields based on loai
+  const dateField = loai === "xu-ly" ? "NgayTiepNhan" : "createdAt";
+
+  if (tuNgay || denNgay) {
+    baseFilter[dateField] = {};
+    if (tuNgay) {
+      baseFilter[dateField].$gte = new Date(tuNgay);
+    }
+    if (denNgay) {
+      const endDate = new Date(denNgay);
+      endDate.setHours(23, 59, 59, 999);
+      baseFilter[dateField].$lte = endDate;
+    }
+    // For NgayTiepNhan, exclude null values
+    if (dateField === "NgayTiepNhan") {
+      baseFilter[dateField].$ne = null;
+    }
+  }
+
+  // 4. Aggregation with $facet
+  const result = await YeuCau.aggregate([
+    { $match: baseFilter },
+    {
+      $facet: {
+        byStatus: [
+          {
+            $group: {
+              _id: "$TrangThai",
+              count: { $sum: 1 },
+            },
+          },
+        ],
+        total: [{ $count: "count" }],
+      },
+    },
+  ]);
+
+  const total = result[0].total[0]?.count || 0;
+  const distribution = result[0].byStatus.map((item) => ({
+    status: item._id,
+    count: item.count,
+    percentage: total > 0 ? ((item.count / total) * 100).toFixed(1) : "0.0",
+  }));
+
+  return {
+    total,
+    distribution,
+    loai,
+  };
+}
+
+/**
+ * B3: Badge counts nâng cao với date filtering
+ * Parallel count queries cho tất cả sections
+ *
+ * @param {ObjectId} nhanVienId - ID nhân viên
+ * @param {Object} options - { tuNgay, denNgay }
+ * @returns {Promise<Object>} - Badge counts cho tất cả sections
+ */
+async function layBadgeCountsNangCao(nhanVienId, options = {}) {
+  const { tuNgay, denNgay } = options;
+
+  // Get NhanVien to access KhoaID
+  const nhanVien = await NhanVien.findById(nhanVienId).lean();
+  if (!nhanVien) {
+    throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
+  }
+  const khoaID = nhanVien.KhoaID;
+
+  // Helper function to add date filter (kept for backwards compatibility)
+  const addDateFilter = (filter, dateField = "createdAt") => {
+    if (tuNgay || denNgay) {
+      filter[dateField] = {};
+      if (tuNgay) {
+        filter[dateField].$gte = new Date(tuNgay);
+      }
+      if (denNgay) {
+        const endDate = new Date(denNgay);
+        endDate.setHours(23, 59, 59, 999);
+        filter[dateField].$lte = endDate;
+      }
+      // For NgayTiepNhan, exclude null
+      if (dateField === "NgayTiepNhan") {
+        filter[dateField].$ne = null;
+      }
+    }
+    return filter;
+  };
+
+  // ✅ NEW: Helper for COMPLETED statuses only (date filter applied)
+  // ACTIVE statuses (MOI, DANG_XU_LY, DA_HOAN_THANH) should count ALL records
+  const addDateFilterForCompleted = (filter, dateField) => {
+    if (tuNgay || denNgay) {
+      filter[dateField] = {};
+      if (tuNgay) {
+        filter[dateField].$gte = new Date(tuNgay);
+      }
+      if (denNgay) {
+        const endDate = new Date(denNgay);
+        endDate.setHours(23, 59, 59, 999);
+        filter[dateField].$lte = endDate;
+      }
+      // Exclude null dates for completed statuses
+      filter[dateField].$ne = null;
+    }
+    return filter;
+  };
+
+  // Parallel count queries
+  const [
+    toiGuiChoTiepNhan,
+    toiGuiDangXuLy,
+    toiGuiDaHoanThanh,
+    toiGuiDaDong,
+    toiGuiTuChoi,
+    xuLyCanTiepNhan,
+    xuLyDangXuLy,
+    xuLyChoXacNhan,
+    dieuPhoiMoiDen,
+    dieuPhoiDaDieuPhoi,
+    khoaGuiDenKhoa,
+    khoaQuaHan,
+  ] = await Promise.all([
+    // 1a. Yêu cầu tôi gửi - Chờ tiếp nhận (MOI) - ACTIVE: NO DATE FILTER
+    YeuCau.countDocuments({
+      NguoiYeuCauID: nhanVienId,
+      TrangThai: TRANG_THAI.MOI,
+      isDeleted: false,
+    }),
+
+    // 1b. Yêu cầu tôi gửi - Đang xử lý - ACTIVE: NO DATE FILTER
+    YeuCau.countDocuments({
+      NguoiYeuCauID: nhanVienId,
+      TrangThai: TRANG_THAI.DANG_XU_LY,
+      isDeleted: false,
+    }),
+
+    // 1c. Yêu cầu tôi gửi - Chờ đánh giá (DA_HOAN_THANH) - PENDING: NO DATE FILTER
+    YeuCau.countDocuments({
+      NguoiYeuCauID: nhanVienId,
+      TrangThai: TRANG_THAI.DA_HOAN_THANH,
+      isDeleted: false,
+    }),
+
+    // 1d. Yêu cầu tôi gửi - Đã đóng - COMPLETED: WITH DATE FILTER
+    YeuCau.countDocuments(
+      addDateFilterForCompleted(
+        {
+          NguoiYeuCauID: nhanVienId,
+          TrangThai: TRANG_THAI.DA_DONG,
+          isDeleted: false,
+        },
+        "NgayDong"
+      )
+    ),
+
+    // 1e. Yêu cầu tôi gửi - Từ chối - COMPLETED: WITH DATE FILTER
+    YeuCau.countDocuments(
+      addDateFilterForCompleted(
+        {
+          NguoiYeuCauID: nhanVienId,
+          TrangThai: TRANG_THAI.TU_CHOI,
+          isDeleted: false,
+        },
+        "createdAt"
+      )
+    ),
+
+    // 2. Xử lý - Chờ tiếp nhận (MOI) - ACTIVE: NO DATE FILTER
+    YeuCau.countDocuments({
+      $or: [{ NguoiDuocDieuPhoiID: nhanVienId }, { NguoiNhanID: nhanVienId }],
+      TrangThai: TRANG_THAI.MOI,
+      isDeleted: false,
+    }),
+
+    // 3. Xử lý - Đang xử lý - ACTIVE: NO DATE FILTER
+    YeuCau.countDocuments({
+      NguoiXuLyID: nhanVienId,
+      TrangThai: TRANG_THAI.DANG_XU_LY,
+      isDeleted: false,
+    }),
+
+    // 4. Xử lý - Chờ đánh giá (DA_HOAN_THANH) - PENDING: NO DATE FILTER
+    YeuCau.countDocuments({
+      NguoiXuLyID: nhanVienId,
+      TrangThai: TRANG_THAI.DA_HOAN_THANH,
+      isDeleted: false,
+    }),
+
+    // 5. Điều phối - Mới đến (chưa điều phối)
+    khoaID
+      ? YeuCau.countDocuments(
+          addDateFilter({
+            KhoaDichID: khoaID,
+            TrangThai: TRANG_THAI.MOI,
+            $or: [
+              { NguoiDuocDieuPhoiID: { $exists: false } },
+              { NguoiDuocDieuPhoiID: null },
+            ],
+            isDeleted: false,
+          })
+        )
+      : 0,
+
+    // 6. Điều phối - Đã điều phối (chờ tiếp nhận)
+    khoaID
+      ? YeuCau.countDocuments(
+          addDateFilter({
+            KhoaDichID: khoaID,
+            TrangThai: TRANG_THAI.MOI,
+            NguoiDuocDieuPhoiID: { $exists: true, $ne: null },
+            isDeleted: false,
+          })
+        )
+      : 0,
+
+    // 7. Quản lý khoa - Gửi đến khoa
+    khoaID
+      ? YeuCau.countDocuments(
+          addDateFilter({
+            KhoaDichID: khoaID,
+            TrangThai: { $nin: [TRANG_THAI.DA_DONG, TRANG_THAI.TU_CHOI] },
+            isDeleted: false,
+          })
+        )
+      : 0,
+
+    // 8. Quản lý khoa - Quá hạn
+    khoaID
+      ? YeuCau.countDocuments(
+          addDateFilter({
+            KhoaDichID: khoaID,
+            TrangThai: { $nin: [TRANG_THAI.DA_DONG, TRANG_THAI.TU_CHOI] },
+            ThoiGianHen: { $lt: new Date() },
+            isDeleted: false,
+          })
+        )
+      : 0,
+  ]);
+
+  return {
+    toiGui: {
+      choTiepNhan: toiGuiChoTiepNhan,
+      dangXuLy: toiGuiDangXuLy,
+      daHoanThanh: toiGuiDaHoanThanh,
+      daDong: toiGuiDaDong,
+      tuChoi: toiGuiTuChoi,
+      total:
+        toiGuiChoTiepNhan +
+        toiGuiDangXuLy +
+        toiGuiDaHoanThanh +
+        toiGuiDaDong +
+        toiGuiTuChoi,
+    },
+    xuLy: {
+      canTiepNhan: xuLyCanTiepNhan,
+      dangXuLy: xuLyDangXuLy,
+      choXacNhan: xuLyChoXacNhan,
+      total: xuLyCanTiepNhan + xuLyDangXuLy + xuLyChoXacNhan,
+    },
+    dieuPhoi: {
+      moiDen: dieuPhoiMoiDen,
+      daDieuPhoi: dieuPhoiDaDieuPhoi,
+      total: dieuPhoiMoiDen + dieuPhoiDaDieuPhoi,
+    },
+    quanLyKhoa: {
+      guiDenKhoa: khoaGuiDenKhoa,
+      quaHan: khoaQuaHan,
+    },
+  };
+}
+
 module.exports = {
   taoYeuCau,
   suaYeuCau,
@@ -2272,4 +2640,8 @@ module.exports = {
   layYeuCauCountsByNhiemVu,
   layYeuCauDashboardByNhiemVu,
   layYeuCauOtherSummary,
+  // New APIs for Dashboard Native
+  layHoatDongGanDay,
+  layPhanBoTrangThai,
+  layBadgeCountsNangCao,
 };

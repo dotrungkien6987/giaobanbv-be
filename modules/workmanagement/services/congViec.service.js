@@ -4110,4 +4110,143 @@ service.getCrossCycleTasksSummary = async ({ nhanVienID, chuKyDanhGiaID }) => {
   };
 };
 
+/**
+ * 📊 DASHBOARD API: Lấy hoạt động gần đây
+ * Aggregate từ LichSuTrangThai, LichSuTienDo, và BinhLuan
+ *
+ * @param {ObjectId} nhanVienId - ID nhân viên (NhanVienID, NOT User._id)
+ * @param {Object} options - { limit, tuNgay, denNgay }
+ * @returns {Promise<Array>} - Danh sách hoạt động unified timeline
+ */
+service.layHoatDongGanDay = async function (nhanVienId, options = {}) {
+  const { limit = 20, tuNgay, denNgay } = options;
+  const nhanVienObjId = toObjectId(nhanVienId);
+
+  // Build date filter
+  let dateFilter = {};
+  if (tuNgay || denNgay) {
+    dateFilter = {};
+    if (tuNgay) {
+      dateFilter.$gte = new Date(tuNgay);
+    }
+    if (denNgay) {
+      const endDate = new Date(denNgay);
+      endDate.setHours(23, 59, 59, 999);
+      dateFilter.$lte = endDate;
+    }
+  }
+
+  // Find tasks where user is involved (Giao, Chinh, or Tham gia)
+  const taskFilter = {
+    isDeleted: { $ne: true },
+    $or: [
+      { NguoiGiaoViecID: nhanVienObjId },
+      { NguoiChinhID: nhanVienObjId },
+      { "NguoiThamGia.NhanVienID": nhanVienObjId },
+    ],
+  };
+
+  // 1. Aggregate activities from LichSuTrangThai (status changes)
+  const statusActivities = await CongViec.aggregate([
+    { $match: taskFilter },
+    { $unwind: "$LichSuTrangThai" },
+    ...(Object.keys(dateFilter).length > 0
+      ? [{ $match: { "LichSuTrangThai.ThoiGian": dateFilter } }]
+      : []),
+    {
+      $project: {
+        LoaiHoatDong: "TRANG_THAI",
+        HanhDong: "$LichSuTrangThai.HanhDong",
+        NguoiThucHienID: "$LichSuTrangThai.NguoiThucHienID",
+        TuTrangThai: "$LichSuTrangThai.TuTrangThai",
+        DenTrangThai: "$LichSuTrangThai.DenTrangThai",
+        ThoiGian: "$LichSuTrangThai.ThoiGian",
+        GhiChu: "$LichSuTrangThai.GhiChu",
+        CongViecID: "$_id",
+        MaCongViec: "$MaCongViec",
+        TieuDe: "$TieuDe",
+        TrangThai: "$TrangThai",
+      },
+    },
+  ]);
+
+  // 2. Aggregate activities from LichSuTienDo (progress updates)
+  const progressActivities = await CongViec.aggregate([
+    { $match: taskFilter },
+    { $unwind: "$LichSuTienDo" },
+    ...(Object.keys(dateFilter).length > 0
+      ? [{ $match: { "LichSuTienDo.ThoiGian": dateFilter } }]
+      : []),
+    {
+      $project: {
+        LoaiHoatDong: "TIEN_DO",
+        HanhDong: "CAP_NHAT_TIEN_DO",
+        NguoiThucHienID: "$LichSuTienDo.NguoiThucHienID",
+        TuTienDo: "$LichSuTienDo.Tu",
+        DenTienDo: "$LichSuTienDo.Den",
+        ThoiGian: "$LichSuTienDo.ThoiGian",
+        GhiChu: "$LichSuTienDo.GhiChu",
+        CongViecID: "$_id",
+        MaCongViec: "$MaCongViec",
+        TieuDe: "$TieuDe",
+        TrangThai: "$TrangThai",
+      },
+    },
+  ]);
+
+  // 3. Query BinhLuan collection (comments)
+  const commentFilter = {
+    CongViecID: { $in: await CongViec.find(taskFilter).distinct("_id") },
+    TrangThai: "ACTIVE",
+    ...(Object.keys(dateFilter).length > 0 ? { NgayBinhLuan: dateFilter } : {}),
+  };
+
+  const commentActivities = await BinhLuan.find(commentFilter)
+    .select("_id CongViecID NguoiBinhLuanID NoiDung NgayBinhLuan BinhLuanChaID")
+    .lean();
+
+  // Map comments to unified format
+  const mappedComments = commentActivities.map((c) => ({
+    LoaiHoatDong: "BINH_LUAN",
+    HanhDong: c.BinhLuanChaID ? "TRA_LOI_BINH_LUAN" : "THEM_BINH_LUAN",
+    NguoiThucHienID: c.NguoiBinhLuanID,
+    ThoiGian: c.NgayBinhLuan,
+    GhiChu: c.NoiDung?.substring(0, 200) || "", // Truncate long comments
+    BinhLuanID: c._id,
+    CongViecID: c.CongViecID,
+  }));
+
+  // 4. Merge all activities
+  const allActivities = [
+    ...statusActivities,
+    ...progressActivities,
+    ...mappedComments,
+  ];
+
+  // 5. Sort by time descending
+  allActivities.sort((a, b) => new Date(b.ThoiGian) - new Date(a.ThoiGian));
+
+  // 6. Limit results
+  const limitedActivities = allActivities.slice(0, Math.min(limit, 100));
+
+  // 7. Populate references
+  await CongViec.populate(limitedActivities, [
+    {
+      path: "CongViecID",
+      select: "MaCongViec TieuDe TrangThai NguoiChinhID NguoiGiaoViecID",
+      populate: [
+        { path: "NguoiChinhID", select: "Ten MaNhanVien Images" },
+        { path: "NguoiGiaoViecID", select: "Ten MaNhanVien" },
+      ],
+    },
+  ]);
+
+  await NhanVien.populate(limitedActivities, {
+    path: "NguoiThucHienID",
+    select: "Ten MaNhanVien Images",
+  });
+
+  return limitedActivities;
+};
+
 module.exports = service;

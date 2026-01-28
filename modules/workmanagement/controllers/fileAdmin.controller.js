@@ -70,7 +70,7 @@ controller.list = catchAsync(async (req, res) => {
       totalPages: Math.ceil(total / sizeNum) || 1,
     },
     null,
-    "Lấy danh sách tệp (admin) thành công"
+    "Lấy danh sách tệp (admin) thành công",
   );
 });
 
@@ -96,7 +96,7 @@ controller.stats = catchAsync(async (req, res) => {
 
   // Derive counts for clarity on UI (ACTIVE-only vs total)
   const countsMap = Object.fromEntries(
-    (statusCounts || []).map((x) => [x._id || "UNKNOWN", x.count || 0])
+    (statusCounts || []).map((x) => [x._id || "UNKNOWN", x.count || 0]),
   );
   const activeCount = countsMap["ACTIVE"] || 0;
   const deletedCount = countsMap["DELETED"] || 0;
@@ -112,7 +112,7 @@ controller.stats = catchAsync(async (req, res) => {
       counts: { active: activeCount, deleted: deletedCount, total: totalCount },
     },
     null,
-    "Thống kê tệp (admin) thành công"
+    "Thống kê tệp (admin) thành công",
   );
 });
 
@@ -167,7 +167,7 @@ controller.restore = catchAsync(async (req, res) => {
       false,
       null,
       "NOT_FOUND",
-      "Không tìm thấy tệp"
+      "Không tìm thấy tệp",
     );
   doc.TrangThai = "ACTIVE";
   await doc.save();
@@ -181,7 +181,7 @@ controller.restore = catchAsync(async (req, res) => {
       adminDownloadUrl: `/api/workmanagement/admin/files/${doc._id}/download`,
     },
     null,
-    "Phục hồi tệp thành công"
+    "Phục hồi tệp thành công",
   );
 });
 
@@ -196,7 +196,7 @@ controller.delete = catchAsync(async (req, res) => {
       false,
       null,
       "NOT_FOUND",
-      "Không tìm thấy tệp"
+      "Không tìm thấy tệp",
     );
 
   if (String(force) === "1") {
@@ -222,7 +222,7 @@ controller.delete = catchAsync(async (req, res) => {
       adminDownloadUrl: `/api/workmanagement/admin/files/${doc._id}/download`,
     },
     null,
-    "Đã xóa mềm tệp"
+    "Đã xóa mềm tệp",
   );
 });
 
@@ -242,7 +242,7 @@ controller.cleanup = catchAsync(async (req, res) => {
       if (String(fix) === "1" && f.TrangThai !== "DELETED") {
         await TepTin.updateOne(
           { _id: f._id },
-          { $set: { TrangThai: "DELETED" } }
+          { $set: { TrangThai: "DELETED" } },
         );
         markedDeleted += 1;
       }
@@ -259,7 +259,235 @@ controller.cleanup = catchAsync(async (req, res) => {
       fixed: String(fix) === "1",
     },
     null,
-    "Dọn dẹp xong"
+    "Dọn dẹp xong",
+  );
+});
+
+// =============== ORPHANED FILES MANAGEMENT ===============
+
+/**
+ * GET /files/orphaned - Preview files đã xóa mềm (DELETED) có thể xóa vĩnh viễn
+ * Query params:
+ *   - retentionDays: số ngày giữ lại (mặc định 90)
+ *   - page, limit: phân trang
+ */
+controller.getOrphanedFiles = catchAsync(async (req, res) => {
+  const { retentionDays = 90, page = 1, limit = 50 } = req.query;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - parseInt(retentionDays));
+
+  const query = {
+    TrangThai: "DELETED",
+    updatedAt: { $lt: cutoff },
+  };
+
+  const [files, total, totalSizeAgg] = await Promise.all([
+    TepTin.find(query)
+      .select(
+        "TenGoc TenFile KichThuoc updatedAt DuongDan NguoiTaiLenID LoaiFile",
+      )
+      .populate("NguoiTaiLenID", "HoTen MaNhanVien")
+      .sort({ updatedAt: 1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .lean(),
+    TepTin.countDocuments(query),
+    TepTin.aggregate([
+      { $match: query },
+      { $group: { _id: null, total: { $sum: "$KichThuoc" } } },
+    ]),
+  ]);
+
+  const totalSize = totalSizeAgg[0]?.total || 0;
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      files: files.map((f) => ({
+        ...f,
+        NguoiTaiLen: f.NguoiTaiLenID,
+      })),
+      total,
+      totalSize,
+      totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+      page: parseInt(page),
+      limit: parseInt(limit),
+      retentionDays: parseInt(retentionDays),
+    },
+    null,
+    `Tìm thấy ${total} files có thể dọn dẹp`,
+  );
+});
+
+/**
+ * POST /files/orphaned/delete - Xóa vĩnh viễn files đã DELETED cũ
+ * Body: { retentionDays, maxFiles }
+ */
+controller.deleteOrphanedFiles = catchAsync(async (req, res) => {
+  const { retentionDays = 90, maxFiles = 1000 } = req.body;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - parseInt(retentionDays));
+
+  const files = await TepTin.find({
+    TrangThai: "DELETED",
+    updatedAt: { $lt: cutoff },
+  }).limit(parseInt(maxFiles));
+
+  let deleted = 0;
+  let errors = 0;
+  let freedSpace = 0;
+  const errorDetails = [];
+
+  for (const file of files) {
+    try {
+      const fullPath = config.toAbs(file.DuongDan);
+
+      // Xóa file vật lý (ignore nếu không tồn tại)
+      await fsp.unlink(fullPath).catch((e) => {
+        if (e.code !== "ENOENT") throw e;
+      });
+
+      freedSpace += file.KichThuoc || 0;
+
+      // Xóa record khỏi database
+      await TepTin.deleteOne({ _id: file._id });
+      deleted++;
+    } catch (err) {
+      errors++;
+      errorDetails.push({
+        file: file.TenGoc || file.TenFile,
+        error: err.message,
+      });
+    }
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      deleted,
+      errors,
+      freedSpace,
+      freedSpaceMB: (freedSpace / 1024 / 1024).toFixed(2),
+      errorDetails: errorDetails.slice(0, 10), // Chỉ trả 10 lỗi đầu
+    },
+    null,
+    `Đã xóa ${deleted} files, giải phóng ${(freedSpace / 1024 / 1024).toFixed(2)} MB`,
+  );
+});
+
+/**
+ * GET /files/storage-stats - Thống kê dung lượng chi tiết
+ */
+controller.getStorageStats = catchAsync(async (req, res) => {
+  const stats = await TepTin.aggregate([
+    {
+      $facet: {
+        byStatus: [
+          {
+            $group: {
+              _id: "$TrangThai",
+              count: { $sum: 1 },
+              totalSize: { $sum: "$KichThuoc" },
+            },
+          },
+        ],
+        byType: [
+          {
+            $match: { TrangThai: "ACTIVE" },
+          },
+          {
+            $group: {
+              _id: "$LoaiFile",
+              count: { $sum: 1 },
+              totalSize: { $sum: "$KichThuoc" },
+            },
+          },
+          {
+            $sort: { totalSize: -1 },
+          },
+          {
+            $limit: 10,
+          },
+        ],
+        byMonth: [
+          {
+            $match: { TrangThai: "ACTIVE" },
+          },
+          {
+            $group: {
+              _id: {
+                year: { $year: "$NgayTaiLen" },
+                month: { $month: "$NgayTaiLen" },
+              },
+              count: { $sum: 1 },
+              totalSize: { $sum: "$KichThuoc" },
+            },
+          },
+          {
+            $sort: { "_id.year": -1, "_id.month": -1 },
+          },
+          {
+            $limit: 12,
+          },
+        ],
+        byOwnerType: [
+          {
+            $match: { TrangThai: "ACTIVE" },
+          },
+          {
+            $group: {
+              _id: "$OwnerType",
+              count: { $sum: 1 },
+              totalSize: { $sum: "$KichThuoc" },
+            },
+          },
+          {
+            $sort: { totalSize: -1 },
+          },
+        ],
+      },
+    },
+  ]);
+
+  // Thử lấy disk space (Linux/Mac only)
+  let diskSpace = null;
+  if (process.platform !== "win32") {
+    try {
+      const { exec } = require("child_process");
+      const util = require("util");
+      const execAsync = util.promisify(exec);
+
+      const { stdout } = await execAsync(
+        `df -h ${config.UPLOAD_DIR || "."} | tail -1`,
+      );
+      const parts = stdout.trim().split(/\s+/);
+      diskSpace = {
+        total: parts[1],
+        used: parts[2],
+        available: parts[3],
+        usedPercent: parts[4],
+      };
+    } catch (err) {
+      // Ignore if df command fails
+    }
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    {
+      ...stats[0],
+      diskSpace,
+    },
+    null,
+    "Thống kê dung lượng thành công",
   );
 });
 
@@ -274,7 +502,7 @@ controller.streamInline = catchAsync(async (req, res) => {
       false,
       null,
       "NOT_FOUND",
-      "Không tìm thấy tệp"
+      "Không tìm thấy tệp",
     );
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
@@ -290,7 +518,7 @@ controller.streamInline = catchAsync(async (req, res) => {
       false,
       null,
       "NOT_FOUND",
-      "File không tồn tại trên ổ đĩa"
+      "File không tồn tại trên ổ đĩa",
     );
 
   const ctype =
@@ -308,7 +536,7 @@ controller.streamInline = catchAsync(async (req, res) => {
     .replace(/\*/g, "%2A");
   res.setHeader(
     "Content-Disposition",
-    `inline; filename="${sanitized}"; filename*=UTF-8''${encoded}`
+    `inline; filename="${sanitized}"; filename*=UTF-8''${encoded}`,
   );
   fs.createReadStream(filePath).pipe(res);
 });
@@ -323,7 +551,7 @@ controller.streamDownload = catchAsync(async (req, res) => {
       false,
       null,
       "NOT_FOUND",
-      "Không tìm thấy tệp"
+      "Không tìm thấy tệp",
     );
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
@@ -339,7 +567,7 @@ controller.streamDownload = catchAsync(async (req, res) => {
       false,
       null,
       "NOT_FOUND",
-      "File không tồn tại trên ổ đĩa"
+      "File không tồn tại trên ổ đĩa",
     );
 
   const ctype =
@@ -357,7 +585,7 @@ controller.streamDownload = catchAsync(async (req, res) => {
     .replace(/\*/g, "%2A");
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${sanitized}"; filename*=UTF-8''${encoded}`
+    `attachment; filename="${sanitized}"; filename*=UTF-8''${encoded}`,
   );
   fs.createReadStream(filePath).pipe(res);
 });

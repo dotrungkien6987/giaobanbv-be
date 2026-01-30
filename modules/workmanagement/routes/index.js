@@ -19,6 +19,9 @@ const danhMucYeuCauRoutes = require("./danhMucYeuCau.api");
 const lyDoTuChoiRoutes = require("./lyDoTuChoi.api");
 const cauHinhThongBaoKhoaRoutes = require("./cauHinhThongBaoKhoa.api");
 
+// Home routes (Trang chủ)
+const homeRoutes = require("./home.api");
+
 // ✅ NEW: Import NhanVien controller cho self-assessment
 const NhanVien = require("../../../models/NhanVien");
 const authentication = require("../../../middlewares/authentication");
@@ -57,9 +60,9 @@ router.get(
       true,
       nhanVien,
       null,
-      "Lấy thông tin nhân viên thành công"
+      "Lấy thông tin nhân viên thành công",
     );
-  })
+  }),
 );
 
 // Sử dụng các routes
@@ -75,6 +78,9 @@ router.use("/yeucau", yeuCauRoutes); // Routes cho yêu cầu hỗ trợ
 router.use("/danh-muc-yeu-cau", danhMucYeuCauRoutes); // Routes cho danh mục yêu cầu
 router.use("/ly-do-tu-choi", lyDoTuChoiRoutes); // Routes cho lý do từ chối
 router.use("/cau-hinh-thong-bao-khoa", cauHinhThongBaoKhoaRoutes); // Routes cho cấu hình thông báo khoa
+
+// Home routes (Trang chủ)
+router.use("/home", homeRoutes); // Routes cho trang chủ dashboard
 
 // ❌ Đã di chuyển 4 dòng này lên trên (trước /nhanvien/:id)
 // router.use("/", congViecRoutes);

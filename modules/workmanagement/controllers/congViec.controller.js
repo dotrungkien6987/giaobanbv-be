@@ -19,7 +19,7 @@ controller.getNhanVien = catchAsync(async (req, res, next) => {
     true,
     nhanvien,
     null,
-    "Lấy thông tin nhân viên thành công"
+    "Lấy thông tin nhân viên thành công",
   );
 });
 
@@ -75,7 +75,7 @@ controller.getReceivedCongViecs = catchAsync(async (req, res, next) => {
     nhanvienid,
     filters,
     pageNum,
-    limitNum
+    limitNum,
   );
 
   return sendResponse(
@@ -84,7 +84,7 @@ controller.getReceivedCongViecs = catchAsync(async (req, res, next) => {
     true,
     result,
     null,
-    "Lấy danh sách công việc được giao thành công"
+    "Lấy danh sách công việc được giao thành công",
   );
 });
 
@@ -140,7 +140,7 @@ controller.getAssignedCongViecs = catchAsync(async (req, res, next) => {
     nhanvienid,
     filters,
     pageNum,
-    limitNum
+    limitNum,
   );
 
   return sendResponse(
@@ -149,7 +149,7 @@ controller.getAssignedCongViecs = catchAsync(async (req, res, next) => {
     true,
     result,
     null,
-    "Lấy danh sách công việc đã giao thành công"
+    "Lấy danh sách công việc đã giao thành công",
   );
 });
 
@@ -168,7 +168,7 @@ controller.deleteCongViec = catchAsync(async (req, res, next) => {
     true,
     result.meta || null,
     null,
-    result.message
+    result.message,
   );
 });
 
@@ -187,7 +187,7 @@ controller.getCongViecDetail = catchAsync(async (req, res, next) => {
     true,
     congViec,
     null,
-    "Lấy chi tiết công việc thành công"
+    "Lấy chi tiết công việc thành công",
   );
 });
 
@@ -203,7 +203,7 @@ controller.createSubtask = catchAsync(async (req, res) => {
     true,
     dto,
     null,
-    "Tạo công việc con thành công"
+    "Tạo công việc con thành công",
   );
 });
 
@@ -220,7 +220,7 @@ controller.listChildrenCongViec = catchAsync(async (req, res) => {
     true,
     items,
     null,
-    "Lấy danh sách công việc con thành công"
+    "Lấy danh sách công việc con thành công",
   );
 });
 
@@ -239,7 +239,7 @@ controller.createCongViec = catchAsync(async (req, res, next) => {
     true,
     { ...newCongViec, updatedAt: newCongViec.updatedAt },
     null,
-    "Tạo công việc thành công"
+    "Tạo công việc thành công",
   );
 });
 
@@ -254,7 +254,7 @@ controller.updateCongViec = catchAsync(async (req, res, next) => {
   const updatedCongViec = await congViecService.updateCongViec(
     id,
     updateData,
-    req
+    req,
   );
 
   return sendResponse(
@@ -263,7 +263,7 @@ controller.updateCongViec = catchAsync(async (req, res, next) => {
     true,
     { ...updatedCongViec, updatedAt: updatedCongViec.updatedAt },
     null,
-    "Cập nhật công việc thành công"
+    "Cập nhật công việc thành công",
   );
 });
 
@@ -277,7 +277,7 @@ controller.updateProgress = catchAsync(async (req, res) => {
   const dto = await congViecService.updateProgress(
     id,
     { value, ghiChu, expectedVersion },
-    req
+    req,
   );
   const wantFull = String(req.query.full || "") === "1";
   if (wantFull) {
@@ -287,7 +287,7 @@ controller.updateProgress = catchAsync(async (req, res) => {
       true,
       dto,
       null,
-      "Cập nhật tiến độ thành công"
+      "Cập nhật tiến độ thành công",
     );
   }
   // Build minimal patch + last progress entry append
@@ -314,7 +314,7 @@ controller.updateProgress = catchAsync(async (req, res) => {
     true,
     payload,
     null,
-    "Cập nhật tiến độ thành công"
+    "Cập nhật tiến độ thành công",
   );
 });
 
@@ -329,7 +329,7 @@ controller.assignRoutineTask = catchAsync(async (req, res) => {
   const dto = await congViecService.assignRoutineTask(
     id,
     { nhiemVuThuongQuyID, isKhac, expectedVersion },
-    req
+    req,
   );
 
   return sendResponse(
@@ -338,7 +338,7 @@ controller.assignRoutineTask = catchAsync(async (req, res) => {
     true,
     { data: dto },
     null,
-    "Gán nhiệm vụ thường quy thành công"
+    "Gán nhiệm vụ thường quy thành công",
   );
 });
 
@@ -354,7 +354,7 @@ controller.addComment = catchAsync(async (req, res, next) => {
     id,
     NoiDung,
     req,
-    parentId || null
+    parentId || null,
   );
 
   return sendResponse(
@@ -363,7 +363,7 @@ controller.addComment = catchAsync(async (req, res, next) => {
     true,
     comment,
     null,
-    "Thêm bình luận thành công"
+    "Thêm bình luận thành công",
   );
 });
 
@@ -380,7 +380,7 @@ controller.deleteComment = catchAsync(async (req, res, next) => {
     true,
     result,
     null,
-    "Thu hồi bình luận thành công"
+    "Thu hồi bình luận thành công",
   );
 });
 
@@ -397,7 +397,7 @@ controller.recallCommentText = catchAsync(async (req, res) => {
     true,
     dto,
     null,
-    "Thu hồi nội dung bình luận thành công"
+    "Thu hồi nội dung bình luận thành công",
   );
 });
 
@@ -414,7 +414,7 @@ controller.listReplies = catchAsync(async (req, res) => {
     true,
     items,
     null,
-    "Lấy danh sách trả lời thành công"
+    "Lấy danh sách trả lời thành công",
   );
 });
 
@@ -433,14 +433,14 @@ controller.updateHistoryNote = catchAsync(async (req, res) => {
       false,
       null,
       "INVALID_INDEX",
-      "Index không hợp lệ"
+      "Index không hợp lệ",
     );
   }
   const updated = await congViecService.updateLichSuTrangThaiNote(
     id,
     idx,
     note || "",
-    req.nhanVienId || req.userId
+    req.nhanVienId || req.userId,
   );
   return sendResponse(
     res,
@@ -448,7 +448,7 @@ controller.updateHistoryNote = catchAsync(async (req, res) => {
     true,
     updated,
     null,
-    "Cập nhật ghi chú lịch sử thành công"
+    "Cập nhật ghi chú lịch sử thành công",
   );
 });
 
@@ -464,14 +464,14 @@ controller.updateProgressHistoryNote = catchAsync(async (req, res) => {
       false,
       null,
       "INVALID_INDEX",
-      "Index không hợp lệ"
+      "Index không hợp lệ",
     );
   }
   const updated = await congViecService.updateLichSuTienDoNote(
     id,
     idx,
     note || "",
-    req.nhanVienId || req.userId
+    req.nhanVienId || req.userId,
   );
   return sendResponse(
     res,
@@ -479,7 +479,7 @@ controller.updateProgressHistoryNote = catchAsync(async (req, res) => {
     true,
     updated,
     null,
-    "Cập nhật ghi chú lịch sử tiến độ thành công"
+    "Cập nhật ghi chú lịch sử tiến độ thành công",
   );
 });
 
@@ -494,7 +494,7 @@ controller.getTreeRoot = catchAsync(async (req, res) => {
     true,
     { root, children },
     null,
-    "Lấy cây công việc gốc thành công"
+    "Lấy cây công việc gốc thành công",
   );
 });
 
@@ -510,7 +510,7 @@ controller.getFullTree = catchAsync(async (req, res) => {
     true,
     { root: ancestorRoot, children },
     null,
-    "Lấy cây đầy đủ từ root tổ tiên thành công"
+    "Lấy cây đầy đủ từ root tổ tiên thành công",
   );
 });
 
@@ -528,7 +528,7 @@ controller.getTreeChildren = catchAsync(async (req, res) => {
     true,
     { parentId: id, children },
     null,
-    "Lấy danh sách con thành công"
+    "Lấy danh sách con thành công",
   );
 });
 
@@ -552,7 +552,7 @@ controller.getDashboardByNhiemVu = catchAsync(async (req, res, next) => {
     true,
     dashboardData,
     null,
-    "Lấy dashboard công việc thành công"
+    "Lấy dashboard công việc thành công",
   );
 });
 
@@ -572,14 +572,14 @@ controller.getOtherTasksSummary = catchAsync(async (req, res) => {
     throw new AppError(
       400,
       "Thiếu nhanVienID hoặc chuKyDanhGiaID trong query",
-      "MISSING_PARAMS"
+      "MISSING_PARAMS",
     );
   }
 
   // Call service method
   const data = await congViecService.getOtherTasksSummary(
     nhanVienID,
-    chuKyDanhGiaID
+    chuKyDanhGiaID,
   );
 
   // Send response
@@ -589,7 +589,7 @@ controller.getOtherTasksSummary = catchAsync(async (req, res) => {
     true,
     data,
     null,
-    "Lấy tóm tắt công việc khác thành công"
+    "Lấy tóm tắt công việc khác thành công",
   );
 });
 
@@ -608,14 +608,14 @@ controller.getCollabTasksSummary = catchAsync(async (req, res) => {
     throw new AppError(
       400,
       "Thiếu nhanVienID hoặc chuKyDanhGiaID trong query",
-      "MISSING_PARAMS"
+      "MISSING_PARAMS",
     );
   }
 
   // Call service method
   const data = await congViecService.getCollabTasksSummary(
     nhanVienID,
-    chuKyDanhGiaID
+    chuKyDanhGiaID,
   );
 
   // Send response
@@ -625,7 +625,7 @@ controller.getCollabTasksSummary = catchAsync(async (req, res) => {
     true,
     data,
     null,
-    "Lấy tóm tắt công việc phối hợp thành công"
+    "Lấy tóm tắt công việc phối hợp thành công",
   );
 });
 
@@ -653,11 +653,14 @@ controller.getCongViecDashboard = catchAsync(async (req, res, next) => {
 
   // Parallel aggregations for performance
   const [receivedStats, assignedStats] = await Promise.all([
-    // Received tasks (Công việc tôi nhận)
+    // Received tasks (Công việc tôi nhận - là người chính hoặc người tham gia)
     CongViec.aggregate([
       {
         $match: {
-          NguoiNhanID: objectId(nhanVienId),
+          $or: [
+            { NguoiChinhID: objectId(nhanVienId) },
+            { "NguoiThamGia.NhanVienID": objectId(nhanVienId) },
+          ],
           isDeleted: { $ne: true },
         },
       },
@@ -727,7 +730,7 @@ controller.getCongViecDashboard = catchAsync(async (req, res, next) => {
     CongViec.aggregate([
       {
         $match: {
-          NguoiGiaoID: objectId(nhanVienId),
+          NguoiGiaoViecID: objectId(nhanVienId),
           isDeleted: { $ne: true },
         },
       },
@@ -819,7 +822,7 @@ controller.getCongViecDashboard = catchAsync(async (req, res, next) => {
       assigned: formatStats(assignedStats),
     },
     null,
-    "Lấy dashboard công việc thành công"
+    "Lấy dashboard công việc thành công",
   );
 });
 
@@ -845,19 +848,21 @@ controller.getCongViecSummary = catchAsync(async (req, res, next) => {
   const [total, urgent] = await Promise.all([
     CongViec.countDocuments({
       $or: [
-        { NguoiNhanID: objectId(nhanVienId) },
-        { NguoiGiaoID: objectId(nhanVienId) },
+        { NguoiChinhID: objectId(nhanVienId) },
+        { NguoiGiaoViecID: objectId(nhanVienId) },
+        { "NguoiThamGia.NhanVienID": objectId(nhanVienId) },
       ],
-      TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+      TrangThai: { $ne: "HOAN_THANH" },
       isDeleted: { $ne: true },
     }),
 
     CongViec.countDocuments({
       $or: [
-        { NguoiNhanID: objectId(nhanVienId) },
-        { NguoiGiaoID: objectId(nhanVienId) },
+        { NguoiChinhID: objectId(nhanVienId) },
+        { NguoiGiaoViecID: objectId(nhanVienId) },
+        { "NguoiThamGia.NhanVienID": objectId(nhanVienId) },
       ],
-      TrangThai: { $nin: ["HOAN_THANH", "DA_HUY"] },
+      TrangThai: { $ne: "HOAN_THANH" },
       NgayHetHan: {
         $exists: true,
         $lte: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days
@@ -876,7 +881,7 @@ controller.getCongViecSummary = catchAsync(async (req, res, next) => {
       completionRate: 0, // Calculate if needed
     },
     null,
-    "Lấy tóm tắt công việc thành công"
+    "Lấy tóm tắt công việc thành công",
   );
 });
 
@@ -893,7 +898,7 @@ controller.getCrossCycleTasksSummary = catchAsync(async (req, res) => {
     throw new AppError(
       400,
       "Thiếu nhanVienID hoặc chuKyDanhGiaID trong query",
-      "MISSING_PARAMS"
+      "MISSING_PARAMS",
     );
   }
 
@@ -910,7 +915,7 @@ controller.getCrossCycleTasksSummary = catchAsync(async (req, res) => {
     true,
     data,
     null,
-    "Lấy tóm tắt công việc gán NVTQ chu kỳ cũ thành công"
+    "Lấy tóm tắt công việc gán NVTQ chu kỳ cũ thành công",
   );
 });
 
@@ -928,7 +933,7 @@ controller.layHoatDongGanDay = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "Tài khoản chưa liên kết với nhân viên",
-      "USER_NO_NHANVIEN"
+      "USER_NO_NHANVIEN",
     );
   }
 
@@ -947,7 +952,7 @@ controller.layHoatDongGanDay = catchAsync(async (req, res, next) => {
     true,
     { activities },
     null,
-    "Lấy hoạt động gần đây thành công"
+    "Lấy hoạt động gần đây thành công",
   );
 });
 
@@ -958,7 +963,7 @@ module.exports = controller;
 controller.giaoViec = catchAsync(async (req, res) => {
   const { id } = req.params;
   console.warn(
-    "[DEPRECATED] POST /congviec/:id/giao-viec – use /congviec/:id/transition {action:GIAO_VIEC}"
+    "[DEPRECATED] POST /congviec/:id/giao-viec – use /congviec/:id/transition {action:GIAO_VIEC}",
   );
   const dto = await congViecService.giaoViec(id, req.body || {}, req);
   return sendResponse(res, 200, true, dto, null, "Đã giao việc");
@@ -967,7 +972,7 @@ controller.giaoViec = catchAsync(async (req, res) => {
 controller.tiepNhan = catchAsync(async (req, res) => {
   const { id } = req.params;
   console.warn(
-    "[DEPRECATED] POST /congviec/:id/tiep-nhan – use /congviec/:id/transition {action:TIEP_NHAN}"
+    "[DEPRECATED] POST /congviec/:id/tiep-nhan – use /congviec/:id/transition {action:TIEP_NHAN}",
   );
   const dto = await congViecService.tiepNhan(id, req);
   return sendResponse(res, 200, true, dto, null, "Đã tiếp nhận công việc");
@@ -976,7 +981,7 @@ controller.tiepNhan = catchAsync(async (req, res) => {
 controller.hoanThanh = catchAsync(async (req, res) => {
   const { id } = req.params;
   console.warn(
-    "[DEPRECATED] POST /congviec/:id/hoan-thanh – use /congviec/:id/transition {action:HOAN_THANH(_TAM)}"
+    "[DEPRECATED] POST /congviec/:id/hoan-thanh – use /congviec/:id/transition {action:HOAN_THANH(_TAM)}",
   );
   const dto = await congViecService.hoanThanh(id, req);
   return sendResponse(res, 200, true, dto, null, "Đã chuyển chờ duyệt");
@@ -985,7 +990,7 @@ controller.hoanThanh = catchAsync(async (req, res) => {
 controller.duyetHoanThanh = catchAsync(async (req, res) => {
   const { id } = req.params;
   console.warn(
-    "[DEPRECATED] POST /congviec/:id/duyet-hoan-thanh – use /congviec/:id/transition {action:DUYET_HOAN_THANH}"
+    "[DEPRECATED] POST /congviec/:id/duyet-hoan-thanh – use /congviec/:id/transition {action:DUYET_HOAN_THANH}",
   );
   const dto = await congViecService.duyetHoanThanh(id, req);
   return sendResponse(res, 200, true, dto, null, "Đã duyệt hoàn thành");
@@ -998,7 +1003,7 @@ controller.transition = catchAsync(async (req, res) => {
   const dto = await congViecService.transition(
     id,
     { action, lyDo, ghiChu },
-    req
+    req,
   );
   // Build patch response (Step 4 optimization). If ?full=1 present -> include full object.
   const wantFull = String(req.query.full || "") === "1";
@@ -1034,6 +1039,80 @@ controller.transition = catchAsync(async (req, res) => {
     true,
     payload,
     null,
-    "Thao tác trạng thái thành công"
+    "Thao tác trạng thái thành công",
+  );
+});
+
+/**
+ * Get urgent tasks for Home page
+ * @route GET /api/workmanagement/congviec/urgent/:nhanVienId
+ * @desc Get top N tasks with upcoming deadlines (within N days)
+ * @access Private
+ * @param {String} nhanVienId - Employee ID
+ * @query {Number} limit - Default 5, max 20
+ * @query {Number} daysAhead - Default 3 (deadline within N days)
+ */
+controller.getUrgentTasks = catchAsync(async (req, res, next) => {
+  const { nhanVienId } = req.params;
+  const { limit = 5, daysAhead = 3 } = req.query;
+
+  if (!nhanVienId) {
+    throw new AppError(400, "Thiếu nhanVienId trong params", "MISSING_PARAMS");
+  }
+
+  const mongoose = require("mongoose");
+  const CongViec = require("../models/CongViec");
+  const objectId = mongoose.Types.ObjectId;
+
+  const deadlineThreshold = new Date();
+  deadlineThreshold.setDate(deadlineThreshold.getDate() + parseInt(daysAhead));
+
+  const tasks = await CongViec.find({
+    $or: [
+      { NguoiChinhID: objectId(nhanVienId) },
+      { NguoiGiaoViecID: objectId(nhanVienId) },
+      { "NguoiThamGia.NhanVienID": objectId(nhanVienId) },
+    ],
+    TrangThai: { $ne: "HOAN_THANH" },
+    NgayHetHan: { $exists: true, $lte: deadlineThreshold },
+    isDeleted: { $ne: true },
+  })
+    .sort({ NgayHetHan: 1, MucDoUuTien: -1 })
+    .limit(Math.min(parseInt(limit) || 5, 20))
+    .populate("NguoiGiaoViecID", "HoTen Images MaNhanVien")
+    .populate("NguoiChinhID", "HoTen Images")
+    .lean();
+
+  // Calculate remaining time
+  const now = new Date();
+  const tasksWithCountdown = tasks.map((task) => ({
+    ...task,
+    DaysRemaining: Math.ceil(
+      (new Date(task.NgayHetHan) - now) / (1000 * 60 * 60 * 24),
+    ),
+    HoursRemaining: Math.ceil(
+      (new Date(task.NgayHetHan) - now) / (1000 * 60 * 60),
+    ),
+  }));
+
+  // Get total count for "see all" link
+  const total = await CongViec.countDocuments({
+    $or: [
+      { NguoiChinhID: objectId(nhanVienId) },
+      { NguoiGiaoViecID: objectId(nhanVienId) },
+      { "NguoiThamGia.NhanVienID": objectId(nhanVienId) },
+    ],
+    TrangThai: { $ne: "HOAN_THANH" },
+    NgayHetHan: { $exists: true, $lte: deadlineThreshold },
+    isDeleted: { $ne: true },
+  });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { tasks: tasksWithCountdown, total },
+    null,
+    "Lấy danh sách công việc gấp thành công",
   );
 });

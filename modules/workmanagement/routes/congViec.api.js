@@ -23,7 +23,7 @@ router.get("/nhanvien/:nhanvienid", congViecController.getNhanVien);
  */
 router.get(
   "/congviec/:nhanvienid/received",
-  congViecController.getReceivedCongViecs
+  congViecController.getReceivedCongViecs,
 );
 
 /**
@@ -34,7 +34,7 @@ router.get(
  */
 router.get(
   "/congviec/:nhanvienid/assigned",
-  congViecController.getAssignedCongViecs
+  congViecController.getAssignedCongViecs,
 );
 
 /**
@@ -60,11 +60,11 @@ router.get("/congviec/:id/full-tree", congViecController.getFullTree);
 // Subtasks (Slim Plan)
 router.post(
   "/congviec/:id/subtasks",
-  congViecController.createSubtask // body giống create công việc nhưng bỏ qua CongViecChaID client (server set)
+  congViecController.createSubtask, // body giống create công việc nhưng bỏ qua CongViecChaID client (server set)
 );
 router.get(
   "/congviec/:id/children",
-  congViecController.listChildrenCongViec // danh sách con trực tiếp
+  congViecController.listChildrenCongViec, // danh sách con trực tiếp
 );
 
 // ========================================
@@ -124,7 +124,7 @@ router.get("/chu-ky-danh-gia/list", async (req, res, next) => {
  */
 router.get(
   "/congviec/dashboard-by-nhiemvu",
-  congViecController.getDashboardByNhiemVu
+  congViecController.getDashboardByNhiemVu,
 );
 
 /**
@@ -135,7 +135,7 @@ router.get(
  */
 router.get(
   "/congviec/summary-other-tasks",
-  congViecController.getOtherTasksSummary
+  congViecController.getOtherTasksSummary,
 );
 
 /**
@@ -146,7 +146,7 @@ router.get(
  */
 router.get(
   "/congviec/summary-collab-tasks",
-  congViecController.getCollabTasksSummary
+  congViecController.getCollabTasksSummary,
 );
 
 /**
@@ -157,7 +157,7 @@ router.get(
  */
 router.get(
   "/congviec/dashboard/:nhanVienId",
-  congViecController.getCongViecDashboard
+  congViecController.getCongViecDashboard,
 );
 
 /**
@@ -168,8 +168,17 @@ router.get(
  */
 router.get(
   "/congviec/summary/:nhanVienId",
-  congViecController.getCongViecSummary
+  congViecController.getCongViecSummary,
 );
+
+/**
+ * @route   GET /api/workmanagement/congviec/urgent/:nhanVienId
+ * @desc    Get urgent tasks with upcoming deadlines for Home page
+ * @access  Private
+ * @param   nhanVienId - Employee ID
+ * @query   limit (default 5), daysAhead (default 3)
+ */
+router.get("/congviec/urgent/:nhanVienId", congViecController.getUrgentTasks);
 
 /**
  * @route   GET /api/workmanagement/congviec/summary-cross-cycle-tasks
@@ -179,7 +188,7 @@ router.get(
  */
 router.get(
   "/congviec/summary-cross-cycle-tasks",
-  congViecController.getCrossCycleTasksSummary
+  congViecController.getCrossCycleTasksSummary,
 );
 
 /**
@@ -204,7 +213,7 @@ router.post("/congviec/:id/progress", congViecController.updateProgress);
 // Gán nhiệm vụ thường quy
 router.post(
   "/congviec/:id/assign-routine-task",
-  congViecController.assignRoutineTask
+  congViecController.assignRoutineTask,
 );
 
 // Flow actions
@@ -213,7 +222,7 @@ router.post("/congviec/:id/tiep-nhan", congViecController.tiepNhan);
 router.post("/congviec/:id/hoan-thanh", congViecController.hoanThanh);
 router.post(
   "/congviec/:id/duyet-hoan-thanh",
-  congViecController.duyetHoanThanh
+  congViecController.duyetHoanThanh,
 );
 // Unified transition endpoint (new consolidated workflow actions)
 router.post("/congviec/:id/transition", congViecController.transition);
@@ -229,12 +238,12 @@ router.post("/congviec/:id/comment", congViecController.addComment);
 // Cập nhật ghi chú lịch sử trạng thái (inline edit)
 router.put(
   "/congviec/:id/history/:index/note",
-  congViecController.updateHistoryNote
+  congViecController.updateHistoryNote,
 );
 // Cập nhật ghi chú lịch sử tiến độ
 router.put(
   "/congviec/:id/progress-history/:index/note",
-  congViecController.updateProgressHistoryNote
+  congViecController.updateProgressHistoryNote,
 );
 
 /**

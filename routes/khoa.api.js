@@ -18,11 +18,26 @@ router.post(
     body("TenKhoa", "Tên khoa không được để trống").exists().notEmpty(),
     body("LoaiKhoa", "Loại khoa không hợp lệ")
       .exists()
-      .isIn(["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc","phong", "khac"]),
+      .isIn([
+        "kcc",
+        "kkb",
+        "noi",
+        "ngoai",
+        "cskh",
+        "gmhs",
+        "cdha",
+        "tdcn",
+        "clc",
+        "xn",
+        "hhtm",
+        "pkyc",
+        "phong",
+        "khac",
+      ]),
     body("STT", "STT phải là số").exists().isNumeric(),
     body("MaKhoa", "Mã khoa không được để trống").exists().notEmpty(),
   ]),
-  khoaController.insertOne
+  khoaController.insertOne,
 );
 
 /**
@@ -31,6 +46,13 @@ router.post(
  * @access Login required
  */
 router.get("/all", authentication.loginRequired, khoaController.getAll);
+
+/**
+ * @route GET /khoa/iso
+ * @description Lấy danh sách khoa liên quan ISO (IsISORelevant = true)
+ * @access Login required
+ */
+router.get("/iso", authentication.loginRequired, khoaController.getISORelevant);
 
 /**
  * @route GET /khoa
@@ -49,7 +71,25 @@ router.get(
   "/:id",
   authentication.loginRequired,
   validators.validate([param("id", "ID không hợp lệ").isMongoId()]),
-  khoaController.getById
+  khoaController.getById,
+);
+
+/**
+ * @route PUT /khoa/bulk-update-iso
+ * @description Cập nhật hàng loạt IsISORelevant cho nhiều khoa (QLCL only)
+ * @body {khoaIds: [id1, id2, ...], isISORelevant: boolean}
+ * @access QLCL required
+ */
+router.put(
+  "/bulk-update-iso",
+  authentication.loginRequired,
+  authentication.qlclRequired,
+  validators.validate([
+    body("khoaIds", "Danh sách khoa không hợp lệ").isArray({ min: 1 }),
+    body("khoaIds.*", "ID khoa không hợp lệ").isMongoId(),
+    body("isISORelevant", "isISORelevant phải là boolean").isBoolean(),
+  ]),
+  khoaController.bulkUpdateISO,
 );
 
 /**
@@ -66,11 +106,26 @@ router.put(
     body("TenKhoa", "Tên khoa không được để trống").optional().notEmpty(),
     body("LoaiKhoa", "Loại khoa không hợp lệ")
       .optional()
-      .isIn(["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc","phong","khac"]),
+      .isIn([
+        "kcc",
+        "kkb",
+        "noi",
+        "ngoai",
+        "cskh",
+        "gmhs",
+        "cdha",
+        "tdcn",
+        "clc",
+        "xn",
+        "hhtm",
+        "pkyc",
+        "phong",
+        "khac",
+      ]),
     body("STT", "STT phải là số").optional().isNumeric(),
     body("MaKhoa", "Mã khoa không được để trống").optional().notEmpty(),
   ]),
-  khoaController.updateOne
+  khoaController.updateOne,
 );
 
 /**
@@ -82,7 +137,7 @@ router.delete(
   "/:id",
   authentication.loginRequired,
   validators.validate([param("id", "ID không hợp lệ").isMongoId()]),
-  khoaController.deleteOne
+  khoaController.deleteOne,
 );
 
 module.exports = router;

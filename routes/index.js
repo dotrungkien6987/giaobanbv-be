@@ -126,4 +126,8 @@ router.use("/tapsan", tapsanApi);
 const tapsanBaiBaoApi = require("./tapsanbaibao");
 router.use("/tapsan", tapsanBaiBaoApi);
 
+// QuyTrinhISO API (ISO Document Management)
+const quyTrinhISOApi = require("./quyTrinhISO.api");
+router.use("/quytrinhiso", quyTrinhISOApi);
+
 module.exports = router;

@@ -30,7 +30,7 @@ async function getNhanVienId(req) {
     throw new AppError(
       400,
       "Tài khoản chưa liên kết với nhân viên. Vui lòng liên hệ quản trị viên.",
-      "USER_NO_NHANVIEN"
+      "USER_NO_NHANVIEN",
     );
   }
   return {
@@ -69,7 +69,7 @@ controller.suaYeuCau = catchAsync(async (req, res, next) => {
     true,
     yeuCau,
     null,
-    "Cập nhật yêu cầu thành công"
+    "Cập nhật yêu cầu thành công",
   );
 });
 
@@ -89,7 +89,7 @@ controller.layChiTiet = catchAsync(async (req, res, next) => {
     true,
     result,
     null,
-    "Lấy chi tiết yêu cầu thành công"
+    "Lấy chi tiết yêu cầu thành công",
   );
 });
 
@@ -103,7 +103,7 @@ controller.layDanhSach = catchAsync(async (req, res, next) => {
   const result = await yeuCauService.layDanhSach(
     req.query,
     nhanVienId,
-    userRole
+    userRole,
   );
 
   return sendResponse(
@@ -112,7 +112,7 @@ controller.layDanhSach = catchAsync(async (req, res, next) => {
     true,
     result,
     null,
-    "Lấy danh sách yêu cầu thành công"
+    "Lấy danh sách yêu cầu thành công",
   );
 });
 
@@ -131,7 +131,7 @@ controller.layLichSu = catchAsync(async (req, res, next) => {
     true,
     lichSu,
     null,
-    "Lấy lịch sử yêu cầu thành công"
+    "Lấy lịch sử yêu cầu thành công",
   );
 });
 
@@ -154,7 +154,7 @@ const executeAction = (action) =>
       req.body,
       nhanVienId,
       userRole,
-      { ifUnmodifiedSince }
+      { ifUnmodifiedSince },
     );
 
     const messages = {
@@ -181,7 +181,7 @@ const executeAction = (action) =>
       true,
       yeuCau,
       null,
-      messages[action] || "Thực hiện thành công"
+      messages[action] || "Thực hiện thành công",
     );
   });
 
@@ -262,7 +262,7 @@ controller.layBinhLuan = catchAsync(async (req, res, next) => {
     true,
     binhLuan,
     null,
-    "Lấy bình luận thành công"
+    "Lấy bình luận thành công",
   );
 });
 
@@ -281,7 +281,7 @@ controller.layTepTin = catchAsync(async (req, res, next) => {
     true,
     tepTin,
     null,
-    "Lấy file đính kèm thành công"
+    "Lấy file đính kèm thành công",
   );
 });
 
@@ -300,7 +300,7 @@ controller.layDashboardMetrics = catchAsync(async (req, res, next) => {
     true,
     metrics,
     null,
-    "Lấy dashboard metrics thành công"
+    "Lấy dashboard metrics thành công",
   );
 });
 
@@ -332,28 +332,28 @@ controller.getYeuCauSummary = catchAsync(async (req, res, next) => {
   const [sent, needAction, inProgress, completed] = await Promise.all([
     // Yêu cầu tôi gửi
     YeuCau.countDocuments({
-      NguoiGuiID: objectId(nhanVienId),
+      NguoiYeuCauID: objectId(nhanVienId),
       isDeleted: { $ne: true },
     }),
 
     // Cần xử lý (khoa tôi nhận, chưa xử lý)
     YeuCau.countDocuments({
-      KhoaNhanID: user.KhoaID,
-      TrangThai: "CHO_XU_LY",
+      KhoaDichID: user.KhoaID,
+      TrangThai: "MOI",
       isDeleted: { $ne: true },
     }),
 
     // Đang xử lý
     YeuCau.countDocuments({
-      KhoaNhanID: user.KhoaID,
+      KhoaDichID: user.KhoaID,
       TrangThai: "DANG_XU_LY",
       isDeleted: { $ne: true },
     }),
 
     // Hoàn thành (khoa tôi xử lý)
     YeuCau.countDocuments({
-      KhoaNhanID: user.KhoaID,
-      TrangThai: "HOAN_THANH",
+      KhoaDichID: user.KhoaID,
+      TrangThai: "DA_HOAN_THANH",
       isDeleted: { $ne: true },
     }),
   ]);
@@ -369,7 +369,7 @@ controller.getYeuCauSummary = catchAsync(async (req, res, next) => {
       completed,
     },
     null,
-    "Lấy tóm tắt yêu cầu thành công"
+    "Lấy tóm tắt yêu cầu thành công",
   );
 });
 
@@ -389,7 +389,7 @@ controller.layQuyenCuaToi = catchAsync(async (req, res, next) => {
     true,
     permissions,
     null,
-    "Lấy quyền thành công"
+    "Lấy quyền thành công",
   );
 });
 
@@ -407,7 +407,7 @@ controller.layBadgeCounts = catchAsync(async (req, res, next) => {
     true,
     badgeCounts,
     null,
-    "Lấy badge counts thành công"
+    "Lấy badge counts thành công",
   );
 });
 /**
@@ -425,7 +425,7 @@ controller.layBadgeCountsTheoPage = catchAsync(async (req, res, next) => {
   const badgeCounts = await yeuCauService.layBadgeCountsTheoPage(
     nhanVienId,
     pageKey,
-    nguoiXem
+    nguoiXem,
   );
 
   return sendResponse(
@@ -434,7 +434,7 @@ controller.layBadgeCountsTheoPage = catchAsync(async (req, res, next) => {
     true,
     badgeCounts,
     null,
-    "Lấy badge counts theo page thành công"
+    "Lấy badge counts theo page thành công",
   );
 });
 /**
@@ -451,7 +451,7 @@ controller.layDashboardXuLy = catchAsync(async (req, res, next) => {
     true,
     dashboard,
     null,
-    "Lấy dashboard xử lý thành công"
+    "Lấy dashboard xử lý thành công",
   );
 });
 
@@ -469,7 +469,7 @@ controller.layDashboardDieuPhoi = catchAsync(async (req, res, next) => {
     true,
     dashboard,
     null,
-    "Lấy dashboard điều phối thành công"
+    "Lấy dashboard điều phối thành công",
   );
 });
 
@@ -484,7 +484,7 @@ controller.ganNhiemVuThuongQuy = catchAsync(async (req, res) => {
   const yeuCau = await yeuCauService.ganNhiemVuThuongQuy(
     id,
     { nhiemVuThuongQuyID, isKhac },
-    req
+    req,
   );
 
   return sendResponse(
@@ -493,7 +493,7 @@ controller.ganNhiemVuThuongQuy = catchAsync(async (req, res) => {
     true,
     yeuCau,
     null,
-    "Gán nhiệm vụ thường quy thành công"
+    "Gán nhiệm vụ thường quy thành công",
   );
 });
 
@@ -508,7 +508,7 @@ controller.uploadFiles = catchAsync(async (req, res) => {
     id,
     req.files || [],
     { moTa },
-    req
+    req,
   );
   return sendResponse(res, 201, true, dtos, null, "Tải tệp thành công");
 });
@@ -525,7 +525,7 @@ controller.createCommentWithFiles = catchAsync(async (req, res) => {
     noiDung,
     req.files || [],
     req,
-    parentId || null
+    parentId || null,
   );
   return sendResponse(
     res,
@@ -533,7 +533,7 @@ controller.createCommentWithFiles = catchAsync(async (req, res) => {
     true,
     result,
     null,
-    "Tạo bình luận kèm tệp thành công"
+    "Tạo bình luận kèm tệp thành công",
   );
 });
 
@@ -551,7 +551,7 @@ controller.listFiles = catchAsync(async (req, res) => {
     true,
     result,
     null,
-    "Lấy danh sách tệp thành công"
+    "Lấy danh sách tệp thành công",
   );
 });
 
@@ -588,7 +588,7 @@ controller.recallComment = catchAsync(async (req, res) => {
     true,
     result,
     null,
-    "Thu hồi bình luận thành công"
+    "Thu hồi bình luận thành công",
   );
 });
 
@@ -601,7 +601,7 @@ controller.recallCommentText = catchAsync(async (req, res) => {
   const result = await yeuCauService.recallCommentText(
     yeuCauId,
     commentId,
-    req
+    req,
   );
   return sendResponse(
     res,
@@ -609,7 +609,7 @@ controller.recallCommentText = catchAsync(async (req, res) => {
     true,
     result,
     null,
-    "Thu hồi nội dung bình luận thành công"
+    "Thu hồi nội dung bình luận thành công",
   );
 });
 
@@ -627,7 +627,7 @@ controller.getCountsByNhiemVu = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "Thiếu tham số bắt buộc: nhiemVuThuongQuyIDs, nhanVienID, chuKyDanhGiaID",
-      "MISSING_PARAMS"
+      "MISSING_PARAMS",
     );
   }
 
@@ -645,7 +645,7 @@ controller.getCountsByNhiemVu = catchAsync(async (req, res, next) => {
     true,
     counts,
     null,
-    "Lấy số lượng yêu cầu thành công"
+    "Lấy số lượng yêu cầu thành công",
   );
 });
 
@@ -661,7 +661,7 @@ controller.getDashboardByNhiemVu = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "Thiếu tham số bắt buộc: nhiemVuThuongQuyID, nhanVienID, chuKyDanhGiaID",
-      "MISSING_PARAMS"
+      "MISSING_PARAMS",
     );
   }
 
@@ -677,7 +677,7 @@ controller.getDashboardByNhiemVu = catchAsync(async (req, res, next) => {
     true,
     dashboardData,
     null,
-    "Lấy dashboard yêu cầu thành công"
+    "Lấy dashboard yêu cầu thành công",
   );
 });
 
@@ -693,7 +693,7 @@ controller.getOtherYeuCauSummary = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "Thiếu tham số bắt buộc: nhanVienID, chuKyDanhGiaID",
-      "MISSING_PARAMS"
+      "MISSING_PARAMS",
     );
   }
 
@@ -708,7 +708,7 @@ controller.getOtherYeuCauSummary = catchAsync(async (req, res, next) => {
     true,
     data,
     null,
-    "Lấy tổng hợp yêu cầu khác thành công"
+    "Lấy tổng hợp yêu cầu khác thành công",
   );
 });
 
@@ -735,7 +735,7 @@ controller.layHoatDongGanDay = catchAsync(async (req, res, next) => {
     true,
     activities,
     null,
-    "Lấy hoạt động gần đây thành công"
+    "Lấy hoạt động gần đây thành công",
   );
 });
 
@@ -760,7 +760,7 @@ controller.layPhanBoTrangThai = catchAsync(async (req, res, next) => {
     true,
     distribution,
     null,
-    "Lấy phân bố trạng thái thành công"
+    "Lấy phân bố trạng thái thành công",
   );
 });
 
@@ -784,7 +784,7 @@ controller.layBadgeCountsNangCao = catchAsync(async (req, res, next) => {
     true,
     badges,
     null,
-    "Lấy badge counts nâng cao thành công"
+    "Lấy badge counts nâng cao thành công",
   );
 });
 

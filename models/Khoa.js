@@ -6,15 +6,36 @@ const khoaSchema = Schema(
     STT: { type: Number, required: true },
     LoaiKhoa: {
       type: String,
-      enum: ["kcc", "kkb", "noi", "ngoai", "cskh", "gmhs", "cdha", "tdcn", "clc", "xn", "hhtm", "pkyc","phong","khac"],
-      required: true
+      enum: [
+        "kcc",
+        "kkb",
+        "noi",
+        "ngoai",
+        "cskh",
+        "gmhs",
+        "cdha",
+        "tdcn",
+        "clc",
+        "xn",
+        "hhtm",
+        "pkyc",
+        "phong",
+        "khac",
+      ],
+      required: true,
+    },
+    IsISORelevant: {
+      type: Boolean,
+      default: false,
+      description:
+        "Indicates if department is relevant for ISO process management",
     },
     MaKhoa: { type: String, required: true, unique: true },
     HisDepartmentID: { type: Number, required: false },
     HisDepartmentGroupID: { type: Number, required: false },
     HisDepartmentType: { type: Number, required: false },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Thêm index cho các trường thường được tìm kiếm

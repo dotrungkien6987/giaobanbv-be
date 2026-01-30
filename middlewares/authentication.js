@@ -94,7 +94,7 @@ authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
       throw new AppError(
         403,
         "Admin or Manager required",
-        "AUTHORIZATION_ERROR"
+        "AUTHORIZATION_ERROR",
       );
     }
 
@@ -126,7 +126,7 @@ authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
       throw new AppError(
         403,
         "Admin or Manager required",
-        "AUTHORIZATION_ERROR"
+        "AUTHORIZATION_ERROR",
       );
     }
 
@@ -134,6 +134,21 @@ authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// Middleware for QLCL (Quality Control) - used for QuyTrinhISO module
+authentication.qlclRequired = catchAsync(async (req, res, next) => {
+  const role = (req.user?.PhanQuyen || "").toLowerCase();
+
+  if (["qlcl", "admin", "superadmin"].includes(role)) {
+    return next();
+  }
+
+  throw new AppError(
+    403,
+    "Chỉ người dùng QLCL mới có quyền thực hiện",
+    "AUTHORIZATION_ERROR",
+  );
 });
 
 module.exports = authentication;

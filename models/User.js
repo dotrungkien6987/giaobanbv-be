@@ -16,13 +16,13 @@ const userSchema = Schema(
     Email: { type: String, require: false, default: "" },
     PhanQuyen: {
       type: String,
-      enum: ["admin", "manager", "nomal", "daotao", "noibo"],
+      enum: ["admin", "manager", "nomal", "daotao", "noibo", "qlcl"],
     },
     KhoaTaiChinh: { type: [String], require: false, default: [] },
     DashBoard: { type: [String], require: false, default: [] },
     KhoaLichTruc: { type: [String], require: false, default: [] },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 userSchema.methods.toJSON = function () {

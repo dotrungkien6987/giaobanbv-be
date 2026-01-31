@@ -691,11 +691,40 @@ controller.getDistributedToMe = catchAsync(async (req, res) => {
 
   // Add NgayPhanPhoi and check if new (within 7 days)
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const itemsWithInfo = items.map((item) => ({
-    ...item,
-    NgayPhanPhoi: phanPhoiMap[item._id.toString()],
-    isNew: phanPhoiMap[item._id.toString()] > sevenDaysAgo,
-  }));
+
+  // Batch query files cho tất cả quy trình (optimize: 1 query thay vì N queries)
+  const quyTrinhIds = items.map((item) => item._id.toString());
+  const files = await TepTin.find({
+    OwnerType: "quytrinhiso",
+    OwnerID: { $in: quyTrinhIds },
+    TrangThai: "ACTIVE",
+    OwnerField: { $in: ["filepdf", "fileword"] },
+  })
+    .select("OwnerID OwnerField TenFile TenGoc KichThuoc _id")
+    .lean();
+
+  // Group files by OwnerID and OwnerField
+  const filesMap = files.reduce((acc, file) => {
+    const key = file.OwnerID;
+    if (!acc[key]) acc[key] = { pdf: null, word: null };
+    if (file.OwnerField === "filepdf" && !acc[key].pdf) {
+      acc[key].pdf = file;
+    } else if (file.OwnerField === "fileword" && !acc[key].word) {
+      acc[key].word = file;
+    }
+    return acc;
+  }, {});
+
+  const itemsWithInfo = items.map((item) => {
+    const itemFiles = filesMap[item._id.toString()] || {};
+    return {
+      ...item,
+      NgayPhanPhoi: phanPhoiMap[item._id.toString()],
+      isNew: phanPhoiMap[item._id.toString()] > sevenDaysAgo,
+      FilePDF: itemFiles.pdf || null,
+      FileWord: itemFiles.word || null,
+    };
+  });
 
   return sendResponse(
     res,
@@ -750,6 +779,30 @@ controller.getBuiltByMyDept = catchAsync(async (req, res) => {
   ]);
 
   // Get distribution count for each
+  const itemIds = items.map((item) => item._id.toString());
+
+  // Batch query files (1 query thay vì N)
+  const files = await TepTin.find({
+    OwnerType: "quytrinhiso",
+    OwnerID: { $in: itemIds },
+    TrangThai: "ACTIVE",
+    OwnerField: { $in: ["filepdf", "fileword"] },
+  })
+    .select("OwnerID OwnerField TenFile TenGoc KichThuoc _id")
+    .lean();
+
+  // Group files by OwnerID
+  const filesMap = files.reduce((acc, file) => {
+    const key = file.OwnerID;
+    if (!acc[key]) acc[key] = { pdf: null, word: null };
+    if (file.OwnerField === "filepdf" && !acc[key].pdf) {
+      acc[key].pdf = file;
+    } else if (file.OwnerField === "fileword" && !acc[key].word) {
+      acc[key].word = file;
+    }
+    return acc;
+  }, {});
+
   const itemsWithDistribution = await Promise.all(
     items.map(async (item) => {
       const phanPhoi = await QuyTrinhISO_KhoaPhanPhoi.find({
@@ -758,10 +811,14 @@ controller.getBuiltByMyDept = catchAsync(async (req, res) => {
         .populate("KhoaID", "TenKhoa MaKhoa")
         .lean();
 
+      const itemFiles = filesMap[item._id.toString()] || {};
+
       return {
         ...item,
         KhoaPhanPhoi: phanPhoi.map((p) => p.KhoaID),
         soKhoaPhanPhoi: phanPhoi.length,
+        FilePDF: itemFiles.pdf || null,
+        FileWord: itemFiles.word || null,
       };
     }),
   );

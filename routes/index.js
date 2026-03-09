@@ -90,6 +90,10 @@ router.use("/his/sothutu", soThuTuApi);
 const dichVuTrungApi = require("./his/dichvutrung.api");
 router.use("/his/dichvutrung", dichVuTrungApi);
 
+// API báo cáo đặt lịch khám qua app
+const datLichKhamApi = require("./his/datLichKham.api");
+router.use("/his/datlichkham", datLichKhamApi);
+
 // API quản lý đoàn vào
 const doanVaoApi = require("./doanvao.api");
 router.use("/doanvao", doanVaoApi);

@@ -54,6 +54,7 @@ Bảng `department` lưu trữ thông tin về [mô tả mục đích của bả
 | trakq_min | double precision | Có | '0'::double precision | Không | |
 | trakq_max | double precision | Có | '0'::double precision | Không | |
 | truongphongcode | text | Có |  | Không | |
+| listdoituongdichvuid | text | Có |  | Không | |
 
 ## Các chỉ mục
 
@@ -66,4 +67,3 @@ Bảng `department` lưu trữ thông tin về [mô tả mục đích của bả
 ## Ghi chú
 
 [Các ghi chú bổ sung về bảng]
-Departmenttype: = 7 là phòng thực hiện, = 38 là phòng lấy mẫu, = 2 là phòng khám,

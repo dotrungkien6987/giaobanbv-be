@@ -85,6 +85,42 @@ authentication.adminRequired = catchAsync(async (req, res, next) => {
   }
 });
 
+authentication.adminOrCnttRequired = catchAsync(async (req, res, next) => {
+  try {
+    const role = (req.user?.PhanQuyen || "").toLowerCase();
+    if (role) {
+      if (["admin", "superadmin", "cntt"].includes(role)) return next();
+      throw new AppError(403, "Admin or CNTT required", "AUTHORIZATION_ERROR");
+    }
+
+    // Fallback (if used without loginRequired)
+    const tokenString = req.headers.authorization;
+    if (!tokenString)
+      throw new AppError(401, "Login required", "Authentication Error");
+    const token = tokenString.replace("Bearer ", "");
+
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET_KEY);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        throw new AppError(401, "Token expired", "Authenticate Error");
+      }
+      throw new AppError(401, "Token is invalid", "Authentication Error");
+    }
+
+    req.userId = payload._id;
+    const user = await User.findById(req.userId).select("PhanQuyen");
+    const fallbackRole = (user?.PhanQuyen || "").toLowerCase();
+    if (!["admin", "superadmin", "cntt"].includes(fallbackRole))
+      throw new AppError(403, "Admin or CNTT required", "AUTHORIZATION_ERROR");
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
   try {
     const role = (req.user?.PhanQuyen || "").toLowerCase();

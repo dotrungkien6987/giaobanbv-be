@@ -6,35 +6,35 @@ const authentication = require("../../middlewares/authentication");
 router.get(
   "/",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   congThucManTinhController.getAll,
 );
 
 router.get(
   "/active",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   congThucManTinhController.getActive,
 );
 
 router.post(
   "/",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   congThucManTinhController.create,
 );
 
 router.put(
   "/:id",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   congThucManTinhController.update,
 );
 
 router.delete(
   "/:id",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   congThucManTinhController.delete,
 );
 

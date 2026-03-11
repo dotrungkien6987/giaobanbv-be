@@ -6,35 +6,35 @@ const authentication = require("../../middlewares/authentication");
 router.get(
   "/",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   maBenhManTinhController.getAll,
 );
 
 router.post(
   "/",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   maBenhManTinhController.create,
 );
 
 router.post(
   "/batch",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   maBenhManTinhController.batchCreate,
 );
 
 router.put(
   "/:id",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   maBenhManTinhController.update,
 );
 
 router.delete(
   "/:id",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   maBenhManTinhController.delete,
 );
 

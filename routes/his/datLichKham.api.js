@@ -11,28 +11,28 @@ const authentication = require("../../middlewares/authentication");
 router.post(
   "/tonghop",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   datLichKhamController.getBaoCaoTongHop,
 );
 
 router.post(
   "/chitiet",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   datLichKhamController.getChiTietDatLich,
 );
 
 router.post(
   "/chitiet-lichsu",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   datLichKhamController.getChiTietVoiLichSu,
 );
 
 router.post(
   "/export",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   datLichKhamController.exportChiTiet,
 );
 
@@ -43,28 +43,28 @@ router.post(
 router.post(
   "/mantinh",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   xacNhanManTinhController.createManTinh,
 );
 
 router.post(
   "/mantinh/batch",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   xacNhanManTinhController.batchCreateManTinh,
 );
 
 router.post(
   "/mantinh/list",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   xacNhanManTinhController.getByDangKyKhamIds,
 );
 
 router.delete(
   "/mantinh/batch",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.adminOrCnttRequired,
   xacNhanManTinhController.batchDeleteManTinh,
 );
 

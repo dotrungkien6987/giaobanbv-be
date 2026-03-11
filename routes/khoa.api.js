@@ -55,6 +55,19 @@ router.get("/all", authentication.loginRequired, khoaController.getAll);
 router.get("/iso", authentication.loginRequired, khoaController.getISORelevant);
 
 /**
+ * @route GET /khoa/iso/check-distributions
+ * @description Kiểm tra bản ghi phân phối tồn tại trước khi bỏ cấu hình khoa ISO
+ * @query {khoaIds} - danh sách ID khoa (comma-separated hoặc array)
+ * @access QLCL required
+ */
+router.get(
+  "/iso/check-distributions",
+  authentication.loginRequired,
+  authentication.qlclRequired,
+  khoaController.checkDistributions,
+);
+
+/**
  * @route GET /khoa
  * @description Lấy danh sách khoa có phân trang
  * @query {page, limit, TenKhoa, LoaiKhoa}

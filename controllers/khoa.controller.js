@@ -1,5 +1,6 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const Khoa = require("../models/Khoa");
+const QuyTrinhISO_KhoaPhanPhoi = require("../models/QuyTrinhISO_KhoaPhanPhoi");
 
 const khoaController = {};
 
@@ -160,31 +161,14 @@ khoaController.deleteOne = catchAsync(async (req, res, next) => {
 
 // Bulk update IsISORelevant for multiple Khoas (QLCL only)
 khoaController.bulkUpdateISO = catchAsync(async (req, res, next) => {
-  console.log(
-    "🔍 bulkUpdateISO called - req.body:",
-    JSON.stringify(req.body, null, 2),
-  );
-
-  const { khoaIds, isISORelevant } = req.body;
-
-  console.log("🔍 khoaIds:", khoaIds);
-  console.log(
-    "🔍 khoaIds type:",
-    typeof khoaIds,
-    "isArray:",
-    Array.isArray(khoaIds),
-  );
-  console.log("🔍 isISORelevant:", isISORelevant);
-  console.log("🔍 isISORelevant type:", typeof isISORelevant);
+  const { khoaIds, isISORelevant, cascade = false } = req.body;
 
   // Validation
   if (!Array.isArray(khoaIds) || khoaIds.length === 0) {
-    console.error("❌ Validation failed: khoaIds not array or empty");
     throw new AppError(400, "Danh sách khoa không hợp lệ", "Bulk Update Error");
   }
 
   if (typeof isISORelevant !== "boolean") {
-    console.error("❌ Validation failed: isISORelevant not boolean");
     throw new AppError(
       400,
       "Giá trị IsISORelevant phải là true hoặc false",
@@ -192,7 +176,14 @@ khoaController.bulkUpdateISO = catchAsync(async (req, res, next) => {
     );
   }
 
-  console.log("✅ Validation passed, executing bulkWrite...");
+  // Cascade: xóa bản ghi phân phối khi bỏ cấu hình khoa ISO
+  let deletedDistributionCount = 0;
+  if (!isISORelevant && cascade) {
+    const deleteResult = await QuyTrinhISO_KhoaPhanPhoi.deleteMany({
+      KhoaID: { $in: khoaIds },
+    });
+    deletedDistributionCount = deleteResult.deletedCount;
+  }
 
   // Bulk update using bulkWrite for performance
   const bulkOps = khoaIds.map((id) => ({
@@ -204,8 +195,6 @@ khoaController.bulkUpdateISO = catchAsync(async (req, res, next) => {
 
   const result = await Khoa.bulkWrite(bulkOps);
 
-  console.log("✅ bulkWrite result:", result);
-
   // Fetch updated khoas to return
   const updatedKhoas = await Khoa.find({ _id: { $in: khoaIds } }).sort({
     STT: 1,
@@ -215,10 +204,72 @@ khoaController.bulkUpdateISO = catchAsync(async (req, res, next) => {
     res,
     200,
     true,
-    { khoas: updatedKhoas, modifiedCount: result.modifiedCount },
+    {
+      khoas: updatedKhoas,
+      modifiedCount: result.modifiedCount,
+      deletedDistributionCount,
+    },
     null,
-    `Cập nhật ${result.modifiedCount} khoa thành công`,
+    `Cập nhật ${result.modifiedCount} khoa thành công${
+      deletedDistributionCount > 0
+        ? `, xóa ${deletedDistributionCount} bản ghi phân phối`
+        : ""
+    }`,
   );
+});
+
+// Check distributions for ISO khoa before unconfiguring (QLCL only)
+// GET /khoa/iso/check-distributions?khoaIds=id1,id2,...
+khoaController.checkDistributions = catchAsync(async (req, res, next) => {
+  const { khoaIds } = req.query;
+
+  if (!khoaIds) {
+    return sendResponse(res, 200, true, { affected: [], total: 0 }, null, "OK");
+  }
+
+  const khoaIdList = Array.isArray(khoaIds)
+    ? khoaIds
+    : khoaIds.split(",").filter(Boolean);
+
+  if (khoaIdList.length === 0) {
+    return sendResponse(res, 200, true, { affected: [], total: 0 }, null, "OK");
+  }
+
+  // Aggregate distribution count per khoa
+  const distributions = await QuyTrinhISO_KhoaPhanPhoi.aggregate([
+    {
+      $match: {
+        KhoaID: {
+          $in: khoaIdList.map((id) =>
+            require("mongoose").Types.ObjectId.createFromHexString(id),
+          ),
+        },
+      },
+    },
+    { $group: { _id: "$KhoaID", soTaiLieu: { $sum: 1 } } },
+  ]);
+
+  // Get khoa names
+  const khoaMap = {};
+  const khoas = await Khoa.find({ _id: { $in: khoaIdList } })
+    .select("_id TenKhoa MaKhoa")
+    .lean();
+  khoas.forEach((k) => {
+    khoaMap[k._id.toString()] = k;
+  });
+
+  const affected = distributions
+    .filter((d) => d.soTaiLieu > 0)
+    .map((d) => ({
+      khoaId: d._id,
+      TenKhoa: khoaMap[d._id.toString()]?.TenKhoa || "N/A",
+      MaKhoa: khoaMap[d._id.toString()]?.MaKhoa || "",
+      soTaiLieu: d.soTaiLieu,
+    }));
+
+  const total = affected.reduce((sum, a) => sum + a.soTaiLieu, 0);
+
+  return sendResponse(res, 200, true, { affected, total }, null, "OK");
 });
 
 module.exports = khoaController;

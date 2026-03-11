@@ -94,6 +94,14 @@ router.use("/his/dichvutrung", dichVuTrungApi);
 const datLichKhamApi = require("./his/datLichKham.api");
 router.use("/his/datlichkham", datLichKhamApi);
 
+// API quản lý mã bệnh mãn tính
+const maBenhManTinhApi = require("./his/maBenhManTinh.api");
+router.use("/his/mabenh-mantinh", maBenhManTinhApi);
+
+// API quản lý công thức lọc mãn tính
+const congThucManTinhApi = require("./his/congThucManTinh.api");
+router.use("/his/congthuc-mantinh", congThucManTinhApi);
+
 // API quản lý đoàn vào
 const doanVaoApi = require("./doanvao.api");
 router.use("/doanvao", doanVaoApi);

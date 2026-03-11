@@ -56,10 +56,19 @@ const quyTrinhISOSchema = new Schema(
     },
 
     // === SOFT DELETE ===
+    IsDeleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    // === LIFECYCLE STATUS ===
+    // DRAFT    = vừa tạo, chưa phát hành, chỉ QLCL thấy, không phân phối được
+    // ACTIVE   = đang hiệu lực, phân phối được, user thường thấy
+    // INACTIVE = đã thu hồi, QLCL thấy trong lịch sử, user thường không thấy
     TrangThai: {
       type: String,
-      enum: ["ACTIVE", "DELETED"],
-      default: "ACTIVE",
+      enum: ["DRAFT", "ACTIVE", "INACTIVE"],
+      default: "DRAFT",
     },
   },
   {
@@ -72,8 +81,8 @@ const quyTrinhISOSchema = new Schema(
 quyTrinhISOSchema.index({ MaQuyTrinh: 1, PhienBan: 1 });
 quyTrinhISOSchema.index({ KhoaXayDungID: 1 });
 quyTrinhISOSchema.index({ NgayHieuLuc: -1 });
-quyTrinhISOSchema.index({ TrangThai: 1 });
-quyTrinhISOSchema.index({ MaQuyTrinh: 1, TrangThai: 1 });
+quyTrinhISOSchema.index({ IsDeleted: 1, TrangThai: 1 });
+quyTrinhISOSchema.index({ MaQuyTrinh: 1, IsDeleted: 1 });
 
 // === VIRTUALS ===
 quyTrinhISOSchema.virtual("MaPhienBan").get(function () {

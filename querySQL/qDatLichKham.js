@@ -49,6 +49,7 @@ dat_lich AS (
         dangkykhamid,
         nguoigioithieuid,
         dangkykhamstatus,
+        dangkykhaminitdate,
         dangkykhamdate,
         patientid_old
     FROM dangkykham
@@ -247,6 +248,7 @@ dat_lich AS (
         dangkykhamid,
         nguoigioithieuid,
         dangkykhamstatus,
+        dangkykhaminitdate,
         dangkykhamdate,
         patientid,
         patientid_old
@@ -289,6 +291,7 @@ SELECT
 
     -- Đặt lịch
     dl.dangkykhamid,
+    dl.dangkykhaminitdate,
     dl.dangkykhamdate,
     dl.dangkykhamstatus,
     dl.patientid_old,
@@ -372,6 +375,7 @@ dat_lich AS (
         dl.dangkykhamid,
         dl.nguoigioithieuid,
         dl.dangkykhamstatus,
+        dl.dangkykhaminitdate,
         dl.dangkykhamdate,
         dl.patientid,
         dl.patientid_old
@@ -413,6 +417,7 @@ SELECT
 
     -- Đặt lịch
     dl.dangkykhamid,
+    dl.dangkykhaminitdate,
     dl.dangkykhamdate,
     dl.dangkykhamstatus,
     dl.patientid_old,
@@ -507,6 +512,7 @@ dat_lich AS (
         dangkykhamid,
         nguoigioithieuid,
         dangkykhamstatus,
+        dangkykhaminitdate,
         dangkykhamdate,
         patientid,
         patientid_old
@@ -527,10 +533,16 @@ lichsu_kham AS (
                 'chandoanravien',              vp_h.chandoanravien,
                 'chandoanravien_code',         vp_h.chandoanravien_code,
                 'chandoanravien_kemtheo',      vp_h.chandoanravien_kemtheo,
-                'chandoanravien_kemtheo_code', vp_h.chandoanravien_kemtheo_code
+                'chandoanravien_kemtheo_code', vp_h.chandoanravien_kemtheo_code,
+                'departmentgroupid',           vp_h.departmentgroupid,
+                'departmentgroupname',         dg_h.departmentgroupname,
+                'departmentid',                vp_h.departmentid,
+                'departmentname',              d_h.departmentname
             ) ORDER BY vp_h.vienphidate DESC
         ) AS lichsu
     FROM vienphi vp_h
+    LEFT JOIN departmentgroup dg_h ON vp_h.departmentgroupid = dg_h.departmentgroupid
+    LEFT JOIN department d_h ON vp_h.departmentid = d_h.departmentid
     -- Chỉ lấy patientid có trong báo cáo, không quét toàn bộ vienphi
     WHERE vp_h.patientid = ANY(
         SELECT DISTINCT patientid_old
@@ -575,6 +587,7 @@ SELECT
 
     -- Đặt lịch
     dl.dangkykhamid,
+    dl.dangkykhaminitdate,
     dl.dangkykhamdate,
     dl.dangkykhamstatus,
     dl.patientid_old,
@@ -658,6 +671,7 @@ dat_lich AS (
         dl.dangkykhamid,
         dl.nguoigioithieuid,
         dl.dangkykhamstatus,
+        dl.dangkykhaminitdate,
         dl.dangkykhamdate,
         dl.patientid,
         dl.patientid_old
@@ -674,10 +688,16 @@ lichsu_kham AS (
                 'chandoanravien',              vp_h.chandoanravien,
                 'chandoanravien_code',         vp_h.chandoanravien_code,
                 'chandoanravien_kemtheo',      vp_h.chandoanravien_kemtheo,
-                'chandoanravien_kemtheo_code', vp_h.chandoanravien_kemtheo_code
+                'chandoanravien_kemtheo_code', vp_h.chandoanravien_kemtheo_code,
+                'departmentgroupid',           vp_h.departmentgroupid,
+                'departmentgroupname',         dg_h.departmentgroupname,
+                'departmentid',                vp_h.departmentid,
+                'departmentname',              d_h.departmentname
             ) ORDER BY vp_h.vienphidate DESC
         ) AS lichsu
     FROM vienphi vp_h
+    LEFT JOIN departmentgroup dg_h ON vp_h.departmentgroupid = dg_h.departmentgroupid
+    LEFT JOIN department d_h ON vp_h.departmentid = d_h.departmentid
     WHERE vp_h.patientid = ANY(
         SELECT DISTINCT patientid_old
         FROM dat_lich
@@ -717,6 +737,7 @@ SELECT
     dg_ngt.departmentgroupid                            AS ngt_departmentgroupid,
     dg_ngt.departmentgroupname                          AS ngt_departmentgroupname,
     dl.dangkykhamid,
+    dl.dangkykhaminitdate,
     dl.dangkykhamdate,
     dl.dangkykhamstatus,
     dl.patientid_old,

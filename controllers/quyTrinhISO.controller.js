@@ -10,14 +10,29 @@ const controller = {};
 
 // ==================== LIST ====================
 controller.list = catchAsync(async (req, res) => {
-  const { page = 1, size = 20, search, MaQuyTrinh, KhoaXayDungID } = req.query;
+  const {
+    page = 1,
+    size = 20,
+    search,
+    MaQuyTrinh,
+    KhoaXayDungID,
+    TrangThai: filterTrangThai,
+    includeDistribution,
+  } = req.query;
   const currentUser = req.user;
   const isQLCL = ["qlcl", "admin", "superadmin"].includes(
     currentUser.PhanQuyen,
   );
 
-  // Base query
-  let query = { TrangThai: "ACTIVE" };
+  // Base query — QLCL thấy mọi trạng thái non-deleted, user thường chỉ thấy ACTIVE
+  let query = isQLCL
+    ? { IsDeleted: false }
+    : { IsDeleted: false, TrangThai: "ACTIVE" };
+
+  // QLCL có thể lọc theo TrangThai
+  if (isQLCL && filterTrangThai) {
+    query.TrangThai = filterTrangThai;
+  }
 
   // Search
   if (search) {
@@ -80,11 +95,35 @@ controller.list = catchAsync(async (req, res) => {
     })),
   );
 
+  // Optionally attach distribution info (QLCL only)
+  let finalItems = itemsWithCounts;
+  if (includeDistribution === "true" && isQLCL) {
+    const itemIds = items.map((item) => item._id);
+    const allPhanPhoi = await QuyTrinhISO_KhoaPhanPhoi.find({
+      QuyTrinhISOID: { $in: itemIds },
+    })
+      .populate("KhoaID", "TenKhoa MaKhoa")
+      .lean();
+
+    // Group by QuyTrinhISOID
+    const phanPhoiMap = allPhanPhoi.reduce((acc, p) => {
+      const key = p.QuyTrinhISOID.toString();
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(p.KhoaID);
+      return acc;
+    }, {});
+
+    finalItems = itemsWithCounts.map((item) => ({
+      ...item,
+      KhoaPhanPhoi: phanPhoiMap[item._id.toString()] || [],
+    }));
+  }
+
   return sendResponse(
     res,
     200,
     true,
-    { items: itemsWithCounts, total, page: +page, size: +size },
+    { items: finalItems, total, page: +page, size: +size },
     null,
     "OK",
   );
@@ -103,11 +142,11 @@ controller.detail = catchAsync(async (req, res) => {
     .populate("NguoiTaoID", "HoTen Email")
     .populate("NguoiCapNhatID", "HoTen Email");
 
-  if (!quyTrinh || quyTrinh.TrangThai === "DELETED") {
+  if (!quyTrinh || quyTrinh.IsDeleted) {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
-  // Permission check for non-QLCL
+  // Permission check for non-QLCL: only see ACTIVE docs they have distribution for
   if (!isQLCL) {
     const hasAccess = await QuyTrinhISO_KhoaPhanPhoi.exists({
       QuyTrinhISOID: id,
@@ -157,7 +196,7 @@ controller.create = catchAsync(async (req, res) => {
   const exists = await QuyTrinhISO.exists({
     MaQuyTrinh: MaQuyTrinh.toUpperCase(),
     PhienBan,
-    TrangThai: "ACTIVE",
+    IsDeleted: false,
   });
 
   if (exists) {
@@ -209,7 +248,7 @@ controller.update = catchAsync(async (req, res) => {
   const currentUser = req.user;
 
   const quyTrinh = await QuyTrinhISO.findById(id);
-  if (!quyTrinh || quyTrinh.TrangThai === "DELETED") {
+  if (!quyTrinh || quyTrinh.IsDeleted) {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
@@ -222,7 +261,7 @@ controller.update = catchAsync(async (req, res) => {
       _id: { $ne: id },
       MaQuyTrinh: (MaQuyTrinh || quyTrinh.MaQuyTrinh).toUpperCase(),
       PhienBan: PhienBan || quyTrinh.PhienBan,
-      TrangThai: "ACTIVE",
+      IsDeleted: false,
     });
 
     if (exists) {
@@ -265,7 +304,7 @@ controller.delete = catchAsync(async (req, res) => {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
-  quyTrinh.TrangThai = "DELETED";
+  quyTrinh.IsDeleted = true;
   quyTrinh.NguoiCapNhatID = req.user.userId;
   await quyTrinh.save();
 
@@ -274,6 +313,9 @@ controller.delete = catchAsync(async (req, res) => {
     { OwnerType: "quytrinhiso", OwnerID: String(id) },
     { TrangThai: "DELETED" },
   );
+
+  // Clean up distribution records
+  await QuyTrinhISO_KhoaPhanPhoi.deleteMany({ QuyTrinhISOID: id });
 
   return sendResponse(res, 200, true, null, null, "Xóa quy trình thành công");
 });
@@ -289,7 +331,7 @@ controller.getVersions = catchAsync(async (req, res) => {
 
   const versions = await QuyTrinhISO.find({
     MaQuyTrinh: current.MaQuyTrinh,
-    TrangThai: "ACTIVE",
+    IsDeleted: false,
   })
     .populate("KhoaXayDungID", "TenKhoa")
     .sort({ PhienBan: -1 })
@@ -428,7 +470,7 @@ controller.getStatistics = catchAsync(async (req, res) => {
     currentUser.PhanQuyen,
   );
 
-  let baseQuery = { TrangThai: "ACTIVE" };
+  let baseQuery = { IsDeleted: false, TrangThai: "ACTIVE" };
 
   // Permission filter
   if (!isQLCL && currentUser.KhoaID) {
@@ -529,7 +571,7 @@ controller.getStatistics = catchAsync(async (req, res) => {
 controller.getDistributionList = catchAsync(async (req, res) => {
   const { search, khoaXayDungId, page = 1, limit = 20 } = req.query;
 
-  let query = { TrangThai: "ACTIVE" };
+  let query = { IsDeleted: false };
 
   if (search) {
     query.$or = [
@@ -607,7 +649,7 @@ controller.updateDistribution = catchAsync(async (req, res) => {
   const { khoaPhanPhoiIds } = req.body; // Array of khoa IDs
 
   const quyTrinh = await QuyTrinhISO.findById(id);
-  if (!quyTrinh || quyTrinh.TrangThai === "DELETED") {
+  if (!quyTrinh || quyTrinh.IsDeleted) {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
@@ -664,7 +706,11 @@ controller.getDistributedToMe = catchAsync(async (req, res) => {
     return acc;
   }, {});
 
-  let query = { _id: { $in: allowedIds }, TrangThai: "ACTIVE" };
+  let query = {
+    _id: { $in: allowedIds },
+    IsDeleted: false,
+    TrangThai: "ACTIVE",
+  };
 
   if (search) {
     query.$or = [
@@ -689,8 +735,8 @@ controller.getDistributedToMe = catchAsync(async (req, res) => {
     QuyTrinhISO.countDocuments(query),
   ]);
 
-  // Add NgayPhanPhoi and check if new (within 7 days)
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Add NgayPhanPhoi and check if new (within 30 days)
+  const sevenDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   // Batch query files cho tất cả quy trình (optimize: 1 query thay vì N queries)
   const quyTrinhIds = items.map((item) => item._id.toString());
@@ -757,7 +803,7 @@ controller.getBuiltByMyDept = catchAsync(async (req, res) => {
     );
   }
 
-  let query = { KhoaXayDungID: currentUser.KhoaID, TrangThai: "ACTIVE" };
+  let query = { KhoaXayDungID: currentUser.KhoaID, IsDeleted: false };
 
   if (search) {
     query.$or = [
@@ -835,6 +881,121 @@ controller.getBuiltByMyDept = catchAsync(async (req, res) => {
     },
     null,
     "Lấy danh sách quy trình khoa xây dựng thành công",
+  );
+});
+
+// ==================== ACTIVATE ====================
+// Phát hành quy trình: DRAFT/INACTIVE → ACTIVE
+// Auto-deactivate các phiên bản khác cùng MaQuyTrinh
+controller.activate = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const quyTrinh = await QuyTrinhISO.findById(id);
+  if (!quyTrinh || quyTrinh.IsDeleted) {
+    throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
+  }
+
+  if (quyTrinh.TrangThai === "ACTIVE") {
+    return sendResponse(
+      res,
+      200,
+      true,
+      { quyTrinh },
+      null,
+      "Quy trình đang ở trạng thái ACTIVE",
+    );
+  }
+
+  // Tìm phiên bản ACTIVE cũ cùng MaQuyTrinh để copy phân phối
+  const oldActiveVersions = await QuyTrinhISO.find({
+    MaQuyTrinh: quyTrinh.MaQuyTrinh,
+    _id: { $ne: id },
+    IsDeleted: false,
+    TrangThai: "ACTIVE",
+  }).select("_id");
+
+  // Lấy danh sách phân phối từ phiên bản cũ (trước khi deactivate)
+  let oldDistributionKhoaIds = [];
+  if (oldActiveVersions.length > 0) {
+    const oldPhanPhoi = await QuyTrinhISO_KhoaPhanPhoi.find({
+      QuyTrinhISOID: { $in: oldActiveVersions.map((v) => v._id) },
+    }).select("KhoaID");
+    oldDistributionKhoaIds = [
+      ...new Set(oldPhanPhoi.map((p) => p.KhoaID.toString())),
+    ];
+  }
+
+  // Deactivate các phiên bản ACTIVE khác cùng MaQuyTrinh (Q3: auto-deactivate)
+  await QuyTrinhISO.updateMany(
+    {
+      MaQuyTrinh: quyTrinh.MaQuyTrinh,
+      _id: { $ne: id },
+      IsDeleted: false,
+      TrangThai: "ACTIVE",
+    },
+    { $set: { TrangThai: "INACTIVE" } },
+  );
+
+  // Activate this version
+  quyTrinh.TrangThai = "ACTIVE";
+  quyTrinh.NguoiCapNhatID = req.user.userId;
+  await quyTrinh.save();
+
+  // Auto-copy phân phối từ phiên bản cũ nếu phiên bản mới chưa có
+  if (oldDistributionKhoaIds.length > 0) {
+    const existingPhanPhoi = await QuyTrinhISO_KhoaPhanPhoi.countDocuments({
+      QuyTrinhISOID: id,
+    });
+    if (existingPhanPhoi === 0) {
+      await QuyTrinhISO_KhoaPhanPhoi.syncPhanPhoi(
+        quyTrinh._id,
+        oldDistributionKhoaIds,
+      );
+    }
+  }
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { quyTrinh },
+    null,
+    "Phát hành quy trình thành công. Các phiên bản cũ đã được thu hồi.",
+  );
+});
+
+// ==================== DEACTIVATE ====================
+// Thu hồi quy trình: ACTIVE → INACTIVE
+controller.deactivate = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const quyTrinh = await QuyTrinhISO.findById(id);
+  if (!quyTrinh || quyTrinh.IsDeleted) {
+    throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
+  }
+
+  if (quyTrinh.TrangThai === "INACTIVE") {
+    return sendResponse(
+      res,
+      200,
+      true,
+      { quyTrinh },
+      null,
+      "Quy trình đã ở trạng thái INACTIVE",
+    );
+  }
+
+  quyTrinh.TrangThai = "INACTIVE";
+  quyTrinh.NguoiCapNhatID = req.user.userId;
+  await quyTrinh.save();
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { quyTrinh },
+    null,
+    "Thu hồi quy trình thành công",
   );
 });
 

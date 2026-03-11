@@ -37,5 +37,11 @@ router.put(
   authentication.qlclRequired,
   controller.updateDistribution,
 );
+router.put("/:id/activate", authentication.qlclRequired, controller.activate);
+router.put(
+  "/:id/deactivate",
+  authentication.qlclRequired,
+  controller.deactivate,
+);
 
 module.exports = router;

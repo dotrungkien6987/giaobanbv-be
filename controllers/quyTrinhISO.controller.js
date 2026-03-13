@@ -867,13 +867,11 @@ controller.updateDistribution = catchAsync(async (req, res) => {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
-  // Validate: không tự phân phối cho khoa xây dựng
-  const filteredIds = (khoaPhanPhoiIds || []).filter(
-    (khoaId) => khoaId.toString() !== quyTrinh.KhoaXayDungID.toString(),
+  // Sync distribution (khoa xây dựng được phép nhận phân phối)
+  await QuyTrinhISO_KhoaPhanPhoi.syncPhanPhoi(
+    quyTrinh._id,
+    khoaPhanPhoiIds || [],
   );
-
-  // Sync distribution
-  await QuyTrinhISO_KhoaPhanPhoi.syncPhanPhoi(quyTrinh._id, filteredIds);
 
   // Get updated distribution list
   const phanPhoi = await QuyTrinhISO_KhoaPhanPhoi.find({ QuyTrinhISOID: id })
@@ -883,7 +881,7 @@ controller.updateDistribution = catchAsync(async (req, res) => {
   logAudit(id, "DISTRIBUTION_UPDATED", req.user.userId, {
     MaQuyTrinh: quyTrinh.MaQuyTrinh,
     PhienBan: quyTrinh.PhienBan,
-    khoaPhanPhoiIds: filteredIds,
+    khoaPhanPhoiIds: khoaPhanPhoiIds,
   });
 
   return sendResponse(
@@ -918,11 +916,11 @@ controller.getDistributedToMe = catchAsync(async (req, res) => {
   // Get all quy trinh IDs distributed to this khoa
   const phanPhoi = await QuyTrinhISO_KhoaPhanPhoi.find({
     KhoaID: currentUser.KhoaID,
-  }).select("QuyTrinhISOID NgayPhanPhoi");
+  }).select("QuyTrinhISOID createdAt");
 
   const allowedIds = phanPhoi.map((p) => p.QuyTrinhISOID);
   const phanPhoiMap = phanPhoi.reduce((acc, p) => {
-    acc[p.QuyTrinhISOID.toString()] = p.NgayPhanPhoi;
+    acc[p.QuyTrinhISOID.toString()] = p.createdAt;
     return acc;
   }, {});
 

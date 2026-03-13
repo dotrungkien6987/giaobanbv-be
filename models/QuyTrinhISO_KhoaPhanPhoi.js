@@ -41,21 +41,36 @@ phanPhoiSchema.statics.findByKhoa = function (khoaId) {
   });
 };
 
-// === STATIC: Sync phân phối (delete old + insert new) ===
+// === STATIC: Sync phân phối (diff-based: only delete removed + insert added) ===
 phanPhoiSchema.statics.syncPhanPhoi = async function (
   quyTrinhId,
   khoaIds = [],
 ) {
-  // Delete all existing
-  await this.deleteMany({ QuyTrinhISOID: quyTrinhId });
+  const existing = await this.find({ QuyTrinhISOID: quyTrinhId })
+    .select("KhoaID")
+    .lean();
+  const existingSet = new Set(existing.map((e) => e.KhoaID.toString()));
+  const newSet = new Set(khoaIds.map((id) => id.toString()));
 
-  // Insert new
-  if (khoaIds.length > 0) {
-    const docs = khoaIds.map((khoaId) => ({
+  // Delete only removed khoa
+  const toDelete = [...existingSet].filter((id) => !newSet.has(id));
+  if (toDelete.length > 0) {
+    await this.deleteMany({
       QuyTrinhISOID: quyTrinhId,
-      KhoaID: khoaId,
-    }));
-    await this.insertMany(docs, { ordered: false });
+      KhoaID: { $in: toDelete },
+    });
+  }
+
+  // Insert only newly added khoa
+  const toInsert = [...newSet].filter((id) => !existingSet.has(id));
+  if (toInsert.length > 0) {
+    await this.insertMany(
+      toInsert.map((khoaId) => ({
+        QuyTrinhISOID: quyTrinhId,
+        KhoaID: khoaId,
+      })),
+      { ordered: false },
+    );
   }
 };
 

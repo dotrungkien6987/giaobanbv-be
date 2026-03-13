@@ -8,7 +8,27 @@
  *   Tiêu chí "có khám": dangkykhamstatus = 1
  *   Tiêu chí "không khám": dangkykhamstatus ≠ 1 (0 = chưa khám, 2 = hủy)
  *   Tổng tiền: SUM từ serviceprice, chỉ lấy vienphiid liên quan (tránh full scan)
+ *
+ *   Tổng tiền dịch vụ (tong_tien_dichvu): CHỈ tính serviceprice có bhyt_groupcode
+ *   thuộc danh sách BHYT_GROUPCODES. Nếu < MIN_DICHVU_AMOUNT → không hợp lệ.
  */
+
+// ═══════════════════════════════════════════════════════════════════════
+// CẤU HÌNH — thay đổi ở đây, tất cả queries tự động cập nhật
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Nhóm dịch vụ BHYT dùng tính tong_tien_dichvu (tiền dịch vụ hợp lệ) */
+const BHYT_GROUPCODES =
+  "'03XN','04CDHA','05TDCN','06PTTT','07KTC','12NG','1001GoiPTTT','1002NgayGiuongLuu','1004ThuThuat'";
+
+/** Người giới thiệu loại trừ (VD: bệnh nhân tự đặt qua app) */
+const EXCLUDED_NGT_IDS = "10659";
+
+/** Khoa loại trừ (departmentid trên bảng dangkykham) */
+const EXCLUDED_DEPT_IDS = "977";
+
+/** Ngưỡng tiền dịch vụ tối thiểu để coi là hợp lệ (đơn vị: VNĐ) */
+const MIN_DICHVU_AMOUNT = 100000;
 
 const qDatLichKham = {};
 
@@ -40,10 +60,14 @@ const qDatLichKham = {};
  *   - co_kham_co_tien    {number}  — số lượt có khám VÀ phát sinh tiền (tong_tien > 0)
  *   - co_kham_khong_tien {number}  — số lượt có khám NHƯNG không phát sinh tiền (tong_tien = 0)
  *   - tong_tien          {number}  — tổng tiền dịch vụ của các lượt có khám
+ *   - dichvu_ge_100k     {number}  — số lượt có khám VÀ tong_tien_dichvu >= MIN_DICHVU_AMOUNT
+ *   - dichvu_lt_100k     {number}  — số lượt có khám VÀ tong_tien_dichvu < MIN_DICHVU_AMOUNT
+ *   - tong_tien_dichvu   {number}  — tổng tiền dịch vụ (chỉ nhóm BHYT cấu hình)
  */
 qDatLichKham.baoCaoNguoiGioiThieu = `
 WITH
 -- CTE 1: Lọc đặt lịch qua app trong khoảng thời gian → tập dữ liệu nhỏ làm nền
+-- Loại trừ NGT tự đặt + khoa loại trừ
 dat_lich AS (
     SELECT
         dangkykhamid,
@@ -55,11 +79,12 @@ dat_lich AS (
     FROM dangkykham
     WHERE isdangkyquaapi = 1
       AND dangkykhamdate BETWEEN $1 AND $2
+      AND (nguoigioithieuid IS NULL OR nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
+      AND (departmentid IS NULL OR departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
 
--- CTE 2: Tìm vienphiid của các lượt có khám thực sự (status = 1)
--- Chỉ xử lý tập nhỏ từ CTE 1, không quét toàn bộ vienphi
-vienphiid_co_kham AS (
+-- CTE 2: Tất cả vienphiid matching (1 dangkykhamid có thể → N vienphiid)
+all_vienphi_co_kham AS (
     SELECT
         dl.dangkykhamid,
         vp.vienphiid
@@ -70,9 +95,7 @@ vienphiid_co_kham AS (
     WHERE dl.dangkykhamstatus = 1
 ),
 
--- CTE 3: Tính tổng tiền CHỈ cho các vienphiid liên quan
--- INNER JOIN với vienphiid_co_kham → PostgreSQL dùng index lookup trên serviceprice
--- Không quét toàn bộ bảng serviceprice (hàng chục triệu bản ghi)
+-- CTE 3: Tính tổng tiền per vienphiid (tất cả dịch vụ)
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -84,8 +107,38 @@ tong_tien_vienphiid AS (
             END
         ) AS tong_tien
     FROM serviceprice sp
-    INNER JOIN vienphiid_co_kham ck ON sp.vienphiid = ck.vienphiid
+    INNER JOIN all_vienphi_co_kham ck ON sp.vienphiid = ck.vienphiid
     GROUP BY sp.vienphiid
+),
+
+-- CTE 4: Tính tổng tiền per vienphiid (chỉ nhóm BHYT cấu hình)
+tong_tien_dichvu_vienphiid AS (
+    SELECT
+        sp.vienphiid,
+        SUM(
+            CASE
+                WHEN sp.loaidoituong = 0 THEN COALESCE(sp.servicepricemoney_bhyt, 0)    * COALESCE(sp.soluong, 0)
+                WHEN sp.loaidoituong = 1 THEN COALESCE(sp.servicepricemoney_nhandan, 0) * COALESCE(sp.soluong, 0)
+                ELSE                         COALESCE(sp.servicepricemoney, 0)          * COALESCE(sp.soluong, 0)
+            END
+        ) AS tong_tien_dichvu
+    FROM serviceprice sp
+    INNER JOIN all_vienphi_co_kham ck ON sp.vienphiid = ck.vienphiid
+    WHERE sp.bhyt_groupcode IN (${BHYT_GROUPCODES})
+    GROUP BY sp.vienphiid
+),
+
+-- CTE 5: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
+-- Đảm bảo mỗi dangkykhamid chỉ xuất hiện 1 lần → không inflate COUNT
+tong_tien_per_dk AS (
+    SELECT
+        ck.dangkykhamid,
+        COALESCE(SUM(tt.tong_tien), 0) AS tong_tien,
+        COALESCE(SUM(ttdv.tong_tien_dichvu), 0) AS tong_tien_dichvu
+    FROM all_vienphi_co_kham ck
+    LEFT JOIN tong_tien_vienphiid tt ON ck.vienphiid = tt.vienphiid
+    LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON ck.vienphiid = ttdv.vienphiid
+    GROUP BY ck.dangkykhamid
 )
 
 SELECT
@@ -99,21 +152,24 @@ SELECT
     COUNT(dl.dangkykhamid)                               AS tong_dat_lich,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 THEN 1 END)  AS co_kham,
     COUNT(CASE WHEN dl.dangkykhamstatus != 1 THEN 1 END) AS khong_kham,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tt.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tt.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
 
-    -- tt chỉ chứa bản ghi status=1 → COALESCE xử lý NULL (không khám = 0)
-    COALESCE(SUM(tt.tong_tien), 0) AS tong_tien
+    -- Dịch vụ >= / < ngưỡng (dựa trên tong_tien_dichvu — chỉ nhóm BHYT cấu hình)
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) >= ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_ge_100k,
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) <  ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_lt_100k,
+
+    COALESCE(SUM(tpd.tong_tien), 0) AS tong_tien,
+    COALESCE(SUM(tpd.tong_tien_dichvu), 0) AS tong_tien_dichvu
 
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
 LEFT JOIN departmentgroup dg
     ON ngt.departmentgroupid = dg.departmentgroupid
-LEFT JOIN vienphiid_co_kham ck
-    ON dl.dangkykhamid = ck.dangkykhamid
-LEFT JOIN tong_tien_vienphiid tt
-    ON ck.vienphiid = tt.vienphiid
+-- JOIN 1:1 — tong_tien_per_dk đã GROUP BY dangkykhamid
+LEFT JOIN tong_tien_per_dk tpd
+    ON dl.dangkykhamid = tpd.dangkykhamid
 
 GROUP BY
     dl.nguoigioithieuid,
@@ -147,8 +203,10 @@ dat_lich AS (
     FROM dangkykham dl, params p
     WHERE dl.isdangkyquaapi = 1
       AND dl.dangkykhamdate BETWEEN p.from_date AND p.to_date
+      AND (dl.nguoigioithieuid IS NULL OR dl.nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
+      AND (dl.departmentid IS NULL OR dl.departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
-vienphiid_co_kham AS (
+all_vienphi_co_kham AS (
     SELECT
         dl.dangkykhamid,
         vp.vienphiid
@@ -169,8 +227,33 @@ tong_tien_vienphiid AS (
             END
         ) AS tong_tien
     FROM serviceprice sp
-    INNER JOIN vienphiid_co_kham ck ON sp.vienphiid = ck.vienphiid
+    INNER JOIN all_vienphi_co_kham ck ON sp.vienphiid = ck.vienphiid
     GROUP BY sp.vienphiid
+),
+tong_tien_dichvu_vienphiid AS (
+    SELECT
+        sp.vienphiid,
+        SUM(
+            CASE
+                WHEN sp.loaidoituong = 0 THEN COALESCE(sp.servicepricemoney_bhyt, 0)    * COALESCE(sp.soluong, 0)
+                WHEN sp.loaidoituong = 1 THEN COALESCE(sp.servicepricemoney_nhandan, 0) * COALESCE(sp.soluong, 0)
+                ELSE                         COALESCE(sp.servicepricemoney, 0)          * COALESCE(sp.soluong, 0)
+            END
+        ) AS tong_tien_dichvu
+    FROM serviceprice sp
+    INNER JOIN all_vienphi_co_kham ck ON sp.vienphiid = ck.vienphiid
+    WHERE sp.bhyt_groupcode IN (${BHYT_GROUPCODES})
+    GROUP BY sp.vienphiid
+),
+tong_tien_per_dk AS (
+    SELECT
+        ck.dangkykhamid,
+        COALESCE(SUM(tt.tong_tien), 0) AS tong_tien,
+        COALESCE(SUM(ttdv.tong_tien_dichvu), 0) AS tong_tien_dichvu
+    FROM all_vienphi_co_kham ck
+    LEFT JOIN tong_tien_vienphiid tt ON ck.vienphiid = tt.vienphiid
+    LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON ck.vienphiid = ttdv.vienphiid
+    GROUP BY ck.dangkykhamid
 )
 SELECT
     dl.nguoigioithieuid,
@@ -182,18 +265,19 @@ SELECT
     COUNT(dl.dangkykhamid)                               AS tong_dat_lich,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 THEN 1 END)  AS co_kham,
     COUNT(CASE WHEN dl.dangkykhamstatus != 1 THEN 1 END) AS khong_kham,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tt.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tt.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
-    COALESCE(SUM(tt.tong_tien), 0)                       AS tong_tien
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) >= ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_ge_100k,
+    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) <  ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_lt_100k,
+    COALESCE(SUM(tpd.tong_tien), 0)          AS tong_tien,
+    COALESCE(SUM(tpd.tong_tien_dichvu), 0) AS tong_tien_dichvu
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
 LEFT JOIN departmentgroup dg
     ON ngt.departmentgroupid = dg.departmentgroupid
-LEFT JOIN vienphiid_co_kham ck
-    ON dl.dangkykhamid = ck.dangkykhamid
-LEFT JOIN tong_tien_vienphiid tt
-    ON ck.vienphiid = tt.vienphiid
+LEFT JOIN tong_tien_per_dk tpd
+    ON dl.dangkykhamid = tpd.dangkykhamid
 GROUP BY
     dl.nguoigioithieuid,
     ngt.nguoigioithieucode,
@@ -237,12 +321,12 @@ ORDER BY dg.departmentgroupname ASC, co_kham DESC
  *   - patientname, birthday, gioitinhname
  *   - hc_xaname, hc_huyenname, hc_tinhname
  *   Thanh toán:
- *   - tong_tien  {number}  — tổng tiền dịch vụ (0 nếu chưa khám)
+ *   - tong_tien          {number}  — tổng tiền dịch vụ (0 nếu chưa khám)
+ *   - tong_tien_dichvu   {number}  — tổng tiền các nhóm DV cấu hình (0 nếu chưa khám)
  */
 qDatLichKham.chiTietDatLich = `
 WITH
 -- CTE 1: Lọc dangkykham trước — tập nhỏ, là điểm khởi đầu cho tất cả JOIN
--- Giữ lại patientid (để fallback sang bảng patient khi patientid_old NULL)
 dat_lich AS (
     SELECT
         dangkykhamid,
@@ -255,10 +339,31 @@ dat_lich AS (
     FROM dangkykham
     WHERE isdangkyquaapi = 1
       AND dangkykhamdate BETWEEN $1 AND $2
+      AND (nguoigioithieuid IS NULL OR nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
+      AND (departmentid IS NULL OR departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
 
--- CTE 2: Tính tổng tiền CHỈ cho các vienphiid liên quan
--- = ANY(list vienphiid) → PostgreSQL dùng index lookup trên serviceprice
+-- CTE 2: Tất cả vienphi matching (1 dangkykhamid có thể → N vienphiid)
+all_vienphi AS (
+    SELECT
+        dl.dangkykhamid,
+        vp.vienphiid
+    FROM dat_lich dl
+    INNER JOIN vienphi vp
+        ON  dl.patientid_old        = vp.patientid
+        AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+),
+
+-- CTE 3: Chọn 1 vienphi (vienphiid lớn nhất) per dangkykhamid cho clinical data
+vienphi_dedup AS (
+    SELECT DISTINCT ON (dangkykhamid)
+        dangkykhamid,
+        vienphiid
+    FROM all_vienphi
+    ORDER BY dangkykhamid, vienphiid DESC
+),
+
+-- CTE 4: Tính tổng tiền TẤT CẢ dịch vụ per vienphiid
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -270,14 +375,37 @@ tong_tien_vienphiid AS (
             END
         ) AS tong_tien
     FROM serviceprice sp
-    WHERE sp.vienphiid = ANY(
-        SELECT DISTINCT vp.vienphiid
-        FROM dat_lich dl
-        INNER JOIN vienphi vp
-            ON  dl.patientid_old        = vp.patientid
-            AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
-    )
+    WHERE sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
     GROUP BY sp.vienphiid
+),
+
+-- CTE 5: Tính tổng tiền DỊCH VỤ (chỉ bhyt_groupcode hợp lệ) per vienphiid
+tong_tien_dichvu_vienphiid AS (
+    SELECT
+        sp.vienphiid,
+        SUM(
+            CASE
+                WHEN sp.loaidoituong = 0 THEN COALESCE(sp.servicepricemoney_bhyt, 0)    * COALESCE(sp.soluong, 0)
+                WHEN sp.loaidoituong = 1 THEN COALESCE(sp.servicepricemoney_nhandan, 0) * COALESCE(sp.soluong, 0)
+                ELSE                          COALESCE(sp.servicepricemoney, 0)          * COALESCE(sp.soluong, 0)
+            END
+        ) AS tong_tien_dichvu
+    FROM serviceprice sp
+    WHERE sp.bhyt_groupcode IN (${BHYT_GROUPCODES})
+      AND sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
+    GROUP BY sp.vienphiid
+),
+
+-- CTE 6: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
+tong_tien_per_dk AS (
+    SELECT
+        av.dangkykhamid,
+        COALESCE(SUM(tt.tong_tien), 0) AS tong_tien,
+        COALESCE(SUM(ttdv.tong_tien_dichvu), 0) AS tong_tien_dichvu
+    FROM all_vienphi av
+    LEFT JOIN tong_tien_vienphiid tt ON av.vienphiid = tt.vienphiid
+    LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON av.vienphiid = ttdv.vienphiid
+    GROUP BY av.dangkykhamid
 )
 
 SELECT
@@ -297,7 +425,7 @@ SELECT
     dl.patientid_old,
     dl.patientid,
 
-    -- Viện phí (NULL nếu không khám)
+    -- Viện phí (NULL nếu không khám) — lấy từ vienphi_dedup (1:1)
     vp.vienphiid,
     vp.vienphidate,
     vp.chandoanravien,
@@ -310,9 +438,6 @@ SELECT
     d_vp.departmentname                                 AS vp_departmentname,
 
     -- Hành chính bệnh nhân
-    -- Ư u tiên hosobenhan (có patientid_old, đã tiếp đón chính thức)
-    -- Fallback sang patient khi patientid_old NULL (đặt lịch qua app nhưng chưa tiếp đón)
-    -- Lưu ý: patient chỉ có _code (không có _name) nên fallback hiển thị code
     hsba.hosobenhanid,
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
@@ -324,34 +449,32 @@ SELECT
     COALESCE(hsba.hc_huyenname,  pt.hc_huyencode) AS hc_huyenname,
     COALESCE(hsba.hc_tinhname,   pt.hc_tinhcode)  AS hc_tinhname,
 
-    -- Tổng tiền dịch vụ (0 nếu chưa khám)
-    COALESCE(tt.tong_tien, 0)                           AS tong_tien
+    -- Tổng tiền (SUM tất cả vienphi cùng ngày, 0 nếu chưa khám)
+    COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
+    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu
 
 FROM dat_lich dl
--- Người giới thiệu + khoa người giới thiệu
 LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
 LEFT JOIN departmentgroup dg_ngt
     ON ngt.departmentgroupid = dg_ngt.departmentgroupid
--- Viện phí: index lookup trên vienphi.patientid (không full scan)
+-- Viện phí: JOIN qua vienphi_dedup (1:1) thay vì trực tiếp (1:N)
+LEFT JOIN vienphi_dedup vd
+    ON dl.dangkykhamid = vd.dangkykhamid
 LEFT JOIN vienphi vp
-    ON  dl.patientid_old        = vp.patientid
-    AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
--- Khoa viện phí (alias riêng, khác dg_ngt)
+    ON vd.vienphiid = vp.vienphiid
 LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
     ON vp.departmentid = d_vp.departmentid
--- Hồ sơ bệnh án: index lookup trên hosobenhan.hosobenhanid (không full scan)
 LEFT JOIN hosobenhan hsba
     ON vp.hosobenhanid = hsba.hosobenhanid
--- Fallback thông tin bệnh nhân: chỉ join khi patientid_old NULL hoặc = 0 (chưa tiếp đón)
 LEFT JOIN patient pt
     ON (dl.patientid_old IS NULL OR dl.patientid_old = 0)
     AND pt.patientid = dl.patientid
--- Tổng tiền: chỉ có giá trị khi vp.vienphiid IS NOT NULL
-LEFT JOIN tong_tien_vienphiid tt
-    ON vp.vienphiid = tt.vienphiid
+-- Tổng tiền: JOIN 1:1 per dangkykhamid
+LEFT JOIN tong_tien_per_dk tpd
+    ON dl.dangkykhamid = tpd.dangkykhamid
 
 ORDER BY
     dg_ngt.departmentgroupname  ASC  NULLS LAST,
@@ -382,9 +505,25 @@ dat_lich AS (
     FROM dangkykham dl, params p
     WHERE dl.isdangkyquaapi = 1
       AND dl.dangkykhamdate BETWEEN p.from_date AND p.to_date
+      AND (dl.nguoigioithieuid IS NULL OR dl.nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
+      AND (dl.departmentid IS NULL OR dl.departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
-
--- Tính tổng tiền CHỈ cho các vienphiid liên quan
+all_vienphi AS (
+    SELECT
+        dl.dangkykhamid,
+        vp.vienphiid
+    FROM dat_lich dl
+    INNER JOIN vienphi vp
+        ON  dl.patientid_old        = vp.patientid
+        AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+),
+vienphi_dedup AS (
+    SELECT DISTINCT ON (dangkykhamid)
+        dangkykhamid,
+        vienphiid
+    FROM all_vienphi
+    ORDER BY dangkykhamid, vienphiid DESC
+),
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -396,34 +535,48 @@ tong_tien_vienphiid AS (
             END
         ) AS tong_tien
     FROM serviceprice sp
-    WHERE sp.vienphiid = ANY(
-        SELECT DISTINCT vp.vienphiid
-        FROM dat_lich dl
-        INNER JOIN vienphi vp
-            ON  dl.patientid_old        = vp.patientid
-            AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
-    )
+    WHERE sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
     GROUP BY sp.vienphiid
+),
+tong_tien_dichvu_vienphiid AS (
+    SELECT
+        sp.vienphiid,
+        SUM(
+            CASE
+                WHEN sp.loaidoituong = 0 THEN COALESCE(sp.servicepricemoney_bhyt, 0)    * COALESCE(sp.soluong, 0)
+                WHEN sp.loaidoituong = 1 THEN COALESCE(sp.servicepricemoney_nhandan, 0) * COALESCE(sp.soluong, 0)
+                ELSE                          COALESCE(sp.servicepricemoney, 0)          * COALESCE(sp.soluong, 0)
+            END
+        ) AS tong_tien_dichvu
+    FROM serviceprice sp
+    WHERE sp.bhyt_groupcode IN (${BHYT_GROUPCODES})
+      AND sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
+    GROUP BY sp.vienphiid
+),
+tong_tien_per_dk AS (
+    SELECT
+        av.dangkykhamid,
+        COALESCE(SUM(tt.tong_tien), 0) AS tong_tien,
+        COALESCE(SUM(ttdv.tong_tien_dichvu), 0) AS tong_tien_dichvu
+    FROM all_vienphi av
+    LEFT JOIN tong_tien_vienphiid tt ON av.vienphiid = tt.vienphiid
+    LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON av.vienphiid = ttdv.vienphiid
+    GROUP BY av.dangkykhamid
 )
 
 SELECT
-    -- Người giới thiệu
     dl.nguoigioithieuid,
     COALESCE(ngt.nguoigioithieucode, 'N/A')            AS ma_ngt,
     COALESCE(ngt.nguoigioithieuname, 'Không xác định') AS ten_ngt,
     ngt.nguoigioithieuphone                             AS dien_thoai,
     dg_ngt.departmentgroupid                            AS ngt_departmentgroupid,
     dg_ngt.departmentgroupname                          AS ngt_departmentgroupname,
-
-    -- Đặt lịch
     dl.dangkykhamid,
     dl.dangkykhaminitdate,
     dl.dangkykhamdate,
     dl.dangkykhamstatus,
     dl.patientid_old,
     dl.patientid,
-
-    -- Viện phí (NULL nếu không khám)
     vp.vienphiid,
     vp.vienphidate,
     vp.chandoanravien,
@@ -434,11 +587,6 @@ SELECT
     dg_vp.departmentgroupname                           AS vp_departmentgroupname,
     vp.departmentid                                     AS vp_departmentid,
     d_vp.departmentname                                 AS vp_departmentname,
-
-    -- Hành chính bệnh nhân
-    -- Ư u tiên hosobenhan (có patientid_old, đã tiếp đón chính thức)
-    -- Fallback sang patient khi patientid_old NULL (đặt lịch qua app nhưng chưa tiếp đón)
-    -- Lưu ý: patient chỉ có _code (không có _name) nên fallback hiển thị code
     hsba.hosobenhanid,
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
@@ -449,32 +597,28 @@ SELECT
     COALESCE(hsba.hc_xaname,     pt.hc_xacode)    AS hc_xaname,
     COALESCE(hsba.hc_huyenname,  pt.hc_huyencode) AS hc_huyenname,
     COALESCE(hsba.hc_tinhname,   pt.hc_tinhcode)  AS hc_tinhname,
-
-    -- Tổng tiền dịch vụ (0 nếu chưa khám)
-    COALESCE(tt.tong_tien, 0)                           AS tong_tien
-
+    COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
+    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
 LEFT JOIN departmentgroup dg_ngt
     ON ngt.departmentgroupid = dg_ngt.departmentgroupid
+LEFT JOIN vienphi_dedup vd
+    ON dl.dangkykhamid = vd.dangkykhamid
 LEFT JOIN vienphi vp
-    ON  dl.patientid_old        = vp.patientid
-    AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+    ON vd.vienphiid = vp.vienphiid
 LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
     ON vp.departmentid = d_vp.departmentid
 LEFT JOIN hosobenhan hsba
     ON vp.hosobenhanid = hsba.hosobenhanid
--- Fallback thông tin bệnh nhân: chỉ join khi patientid_old NULL hoặc = 0 (chưa tiếp đón)
 LEFT JOIN patient pt
     ON (dl.patientid_old IS NULL OR dl.patientid_old = 0)
     AND pt.patientid = dl.patientid
--- Tổng tiền: chỉ có giá trị khi vp.vienphiid IS NOT NULL
-LEFT JOIN tong_tien_vienphiid tt
-    ON vp.vienphiid = tt.vienphiid
-
+LEFT JOIN tong_tien_per_dk tpd
+    ON dl.dangkykhamid = tpd.dangkykhamid
 ORDER BY
     dg_ngt.departmentgroupname  ASC  NULLS LAST,
     ngt.nguoigioithieuname      ASC  NULLS LAST,
@@ -519,11 +663,11 @@ dat_lich AS (
     FROM dangkykham
     WHERE isdangkyquaapi = 1
       AND dangkykhamdate BETWEEN $1 AND $2
+      AND (nguoigioithieuid IS NULL OR nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
+      AND (departmentid IS NULL OR departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
 
 -- CTE 2: Pre-aggregate lịch sử khám 1 năm gần nhất
--- Chạy 1 lần cho TẤT CẢ bệnh nhân trong báo cáo — không dùng LATERAL
--- → Tránh N subquery; chỉ cần index lookup trên vienphi(patientid) + vienphi(vienphidate)
 lichsu_kham AS (
     SELECT
         vp_h.patientid,
@@ -543,7 +687,6 @@ lichsu_kham AS (
     FROM vienphi vp_h
     LEFT JOIN departmentgroup dg_h ON vp_h.departmentgroupid = dg_h.departmentgroupid
     LEFT JOIN department d_h ON vp_h.departmentid = d_h.departmentid
-    -- Chỉ lấy patientid có trong báo cáo, không quét toàn bộ vienphi
     WHERE vp_h.patientid = ANY(
         SELECT DISTINCT patientid_old
         FROM dat_lich
@@ -553,8 +696,27 @@ lichsu_kham AS (
     GROUP BY vp_h.patientid
 ),
 
--- CTE 3: Tính tổng tiền CHỈ cho các vienphiid liên quan
--- = ANY(list vienphiid) → PostgreSQL dùng index lookup trên serviceprice
+-- CTE 3: Tất cả vienphi matching (1 dangkykhamid có thể → N vienphiid)
+all_vienphi AS (
+    SELECT
+        dl.dangkykhamid,
+        vp.vienphiid
+    FROM dat_lich dl
+    INNER JOIN vienphi vp
+        ON  dl.patientid_old        = vp.patientid
+        AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+),
+
+-- CTE 4: Chọn 1 vienphi (vienphiid lớn nhất) per dangkykhamid cho clinical data
+vienphi_dedup AS (
+    SELECT DISTINCT ON (dangkykhamid)
+        dangkykhamid,
+        vienphiid
+    FROM all_vienphi
+    ORDER BY dangkykhamid, vienphiid DESC
+),
+
+-- CTE 5: Tính tổng tiền TẤT CẢ dịch vụ per vienphiid
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -566,14 +728,37 @@ tong_tien_vienphiid AS (
             END
         ) AS tong_tien
     FROM serviceprice sp
-    WHERE sp.vienphiid = ANY(
-        SELECT DISTINCT vp.vienphiid
-        FROM dat_lich dl
-        INNER JOIN vienphi vp
-            ON  dl.patientid_old        = vp.patientid
-            AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
-    )
+    WHERE sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
     GROUP BY sp.vienphiid
+),
+
+-- CTE 6: Tính tổng tiền DỊCH VỤ (chỉ bhyt_groupcode hợp lệ)
+tong_tien_dichvu_vienphiid AS (
+    SELECT
+        sp.vienphiid,
+        SUM(
+            CASE
+                WHEN sp.loaidoituong = 0 THEN COALESCE(sp.servicepricemoney_bhyt, 0)    * COALESCE(sp.soluong, 0)
+                WHEN sp.loaidoituong = 1 THEN COALESCE(sp.servicepricemoney_nhandan, 0) * COALESCE(sp.soluong, 0)
+                ELSE                          COALESCE(sp.servicepricemoney, 0)          * COALESCE(sp.soluong, 0)
+            END
+        ) AS tong_tien_dichvu
+    FROM serviceprice sp
+    WHERE sp.bhyt_groupcode IN (${BHYT_GROUPCODES})
+      AND sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
+    GROUP BY sp.vienphiid
+),
+
+-- CTE 7: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
+tong_tien_per_dk AS (
+    SELECT
+        av.dangkykhamid,
+        COALESCE(SUM(tt.tong_tien), 0) AS tong_tien,
+        COALESCE(SUM(ttdv.tong_tien_dichvu), 0) AS tong_tien_dichvu
+    FROM all_vienphi av
+    LEFT JOIN tong_tien_vienphiid tt ON av.vienphiid = tt.vienphiid
+    LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON av.vienphiid = ttdv.vienphiid
+    GROUP BY av.dangkykhamid
 )
 
 SELECT
@@ -593,7 +778,7 @@ SELECT
     dl.patientid_old,
     dl.patientid,
 
-    -- Viện phí (NULL nếu không khám)
+    -- Viện phí (NULL nếu không khám) — lấy từ vienphi_dedup (1:1)
     vp.vienphiid,
     vp.vienphidate,
     vp.chandoanravien,
@@ -606,7 +791,6 @@ SELECT
     d_vp.departmentname                                 AS vp_departmentname,
 
     -- Hành chính bệnh nhân (ưu tiên hosobenhan, fallback sang patient)
-    -- Lưu ý: patient chỉ có _code (không có _name) nên fallback hiển thị code
     hsba.hosobenhanid,
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
@@ -618,11 +802,11 @@ SELECT
     COALESCE(hsba.hc_huyenname,  pt.hc_huyencode) AS hc_huyenname,
     COALESCE(hsba.hc_tinhname,   pt.hc_tinhcode)  AS hc_tinhname,
 
-    -- Tổng tiền dịch vụ (0 nếu chưa khám)
-    COALESCE(tt.tong_tien, 0)                           AS tong_tien,
+    -- Tổng tiền (SUM tất cả vienphi cùng ngày, 0 nếu chưa khám)
+    COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
+    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu,
 
     -- Lịch sử khám 1 năm gần nhất (JSON, mảng sắp xếp mới nhất trước)
-    -- NULL = chưa tiếp đón hoặc chưa từng khám trong 1 năm qua
     lsh.lichsu                                          AS lichsu_kham
 
 FROM dat_lich dl
@@ -630,9 +814,11 @@ LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
 LEFT JOIN departmentgroup dg_ngt
     ON ngt.departmentgroupid = dg_ngt.departmentgroupid
+-- Viện phí: JOIN qua vienphi_dedup (1:1) thay vì trực tiếp (1:N)
+LEFT JOIN vienphi_dedup vd
+    ON dl.dangkykhamid = vd.dangkykhamid
 LEFT JOIN vienphi vp
-    ON  dl.patientid_old        = vp.patientid
-    AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+    ON vd.vienphiid = vp.vienphiid
 LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
@@ -642,9 +828,9 @@ LEFT JOIN hosobenhan hsba
 LEFT JOIN patient pt
     ON (dl.patientid_old IS NULL OR dl.patientid_old = 0)
     AND pt.patientid = dl.patientid
--- Tổng tiền: chỉ có giá trị khi vp.vienphiid IS NOT NULL
-LEFT JOIN tong_tien_vienphiid tt
-    ON vp.vienphiid = tt.vienphiid
+-- Tổng tiền: JOIN 1:1 per dangkykhamid
+LEFT JOIN tong_tien_per_dk tpd
+    ON dl.dangkykhamid = tpd.dangkykhamid
 -- Lịch sử: chỉ join khi đã tiếp đón (patientid_old IS NOT NULL và != 0)
 LEFT JOIN lichsu_kham lsh
     ON dl.patientid_old = lsh.patientid
@@ -678,6 +864,8 @@ dat_lich AS (
     FROM dangkykham dl, params p
     WHERE dl.isdangkyquaapi = 1
       AND dl.dangkykhamdate BETWEEN p.from_date AND p.to_date
+      AND (dl.nguoigioithieuid IS NULL OR dl.nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
+      AND (dl.departmentid IS NULL OR dl.departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
 lichsu_kham AS (
     SELECT
@@ -706,8 +894,22 @@ lichsu_kham AS (
       AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
     GROUP BY vp_h.patientid
 ),
-
--- Tính tổng tiền CHỈ cho các vienphiid liên quan
+all_vienphi AS (
+    SELECT
+        dl.dangkykhamid,
+        vp.vienphiid
+    FROM dat_lich dl
+    INNER JOIN vienphi vp
+        ON  dl.patientid_old        = vp.patientid
+        AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+),
+vienphi_dedup AS (
+    SELECT DISTINCT ON (dangkykhamid)
+        dangkykhamid,
+        vienphiid
+    FROM all_vienphi
+    ORDER BY dangkykhamid, vienphiid DESC
+),
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -719,14 +921,33 @@ tong_tien_vienphiid AS (
             END
         ) AS tong_tien
     FROM serviceprice sp
-    WHERE sp.vienphiid = ANY(
-        SELECT DISTINCT vp.vienphiid
-        FROM dat_lich dl
-        INNER JOIN vienphi vp
-            ON  dl.patientid_old        = vp.patientid
-            AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
-    )
+    WHERE sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
     GROUP BY sp.vienphiid
+),
+tong_tien_dichvu_vienphiid AS (
+    SELECT
+        sp.vienphiid,
+        SUM(
+            CASE
+                WHEN sp.loaidoituong = 0 THEN COALESCE(sp.servicepricemoney_bhyt, 0)    * COALESCE(sp.soluong, 0)
+                WHEN sp.loaidoituong = 1 THEN COALESCE(sp.servicepricemoney_nhandan, 0) * COALESCE(sp.soluong, 0)
+                ELSE                          COALESCE(sp.servicepricemoney, 0)          * COALESCE(sp.soluong, 0)
+            END
+        ) AS tong_tien_dichvu
+    FROM serviceprice sp
+    WHERE sp.bhyt_groupcode IN (${BHYT_GROUPCODES})
+      AND sp.vienphiid = ANY(SELECT DISTINCT vienphiid FROM all_vienphi)
+    GROUP BY sp.vienphiid
+),
+tong_tien_per_dk AS (
+    SELECT
+        av.dangkykhamid,
+        COALESCE(SUM(tt.tong_tien), 0) AS tong_tien,
+        COALESCE(SUM(ttdv.tong_tien_dichvu), 0) AS tong_tien_dichvu
+    FROM all_vienphi av
+    LEFT JOIN tong_tien_vienphiid tt ON av.vienphiid = tt.vienphiid
+    LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON av.vienphiid = ttdv.vienphiid
+    GROUP BY av.dangkykhamid
 )
 
 SELECT
@@ -762,19 +983,18 @@ SELECT
     COALESCE(hsba.hc_xaname,     pt.hc_xacode)    AS hc_xaname,
     COALESCE(hsba.hc_huyenname,  pt.hc_huyencode) AS hc_huyenname,
     COALESCE(hsba.hc_tinhname,   pt.hc_tinhcode)  AS hc_tinhname,
-
-    -- Tổng tiền dịch vụ (0 nếu chưa khám)
-    COALESCE(tt.tong_tien, 0)                           AS tong_tien,
-
+    COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
+    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu,
     lsh.lichsu                                          AS lichsu_kham
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
 LEFT JOIN departmentgroup dg_ngt
     ON ngt.departmentgroupid = dg_ngt.departmentgroupid
+LEFT JOIN vienphi_dedup vd
+    ON dl.dangkykhamid = vd.dangkykhamid
 LEFT JOIN vienphi vp
-    ON  dl.patientid_old        = vp.patientid
-    AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
+    ON vd.vienphiid = vp.vienphiid
 LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
@@ -784,9 +1004,8 @@ LEFT JOIN hosobenhan hsba
 LEFT JOIN patient pt
     ON (dl.patientid_old IS NULL OR dl.patientid_old = 0)
     AND pt.patientid = dl.patientid
--- Tổng tiền: chỉ có giá trị khi vp.vienphiid IS NOT NULL
-LEFT JOIN tong_tien_vienphiid tt
-    ON vp.vienphiid = tt.vienphiid
+LEFT JOIN tong_tien_per_dk tpd
+    ON dl.dangkykhamid = tpd.dangkykhamid
 LEFT JOIN lichsu_kham lsh
     ON dl.patientid_old = lsh.patientid
 ORDER BY

@@ -78,7 +78,10 @@ const quyTrinhISOSchema = new Schema(
 );
 
 // === INDEXES ===
-quyTrinhISOSchema.index({ MaQuyTrinh: 1, PhienBan: 1 });
+quyTrinhISOSchema.index(
+  { MaQuyTrinh: 1, PhienBan: 1 },
+  { unique: true, partialFilterExpression: { IsDeleted: false } },
+);
 quyTrinhISOSchema.index({ KhoaXayDungID: 1 });
 quyTrinhISOSchema.index({ NgayHieuLuc: -1 });
 quyTrinhISOSchema.index({ IsDeleted: 1, TrangThai: 1 });

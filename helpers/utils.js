@@ -26,4 +26,6 @@ class AppError extends Error {
 
 utilsHelper.AppError = AppError;
 
+utilsHelper.escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 module.exports = utilsHelper;

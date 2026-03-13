@@ -6,7 +6,7 @@ const controller = require("../controllers/quyTrinhISO.controller");
 // All routes require login
 router.use(authentication.loginRequired);
 
-// Statistics (before parameterized routes)
+// Statistics visible to all users - data is filtered by role in controller
 router.get("/statistics", controller.getStatistics);
 
 // Distribution Management routes (before parameterized routes)
@@ -22,6 +22,11 @@ router.get("/built-by-my-dept", controller.getBuiltByMyDept);
 router.get("/", controller.list);
 router.get("/:id", controller.detail);
 router.get("/:id/versions", controller.getVersions);
+router.get(
+  "/:id/audit-log",
+  authentication.qlclRequired,
+  controller.getAuditLog,
+);
 
 // QLCL-only routes
 router.post("/", authentication.qlclRequired, controller.create);

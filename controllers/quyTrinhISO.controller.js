@@ -277,12 +277,6 @@ controller.create = catchAsync(async (req, res) => {
     throw new AppError(400, "Mã quy trình là bắt buộc", "VALIDATION_ERROR");
   if (MaQuyTrinh.length > 50)
     throw new AppError(400, "Mã quy trình tối đa 50 ký tự", "VALIDATION_ERROR");
-  if (!/^[A-Z0-9._-]+$/i.test(MaQuyTrinh))
-    throw new AppError(
-      400,
-      "Mã quy trình chỉ chứa chữ cái, số, dấu chấm, gạch ngang",
-      "VALIDATION_ERROR",
-    );
   if (!PhienBan?.trim())
     throw new AppError(400, "Phiên bản là bắt buộc", "VALIDATION_ERROR");
   if (TenQuyTrinh.length > 500)

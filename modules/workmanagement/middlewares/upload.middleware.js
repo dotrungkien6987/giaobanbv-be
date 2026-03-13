@@ -57,7 +57,7 @@ const storage = multer.diskStorage({
           String(ownerId),
           String(field || "default").toLowerCase(),
           yyyy,
-          mm
+          mm,
         );
         await fs.ensureDir(dest);
         return cb(null, dest);
@@ -72,7 +72,7 @@ const storage = multer.diskStorage({
         "congviec",
         String(congViecId),
         yyyy,
-        mm
+        mm,
       );
       if (binhLuanId) {
         dest = path.join(
@@ -82,7 +82,7 @@ const storage = multer.diskStorage({
           "comments",
           String(binhLuanId),
           yyyy,
-          mm
+          mm,
         );
       }
       await fs.ensureDir(dest);
@@ -94,7 +94,7 @@ const storage = multer.diskStorage({
   filename: async (req, file, cb) => {
     try {
       const originalUtf8 = decodeOriginalNameToUtf8(
-        file.originalname || "file"
+        file.originalname || "file",
       );
       // expose for service layer if needed
       file.originalnameUtf8 = originalUtf8;
@@ -137,8 +137,16 @@ async function verifyMagicAndTotalSize(req, res, next) {
       // Dynamic import for ESM-only module
       const { fileTypeFromFile } = await import("file-type");
       const detected = await fileTypeFromFile(fp);
-      // If cannot detect, allow common office/pdf/zip by extension, else ensure startsWith("image/")
-      if (detected && !isMimeAllowed(detected.mime)) {
+      // OLE2/CFB container (.doc, .xls, .ppt) is detected as application/x-cfb by file-type
+      // ZIP-based OOXML (.docx, .xlsx, .pptx) is detected as application/zip
+      // Both are legitimate container formats for types already in ALLOWED_MIME —
+      // multer's fileFilter has already validated the mimetype declared by the browser.
+      const CONTAINER_MIMES = ["application/x-cfb", "application/zip"];
+      if (
+        detected &&
+        !isMimeAllowed(detected.mime) &&
+        !CONTAINER_MIMES.includes(detected.mime)
+      ) {
         return next(new Error("File không đúng định dạng nội dung"));
       }
     }

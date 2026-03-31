@@ -75,7 +75,7 @@ maBenhManTinhController.create = catchAsync(async (req, res, next) => {
 
 /**
  * @route POST /api/his/mabenh-mantinh/batch
- * @desc Import hàng loạt mã bệnh mãn tính (skip duplicates)
+ * @desc Import hàng loạt mã bệnh mãn tính
  */
 maBenhManTinhController.batchCreate = catchAsync(async (req, res, next) => {
   const { items } = req.body;
@@ -88,36 +88,85 @@ maBenhManTinhController.batchCreate = catchAsync(async (req, res, next) => {
     throw new AppError(400, "Tối đa 200 mã bệnh mỗi lần", "BATCH_LIMIT");
   }
 
-  const docs = items
-    .filter((item) => item.maBenh && item.tenBenh)
-    .map((item) => ({
+  // Validate từng dòng + phân loại: valid vs invalid
+  const invalidItems = [];
+  const docs = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (
+      typeof item.maBenh !== "string" ||
+      !item.maBenh.trim() ||
+      typeof item.tenBenh !== "string" ||
+      !item.tenBenh.trim()
+    ) {
+      invalidItems.push({
+        row: i + 1,
+        maBenh: item.maBenh ?? null,
+        reason: "Thiếu hoặc sai định dạng maBenh/tenBenh",
+      });
+      continue;
+    }
+    docs.push({
       maBenh: item.maBenh.toUpperCase().trim(),
       tenBenh: item.tenBenh.trim(),
       nhomBenh: (item.nhomBenh || "").trim(),
       ghiChu: item.ghiChu || "",
       nguoiTao: req.userId,
-    }));
+    });
+  }
 
-  const result = await MaBenhManTinh.insertMany(docs, {
-    ordered: false,
-  }).catch((err) => {
+  // Nếu không có doc nào hợp lệ → trả về ngay
+  if (docs.length === 0) {
+    return sendResponse(res, 200, true, {
+      totalRequested: items.length,
+      totalAttempted: 0,
+      totalImported: 0,
+      totalSkipped: 0,
+      totalInvalid: invalidItems.length,
+      duplicateCount: 0,
+      invalidItems,
+      partialSuccess: false,
+    }, null, "Không có bản ghi hợp lệ để import");
+  }
+
+  let insertResult;
+  let duplicateCount = 0;
+  let totalImported = 0;
+
+  try {
+    insertResult = await MaBenhManTinh.insertMany(docs, { ordered: false });
+    // insertedIds: object { index: _id } — CHỈ những doc THỰC SỰ được insert
+    totalImported = Object.keys(insertResult.insertedIds || {}).length;
+  } catch (err) {
     if (err.code === 11000 || err.writeErrors) {
-      return {
-        insertedCount: err.insertedDocs?.length || 0,
-        skipped: true,
-      };
+      const insertedBeforeError =
+        err.insertedCount ?? err.writeResult?.insertedCount ?? 0;
+      const dupCount = (err.writeErrors || []).length;
+      // insertedIds không có trong catch → ước tính từ err
+      // Với ordered:false, doc sau dup đầu tiên vẫn được insert tiếp
+      totalImported = insertedBeforeError + (docs.length - dupCount - insertedBeforeError);
+      // Nếu ước tính âm → fallback về insertedBeforeError
+      if (totalImported < 0) totalImported = insertedBeforeError;
+      duplicateCount = dupCount;
+      insertResult = { insertedCount: totalImported };
+    } else {
+      throw err;
     }
-    throw err;
-  });
+  }
 
-  return sendResponse(
-    res,
-    201,
-    true,
-    result,
-    null,
-    "Import mã bệnh mãn tính thành công",
-  );
+  const totalAttempted = docs.length;
+  const totalSkipped = totalAttempted - totalImported;
+
+  return sendResponse(res, 200, true, {
+    totalRequested: items.length,
+    totalAttempted,
+    totalImported,
+    totalSkipped,
+    totalInvalid: invalidItems.length,
+    duplicateCount,
+    invalidItems,
+    partialSuccess: totalImported < totalAttempted,
+  }, null, "Hoàn tất import");
 });
 
 /**

@@ -1,8 +1,13 @@
 const express = require("express");
+const bodyParser = require("body-parser");
 const router = express.Router();
 const datLichKhamController = require("../../controllers/his/datLichKham.controller");
 const xacNhanManTinhController = require("../../controllers/his/xacNhanManTinh.controller");
 const authentication = require("../../middlewares/authentication");
+
+// Middleware body-parser riêng cho batch — chỉ áp dụng 2 endpoint dưới đây
+// Giới hạn 10mb đủ cho ~3000 bản ghi với snapshot JSON
+const batchBodyParser = bodyParser.json({ limit: "10mb" });
 
 // ═══════════════════════════════════════════════
 // Báo cáo đặt lịch khám (PostgreSQL — readonly)
@@ -49,6 +54,7 @@ router.post(
 
 router.post(
   "/mantinh/batch",
+  batchBodyParser,
   authentication.loginRequired,
   authentication.adminOrCnttRequired,
   xacNhanManTinhController.batchCreateManTinh,
@@ -63,6 +69,7 @@ router.post(
 
 router.delete(
   "/mantinh/batch",
+  batchBodyParser,
   authentication.loginRequired,
   authentication.adminOrCnttRequired,
   xacNhanManTinhController.batchDeleteManTinh,

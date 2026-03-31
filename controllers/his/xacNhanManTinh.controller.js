@@ -56,7 +56,7 @@ xacNhanManTinhController.createManTinh = catchAsync(async (req, res, next) => {
 
 /**
  * @route POST /api/his/datlichkham/mantinh/batch
- * @desc Đánh dấu hàng loạt
+ * @desc Đánh dấu hàng loạt (hỗ trợ chunk tự động, tối đa 10000 bản ghi)
  */
 xacNhanManTinhController.batchCreateManTinh = catchAsync(
   async (req, res, next) => {
@@ -66,39 +66,97 @@ xacNhanManTinhController.batchCreateManTinh = catchAsync(
       throw new AppError(400, "items phải là mảng không rỗng", "INVALID_ITEMS");
     }
 
-    if (items.length > 100) {
-      throw new AppError(400, "Tối đa 100 bản ghi mỗi lần", "BATCH_LIMIT");
+    if (items.length > 10000) {
+      throw new AppError(400, "Tối đa 10000 bản ghi mỗi lần", "BATCH_LIMIT");
     }
 
-    const docs = items.map((item) => ({
-      dangkykhamid: item.dangkykhamid,
-      patientid_old: item.patientid_old,
-      vienphiid: item.vienphiid,
-      nguoigioithieuid: item.nguoigioithieuid,
-      ghiChu: item.ghiChu || "",
-      snapshot: item.snapshot || {},
-      nguoiTao: req.userId,
-    }));
-
-    // insertMany with ordered:false to skip duplicates
-    const result = await XacNhanManTinh.insertMany(docs, {
-      ordered: false,
-    }).catch((err) => {
-      // Handle duplicate key errors gracefully
-      if (err.code === 11000 || err.writeErrors) {
-        return { insertedCount: err.insertedDocs?.length || 0, skipped: true };
+    // 1. Validate + phân loại valid vs invalid
+    const invalidItems = [];
+    const docs = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (
+        typeof item.dangkykhamid !== "number" ||
+        item.dangkykhamid <= 0 ||
+        typeof item.patientid_old !== "number" ||
+        item.patientid_old <= 0
+      ) {
+        invalidItems.push({
+          row: i + 1,
+          dangkykhamid: item.dangkykhamid ?? null,
+          patientid_old: item.patientid_old ?? null,
+          reason: "dangkykhamid và patientid_old phải là số nguyên > 0",
+        });
+        continue;
       }
-      throw err;
-    });
+      docs.push({
+        dangkykhamid: item.dangkykhamid,
+        patientid_old: item.patientid_old,
+        vienphiid: item.vienphiid ?? null,
+        nguoigioithieuid: item.nguoigioithieuid ?? null,
+        ghiChu: item.ghiChu || "",
+        snapshot: item.snapshot || {},
+        nguoiTao: req.userId,
+      });
+    }
 
-    return sendResponse(
-      res,
-      201,
-      true,
-      result,
-      null,
-      "Đánh dấu hàng loạt thành công",
-    );
+    // 2. Nếu không có doc hợp lệ → trả về ngay
+    if (docs.length === 0) {
+      return sendResponse(res, 200, true, {
+        totalRequested: items.length,
+        totalImported: 0,
+        totalSkipped: 0,
+        totalInvalid: invalidItems.length,
+        duplicateCount: 0,
+        errorCount: 0,
+        invalidItems,
+        partialSuccess: false,
+      }, null, "Không có bản ghi hợp lệ để đánh dấu");
+    }
+
+    // 3. Chunk-based insert: 500 items mỗi batch
+    const CHUNK_SIZE = 500;
+    let totalInserted = 0;
+    let totalDuplicate = 0;
+    let totalError = 0;
+    const errors = [];
+
+    for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+      const chunk = docs.slice(i, i + CHUNK_SIZE);
+
+      try {
+        const result = await XacNhanManTinh.insertMany(chunk, { ordered: false });
+        totalInserted += result.insertedCount ?? chunk.length;
+      } catch (err) {
+        if (err.code === 11000 || err.writeErrors) {
+          // insertedCount: số doc được insert thành công trong chunk (kể cả trước dup đầu tiên)
+          const inserted = err.insertedCount ?? err.writeResult?.insertedCount ?? 0;
+          const dupCount = (err.writeErrors || []).length;
+          totalInserted += inserted;
+          totalDuplicate += dupCount;
+        } else {
+          totalError += chunk.length;
+          if (errors.length < 10) {
+            errors.push({ chunk: Math.floor(i / CHUNK_SIZE) + 1, message: err.message });
+          }
+        }
+      }
+    }
+
+    const totalSkipped = docs.length - totalInserted;
+
+    return sendResponse(res, 200, true, {
+      totalRequested: items.length,
+      totalAttempted: docs.length,
+      totalImported: totalInserted,
+      totalSkipped,
+      totalInvalid: invalidItems.length,
+      duplicateCount: totalDuplicate,
+      errorCount: totalError,
+      errors,
+      invalidItems: invalidItems.slice(0, 50),
+      partialSuccess: totalInserted < docs.length,
+    }, null, "Hoàn tất đánh dấu mãn tính");
   },
 );
 
@@ -158,7 +216,7 @@ xacNhanManTinhController.deleteManTinh = catchAsync(async (req, res, next) => {
 
 /**
  * @route DELETE /api/his/datlichkham/mantinh/batch
- * @desc Bỏ đánh dấu hàng loạt
+ * @desc Bỏ đánh dấu hàng loạt (tối đa 10000)
  */
 xacNhanManTinhController.batchDeleteManTinh = catchAsync(
   async (req, res, next) => {
@@ -172,18 +230,48 @@ xacNhanManTinhController.batchDeleteManTinh = catchAsync(
       );
     }
 
+    if (dangkykhamids.length > 10000) {
+      throw new AppError(
+        400,
+        "Tối đa 10000 bản ghi mỗi lần",
+        "BATCH_LIMIT",
+      );
+    }
+
+    // Validate: chỉ chấp nhận số nguyên dương
+    const invalidIds = [];
+    const validIds = [];
+    for (let i = 0; i < dangkykhamids.length; i++) {
+      const id = Number(dangkykhamids[i]);
+      if (!Number.isInteger(id) || id <= 0) {
+        invalidIds.push({ index: i + 1, value: dangkykhamids[i] });
+      } else {
+        validIds.push(id);
+      }
+    }
+
+    if (validIds.length === 0) {
+      return sendResponse(res, 200, true, {
+        totalRequested: dangkykhamids.length,
+        totalDeleted: 0,
+        notFound: 0,
+        invalidCount: invalidIds.length,
+        invalidIds: invalidIds.slice(0, 50),
+      }, null, "Không có ID hợp lệ để xóa");
+    }
+
     const result = await XacNhanManTinh.deleteMany({
-      dangkykhamid: { $in: dangkykhamids },
+      dangkykhamid: { $in: validIds },
     });
 
-    return sendResponse(
-      res,
-      200,
-      true,
-      { deletedCount: result.deletedCount },
-      null,
-      "Bỏ đánh dấu hàng loạt thành công",
-    );
+    return sendResponse(res, 200, true, {
+      totalRequested: dangkykhamids.length,
+      totalDeleted: result.deletedCount,
+      notFound: validIds.length - result.deletedCount,
+      invalidCount: invalidIds.length,
+      invalidIds: invalidIds.slice(0, 50),
+      partialSuccess: result.deletedCount < validIds.length,
+    }, null, "Hoàn tất bỏ đánh dấu mãn tính");
   },
 );
 

@@ -27,8 +27,7 @@ const EXCLUDED_NGT_IDS = "10659";
 /** Khoa loại trừ (departmentid trên bảng dangkykham) */
 const EXCLUDED_DEPT_IDS = "977";
 
-/** Ngưỡng tiền dịch vụ tối thiểu để coi là hợp lệ (đơn vị: VNĐ) */
-const MIN_DICHVU_AMOUNT = 100000;
+/** Ngưỡng tiền dịch vụ tối thiểu (hiện không dùng trong logic nghiệp vụ, giữ lại đề phòng) */
 
 const qDatLichKham = {};
 
@@ -60,9 +59,7 @@ const qDatLichKham = {};
  *   - co_kham_co_tien    {number}  — số lượt có khám VÀ phát sinh tiền (tong_tien > 0)
  *   - co_kham_khong_tien {number}  — số lượt có khám NHƯNG không phát sinh tiền (tong_tien = 0)
  *   - tong_tien          {number}  — tổng tiền dịch vụ của các lượt có khám
- *   - dichvu_ge_100k     {number}  — số lượt có khám VÀ tong_tien_dichvu >= MIN_DICHVU_AMOUNT
- *   - dichvu_lt_100k     {number}  — số lượt có khám VÀ tong_tien_dichvu < MIN_DICHVU_AMOUNT
- *   - tong_tien_dichvu   {number}  — tổng tiền dịch vụ (chỉ nhóm BHYT cấu hình)
+ *   - tong_tien_dichvu   {number}  — tổng tiền dịch vụ (chỉ nhóm BHYT cấu hình, giữ lại đề phòng)
  */
 qDatLichKham.baoCaoNguoiGioiThieu = `
 WITH
@@ -154,10 +151,6 @@ SELECT
     COUNT(CASE WHEN dl.dangkykhamstatus != 1 THEN 1 END) AS khong_kham,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
-
-    -- Dịch vụ >= / < ngưỡng (dựa trên tong_tien_dichvu — chỉ nhóm BHYT cấu hình)
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) >= ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_ge_100k,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) <  ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_lt_100k,
 
     COALESCE(SUM(tpd.tong_tien), 0) AS tong_tien,
     COALESCE(SUM(tpd.tong_tien_dichvu), 0) AS tong_tien_dichvu
@@ -267,8 +260,6 @@ SELECT
     COUNT(CASE WHEN dl.dangkykhamstatus != 1 THEN 1 END) AS khong_kham,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) >= ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_ge_100k,
-    COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien_dichvu, 0) <  ${MIN_DICHVU_AMOUNT} THEN 1 END) AS dichvu_lt_100k,
     COALESCE(SUM(tpd.tong_tien), 0)          AS tong_tien,
     COALESCE(SUM(tpd.tong_tien_dichvu), 0) AS tong_tien_dichvu
 FROM dat_lich dl

@@ -307,6 +307,13 @@ ORDER BY dg.departmentgroupname ASC, co_kham DESC
  *   - chandoanravien_kemtheo, chandoanravien_kemtheo_code
  *   - vp_departmentgroupid, vp_departmentgroupname   (khoa viện phí — khác ngt)
  *   - vp_departmentid, vp_departmentname
+ *   - macskcbbd   — mã cơ sở khám chữa bệnh ban đầu từ BHYT của lượt khám
+ *   - ngay_kham_truoc {timestamp | null} — ngày khám thực tế liền trước trong cửa sổ 1 năm
+ *   - xutrikhambenhid_lan_truoc {number | null} — xử trí khám bệnh của lần khám liền trước
+ *   - hen_kham_lai_tu_lan_truoc {boolean} — true nếu lần khám liền trước có xutrikhambenhid = 3
+ *   - co_hen_kham_gan_nhat {boolean} — field chuẩn hóa cho UI/filter/formula, true nếu lần khám gần nhất là hẹn
+ *   - ngay_xu_tri_hen_gan_nhat {timestamp | null} — ngày của lần khám gần nhất khi lần đó có xử trí hẹn
+ *   - so_ngay_tu_lan_kham_gan_nhat {number | null} — số ngày từ đợt khám hiện tại đến lần khám gần nhất
  *   Hành chính bệnh nhân (NULL nếu không khám):
  *   - hosobenhanid, hosobenhancode, hosobenhanstatus, loaibenhanid
  *   - patientname, birthday, gioitinhname
@@ -334,7 +341,36 @@ dat_lich AS (
       AND (departmentid IS NULL OR departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
 
--- CTE 2: Tất cả vienphi matching (1 dangkykhamid có thể → N vienphiid)
+-- CTE 2: Tập bệnh nhân đã tiếp đón trong báo cáo, dùng lại cho lịch sử 1 năm
+cohort_patients AS (
+    SELECT DISTINCT patientid_old AS patientid
+    FROM dat_lich
+    WHERE patientid_old IS NOT NULL AND patientid_old != 0
+),
+
+-- CTE 3: Chuỗi lượt khám thực tế trong 1 năm để lấy lần khám liền trước
+luot_kham_1_nam AS (
+    SELECT
+        vp_h.patientid,
+        vp_h.vienphiid,
+        vp_h.vienphidate,
+        hsba_h.xutrikhambenhid,
+        LAG(vp_h.vienphidate) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS ngay_kham_truoc,
+        LAG(hsba_h.xutrikhambenhid) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS xutrikhambenhid_lan_truoc
+    FROM vienphi vp_h
+    LEFT JOIN hosobenhan hsba_h
+        ON vp_h.hosobenhanid = hsba_h.hosobenhanid
+    WHERE vp_h.patientid = ANY(SELECT patientid FROM cohort_patients)
+      AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
+),
+
+-- CTE 4: Tất cả vienphi matching (1 dangkykhamid có thể → N vienphiid)
 all_vienphi AS (
     SELECT
         dl.dangkykhamid,
@@ -345,7 +381,7 @@ all_vienphi AS (
         AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
 ),
 
--- CTE 3: Chọn 1 vienphi (vienphiid lớn nhất) per dangkykhamid cho clinical data
+-- CTE 5: Chọn 1 vienphi (vienphiid lớn nhất) per dangkykhamid cho clinical data
 vienphi_dedup AS (
     SELECT DISTINCT ON (dangkykhamid)
         dangkykhamid,
@@ -354,7 +390,7 @@ vienphi_dedup AS (
     ORDER BY dangkykhamid, vienphiid DESC
 ),
 
--- CTE 4: Tính tổng tiền TẤT CẢ dịch vụ per vienphiid
+-- CTE 6: Tính tổng tiền TẤT CẢ dịch vụ per vienphiid
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -370,7 +406,7 @@ tong_tien_vienphiid AS (
     GROUP BY sp.vienphiid
 ),
 
--- CTE 5: Tính tổng tiền DỊCH VỤ (chỉ bhyt_groupcode hợp lệ) per vienphiid
+-- CTE 7: Tính tổng tiền DỊCH VỤ (chỉ bhyt_groupcode hợp lệ) per vienphiid
 tong_tien_dichvu_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -387,7 +423,7 @@ tong_tien_dichvu_vienphiid AS (
     GROUP BY sp.vienphiid
 ),
 
--- CTE 6: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
+-- CTE 8: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
 tong_tien_per_dk AS (
     SELECT
         av.dangkykhamid,
@@ -427,6 +463,20 @@ SELECT
     dg_vp.departmentgroupname                           AS vp_departmentgroupname,
     vp.departmentid                                     AS vp_departmentid,
     d_vp.departmentname                                 AS vp_departmentname,
+    b.macskcbbd                                         AS macskcbbd,
+    lk1n.ngay_kham_truoc,
+    lk1n.xutrikhambenhid_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS hen_kham_lai_tu_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS co_hen_kham_gan_nhat,
+    CASE
+        WHEN lk1n.xutrikhambenhid_lan_truoc = 3 THEN lk1n.ngay_kham_truoc
+        ELSE NULL
+    END                                                 AS ngay_xu_tri_hen_gan_nhat,
+    CASE
+        WHEN lk1n.ngay_kham_truoc IS NOT NULL AND vp.vienphidate IS NOT NULL
+            THEN DATE(vp.vienphidate) - DATE(lk1n.ngay_kham_truoc)
+        ELSE NULL
+    END                                                 AS so_ngay_tu_lan_kham_gan_nhat,
 
     -- Hành chính bệnh nhân
     hsba.hosobenhanid,
@@ -458,6 +508,10 @@ LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
     ON vp.departmentid = d_vp.departmentid
+LEFT JOIN bhyt b
+    ON vp.bhytid = b.bhytid
+LEFT JOIN luot_kham_1_nam lk1n
+    ON vp.vienphiid = lk1n.vienphiid
 LEFT JOIN hosobenhan hsba
     ON vp.hosobenhanid = hsba.hosobenhanid
 LEFT JOIN patient pt
@@ -499,6 +553,31 @@ dat_lich AS (
       AND (dl.nguoigioithieuid IS NULL OR dl.nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
       AND (dl.departmentid IS NULL OR dl.departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
+cohort_patients AS (
+    SELECT DISTINCT patientid_old AS patientid
+    FROM dat_lich
+    WHERE patientid_old IS NOT NULL AND patientid_old != 0
+),
+luot_kham_1_nam AS (
+    SELECT
+        vp_h.patientid,
+        vp_h.vienphiid,
+        vp_h.vienphidate,
+        hsba_h.xutrikhambenhid,
+        LAG(vp_h.vienphidate) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS ngay_kham_truoc,
+        LAG(hsba_h.xutrikhambenhid) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS xutrikhambenhid_lan_truoc
+    FROM vienphi vp_h
+    LEFT JOIN hosobenhan hsba_h
+        ON vp_h.hosobenhanid = hsba_h.hosobenhanid
+    WHERE vp_h.patientid = ANY(SELECT patientid FROM cohort_patients)
+      AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
+),
 all_vienphi AS (
     SELECT
         dl.dangkykhamid,
@@ -578,6 +657,20 @@ SELECT
     dg_vp.departmentgroupname                           AS vp_departmentgroupname,
     vp.departmentid                                     AS vp_departmentid,
     d_vp.departmentname                                 AS vp_departmentname,
+    b.macskcbbd                                         AS macskcbbd,
+    lk1n.ngay_kham_truoc,
+    lk1n.xutrikhambenhid_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS hen_kham_lai_tu_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS co_hen_kham_gan_nhat,
+    CASE
+        WHEN lk1n.xutrikhambenhid_lan_truoc = 3 THEN lk1n.ngay_kham_truoc
+        ELSE NULL
+    END                                                 AS ngay_xu_tri_hen_gan_nhat,
+    CASE
+        WHEN lk1n.ngay_kham_truoc IS NOT NULL AND vp.vienphidate IS NOT NULL
+            THEN DATE(vp.vienphidate) - DATE(lk1n.ngay_kham_truoc)
+        ELSE NULL
+    END                                                 AS so_ngay_tu_lan_kham_gan_nhat,
     hsba.hosobenhanid,
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
@@ -603,6 +696,10 @@ LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
     ON vp.departmentid = d_vp.departmentid
+LEFT JOIN bhyt b
+    ON vp.bhytid = b.bhytid
+LEFT JOIN luot_kham_1_nam lk1n
+    ON vp.vienphiid = lk1n.vienphiid
 LEFT JOIN hosobenhan hsba
     ON vp.hosobenhanid = hsba.hosobenhanid
 LEFT JOIN patient pt
@@ -632,9 +729,17 @@ ORDER BY
  * @param {string} $2 - toDate   — ngày kết thúc (YYYY-MM-DD hoặc timestamp)
  *
  * @returns Toàn bộ cột chiTietDatLich, thêm:
+ *   - macskcbbd {string | null}: mã cơ sở khám chữa bệnh ban đầu từ BHYT của lượt khám
+ *   - ngay_kham_truoc {timestamp | null}: ngày khám thực tế liền trước trong cửa sổ 1 năm
+ *   - xutrikhambenhid_lan_truoc {number | null}: xử trí khám bệnh của lần khám liền trước
+ *   - hen_kham_lai_tu_lan_truoc {boolean}: true nếu lần khám liền trước có xutrikhambenhid = 3
+ *   - co_hen_kham_gan_nhat {boolean}: field chuẩn hóa cho UI/filter/formula, true nếu lần khám gần nhất là hẹn
+ *   - ngay_xu_tri_hen_gan_nhat {timestamp | null}: ngày của lần khám gần nhất khi lần đó có xử trí hẹn
+ *   - so_ngay_tu_lan_kham_gan_nhat {number | null}: số ngày từ đợt khám hiện tại đến lần khám gần nhất
  *   - lichsu_kham {Array<Object> | null}: mảng JSON lịch sử khám 1 năm, sắp xếp mới nhất trước.
  *       Mỗi phần tử: { vienphidate, chandoanravien, chandoanravien_code,
- *                      chandoanravien_kemtheo, chandoanravien_kemtheo_code }
+ *                      chandoanravien_kemtheo, chandoanravien_kemtheo_code,
+ *                      xutrikhambenhid }
  *       NULL nếu bệnh nhân chưa tiếp đón hoặc chưa có lịch sử trong 1 năm qua.
  *   Thanh toán:
  *   - tong_tien  {number}  — tổng tiền dịch vụ (0 nếu chưa khám)
@@ -658,7 +763,14 @@ dat_lich AS (
       AND (departmentid IS NULL OR departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
 
--- CTE 2: Pre-aggregate lịch sử khám 1 năm gần nhất
+-- CTE 2: Tập bệnh nhân đã tiếp đón trong báo cáo, dùng lại cho lịch sử 1 năm
+cohort_patients AS (
+    SELECT DISTINCT patientid_old AS patientid
+    FROM dat_lich
+    WHERE patientid_old IS NOT NULL AND patientid_old != 0
+),
+
+-- CTE 3: Pre-aggregate lịch sử khám 1 năm gần nhất
 lichsu_kham AS (
     SELECT
         vp_h.patientid,
@@ -669,6 +781,7 @@ lichsu_kham AS (
                 'chandoanravien_code',         vp_h.chandoanravien_code,
                 'chandoanravien_kemtheo',      vp_h.chandoanravien_kemtheo,
                 'chandoanravien_kemtheo_code', vp_h.chandoanravien_kemtheo_code,
+                'xutrikhambenhid',             hsba_h.xutrikhambenhid,
                 'departmentgroupid',           vp_h.departmentgroupid,
                 'departmentgroupname',         dg_h.departmentgroupname,
                 'departmentid',                vp_h.departmentid,
@@ -676,18 +789,37 @@ lichsu_kham AS (
             ) ORDER BY vp_h.vienphidate DESC
         ) AS lichsu
     FROM vienphi vp_h
+    LEFT JOIN hosobenhan hsba_h ON vp_h.hosobenhanid = hsba_h.hosobenhanid
     LEFT JOIN departmentgroup dg_h ON vp_h.departmentgroupid = dg_h.departmentgroupid
     LEFT JOIN department d_h ON vp_h.departmentid = d_h.departmentid
-    WHERE vp_h.patientid = ANY(
-        SELECT DISTINCT patientid_old
-        FROM dat_lich
-        WHERE patientid_old IS NOT NULL AND patientid_old != 0
-    )
+    WHERE vp_h.patientid = ANY(SELECT patientid FROM cohort_patients)
       AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
     GROUP BY vp_h.patientid
 ),
 
--- CTE 3: Tất cả vienphi matching (1 dangkykhamid có thể → N vienphiid)
+-- CTE 4: Chuỗi lượt khám thực tế trong 1 năm để lấy lần khám liền trước
+luot_kham_1_nam AS (
+    SELECT
+        vp_h.patientid,
+        vp_h.vienphiid,
+        vp_h.vienphidate,
+        hsba_h.xutrikhambenhid,
+        LAG(vp_h.vienphidate) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS ngay_kham_truoc,
+        LAG(hsba_h.xutrikhambenhid) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS xutrikhambenhid_lan_truoc
+    FROM vienphi vp_h
+    LEFT JOIN hosobenhan hsba_h
+        ON vp_h.hosobenhanid = hsba_h.hosobenhanid
+    WHERE vp_h.patientid = ANY(SELECT patientid FROM cohort_patients)
+      AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
+),
+
+-- CTE 5: Tất cả vienphi matching (1 dangkykhamid có thể → N vienphiid)
 all_vienphi AS (
     SELECT
         dl.dangkykhamid,
@@ -698,7 +830,7 @@ all_vienphi AS (
         AND DATE(dl.dangkykhamdate) = DATE(vp.vienphidate)
 ),
 
--- CTE 4: Chọn 1 vienphi (vienphiid lớn nhất) per dangkykhamid cho clinical data
+-- CTE 6: Chọn 1 vienphi (vienphiid lớn nhất) per dangkykhamid cho clinical data
 vienphi_dedup AS (
     SELECT DISTINCT ON (dangkykhamid)
         dangkykhamid,
@@ -707,7 +839,7 @@ vienphi_dedup AS (
     ORDER BY dangkykhamid, vienphiid DESC
 ),
 
--- CTE 5: Tính tổng tiền TẤT CẢ dịch vụ per vienphiid
+-- CTE 7: Tính tổng tiền TẤT CẢ dịch vụ per vienphiid
 tong_tien_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -723,7 +855,7 @@ tong_tien_vienphiid AS (
     GROUP BY sp.vienphiid
 ),
 
--- CTE 6: Tính tổng tiền DỊCH VỤ (chỉ bhyt_groupcode hợp lệ)
+-- CTE 8: Tính tổng tiền DỊCH VỤ (chỉ bhyt_groupcode hợp lệ)
 tong_tien_dichvu_vienphiid AS (
     SELECT
         sp.vienphiid,
@@ -740,7 +872,7 @@ tong_tien_dichvu_vienphiid AS (
     GROUP BY sp.vienphiid
 ),
 
--- CTE 7: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
+-- CTE 9: Gộp tổng tiền per dangkykhamid (SUM tất cả vienphi cùng ngày)
 tong_tien_per_dk AS (
     SELECT
         av.dangkykhamid,
@@ -780,6 +912,20 @@ SELECT
     dg_vp.departmentgroupname                           AS vp_departmentgroupname,
     vp.departmentid                                     AS vp_departmentid,
     d_vp.departmentname                                 AS vp_departmentname,
+    b.macskcbbd                                         AS macskcbbd,
+    lk1n.ngay_kham_truoc,
+    lk1n.xutrikhambenhid_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS hen_kham_lai_tu_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS co_hen_kham_gan_nhat,
+    CASE
+        WHEN lk1n.xutrikhambenhid_lan_truoc = 3 THEN lk1n.ngay_kham_truoc
+        ELSE NULL
+    END                                                 AS ngay_xu_tri_hen_gan_nhat,
+    CASE
+        WHEN lk1n.ngay_kham_truoc IS NOT NULL AND vp.vienphidate IS NOT NULL
+            THEN DATE(vp.vienphidate) - DATE(lk1n.ngay_kham_truoc)
+        ELSE NULL
+    END                                                 AS so_ngay_tu_lan_kham_gan_nhat,
 
     -- Hành chính bệnh nhân (ưu tiên hosobenhan, fallback sang patient)
     hsba.hosobenhanid,
@@ -814,6 +960,10 @@ LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
     ON vp.departmentid = d_vp.departmentid
+LEFT JOIN bhyt b
+    ON vp.bhytid = b.bhytid
+LEFT JOIN luot_kham_1_nam lk1n
+    ON vp.vienphiid = lk1n.vienphiid
 LEFT JOIN hosobenhan hsba
     ON vp.hosobenhanid = hsba.hosobenhanid
 LEFT JOIN patient pt
@@ -858,6 +1008,11 @@ dat_lich AS (
       AND (dl.nguoigioithieuid IS NULL OR dl.nguoigioithieuid NOT IN (${EXCLUDED_NGT_IDS}))
       AND (dl.departmentid IS NULL OR dl.departmentid NOT IN (${EXCLUDED_DEPT_IDS}))
 ),
+cohort_patients AS (
+    SELECT DISTINCT patientid_old AS patientid
+    FROM dat_lich
+    WHERE patientid_old IS NOT NULL AND patientid_old != 0
+),
 lichsu_kham AS (
     SELECT
         vp_h.patientid,
@@ -868,6 +1023,7 @@ lichsu_kham AS (
                 'chandoanravien_code',         vp_h.chandoanravien_code,
                 'chandoanravien_kemtheo',      vp_h.chandoanravien_kemtheo,
                 'chandoanravien_kemtheo_code', vp_h.chandoanravien_kemtheo_code,
+                'xutrikhambenhid',             hsba_h.xutrikhambenhid,
                 'departmentgroupid',           vp_h.departmentgroupid,
                 'departmentgroupname',         dg_h.departmentgroupname,
                 'departmentid',                vp_h.departmentid,
@@ -875,15 +1031,32 @@ lichsu_kham AS (
             ) ORDER BY vp_h.vienphidate DESC
         ) AS lichsu
     FROM vienphi vp_h
+    LEFT JOIN hosobenhan hsba_h ON vp_h.hosobenhanid = hsba_h.hosobenhanid
     LEFT JOIN departmentgroup dg_h ON vp_h.departmentgroupid = dg_h.departmentgroupid
     LEFT JOIN department d_h ON vp_h.departmentid = d_h.departmentid
-    WHERE vp_h.patientid = ANY(
-        SELECT DISTINCT patientid_old
-        FROM dat_lich
-        WHERE patientid_old IS NOT NULL AND patientid_old != 0
-    )
+    WHERE vp_h.patientid = ANY(SELECT patientid FROM cohort_patients)
       AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
     GROUP BY vp_h.patientid
+),
+luot_kham_1_nam AS (
+    SELECT
+        vp_h.patientid,
+        vp_h.vienphiid,
+        vp_h.vienphidate,
+        hsba_h.xutrikhambenhid,
+        LAG(vp_h.vienphidate) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS ngay_kham_truoc,
+        LAG(hsba_h.xutrikhambenhid) OVER (
+            PARTITION BY vp_h.patientid
+            ORDER BY vp_h.vienphidate ASC, vp_h.vienphiid ASC
+        ) AS xutrikhambenhid_lan_truoc
+    FROM vienphi vp_h
+    LEFT JOIN hosobenhan hsba_h
+        ON vp_h.hosobenhanid = hsba_h.hosobenhanid
+    WHERE vp_h.patientid = ANY(SELECT patientid FROM cohort_patients)
+      AND vp_h.vienphidate >= NOW() - INTERVAL '1 year'
 ),
 all_vienphi AS (
     SELECT
@@ -964,6 +1137,20 @@ SELECT
     dg_vp.departmentgroupname                           AS vp_departmentgroupname,
     vp.departmentid                                     AS vp_departmentid,
     d_vp.departmentname                                 AS vp_departmentname,
+    b.macskcbbd                                         AS macskcbbd,
+    lk1n.ngay_kham_truoc,
+    lk1n.xutrikhambenhid_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS hen_kham_lai_tu_lan_truoc,
+    COALESCE(lk1n.xutrikhambenhid_lan_truoc = 3, FALSE) AS co_hen_kham_gan_nhat,
+    CASE
+        WHEN lk1n.xutrikhambenhid_lan_truoc = 3 THEN lk1n.ngay_kham_truoc
+        ELSE NULL
+    END                                                 AS ngay_xu_tri_hen_gan_nhat,
+    CASE
+        WHEN lk1n.ngay_kham_truoc IS NOT NULL AND vp.vienphidate IS NOT NULL
+            THEN DATE(vp.vienphidate) - DATE(lk1n.ngay_kham_truoc)
+        ELSE NULL
+    END                                                 AS so_ngay_tu_lan_kham_gan_nhat,
     hsba.hosobenhanid,
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
@@ -990,6 +1177,10 @@ LEFT JOIN departmentgroup dg_vp
     ON vp.departmentgroupid = dg_vp.departmentgroupid
 LEFT JOIN department d_vp
     ON vp.departmentid = d_vp.departmentid
+LEFT JOIN bhyt b
+    ON vp.bhytid = b.bhytid
+LEFT JOIN luot_kham_1_nam lk1n
+    ON vp.vienphiid = lk1n.vienphiid
 LEFT JOIN hosobenhan hsba
     ON vp.hosobenhanid = hsba.hosobenhanid
 LEFT JOIN patient pt

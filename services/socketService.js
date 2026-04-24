@@ -1,9 +1,12 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const {
+  shouldDisableLegacyRealtime,
+} = require("../modules/workmanagement/helpers/legacyCutover");
 
-// Import shared CORS whitelist
-const { whitelist } = require("../config/corsConfig");
+// Import shared CORS origin resolver
+const { getAllowedOrigins } = require("../config/corsConfig");
 
 /**
  * SocketService - Singleton quản lý Socket.IO connections
@@ -18,6 +21,7 @@ class SocketService {
   constructor() {
     this.io = null;
     this.onlineUsers = new Map(); // userId -> Set<socketId> (support multiple connections per user)
+    this.isDisabled = false;
   }
 
   /**
@@ -25,11 +29,19 @@ class SocketService {
    * @param {http.Server} httpServer
    */
   init(httpServer) {
+    if (shouldDisableLegacyRealtime()) {
+      this.isDisabled = true;
+      this.io = null;
+      this.onlineUsers.clear();
+      console.log(
+        "[SocketService] ⏭️ Legacy realtime disabled by cutover flag",
+      );
+      return;
+    }
+
     this.io = new Server(httpServer, {
       cors: {
-        origin: process.env.CORS_ORIGINS
-          ? process.env.CORS_ORIGINS.split(",")
-          : whitelist, // ✅ Sử dụng whitelist từ app.js
+        origin: getAllowedOrigins(),
         methods: ["GET", "POST"],
         credentials: true,
       },
@@ -47,7 +59,7 @@ class SocketService {
         // Verify JWT - sử dụng JWT_SECRET_KEY như trong project
         const decoded = jwt.verify(
           token,
-          process.env.JWT_SECRET_KEY || process.env.JWT_SECRET
+          process.env.JWT_SECRET_KEY || process.env.JWT_SECRET,
         );
         const user = await User.findById(decoded._id);
 
@@ -82,7 +94,7 @@ class SocketService {
       // Handle disconnect
       socket.on("disconnect", () => {
         console.log(
-          `[Socket] User disconnected: ${userId} (socket: ${socket.id})`
+          `[Socket] User disconnected: ${userId} (socket: ${socket.id})`,
         );
         const userSockets = this.onlineUsers.get(userId);
         if (userSockets) {
@@ -117,6 +129,10 @@ class SocketService {
    * @returns {boolean} - true if user is online
    */
   emitToUser(userId, event, data) {
+    if (this.isDisabled || !this.io) {
+      return false;
+    }
+
     const userIdStr = userId.toString();
     // Use room to emit to ALL connections of this user
     // (each socket joins room `user:${userId}` on connect)
@@ -131,6 +147,10 @@ class SocketService {
    * @param {any} data
    */
   emitToUsers(userIds, event, data) {
+    if (this.isDisabled || !this.io) {
+      return;
+    }
+
     userIds.forEach((userId) => {
       this.emitToUser(userId, event, data);
     });
@@ -142,6 +162,10 @@ class SocketService {
    * @param {any} data
    */
   emitToAll(event, data) {
+    if (this.isDisabled || !this.io) {
+      return;
+    }
+
     this.io.emit(event, data);
   }
 

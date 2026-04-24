@@ -10,6 +10,9 @@ const cors = require("cors");
 const { whitelist, corsOptionsDelegate } = require("./config/corsConfig");
 
 const { sendResponse } = require("./helpers/utils");
+const {
+  createCutoverGuard,
+} = require("./modules/workmanagement/helpers/legacyCutover");
 
 const indexRouter = require("./routes/index");
 
@@ -31,11 +34,19 @@ app.use("/api", indexRouter);
 
 // User-facing Notification Routes (GET notifications, settings, mark as read)
 const notificationUserRoutes = require("./modules/workmanagement/routes/notificationRoutes");
-app.use("/api/notifications", notificationUserRoutes);
+app.use(
+  "/api/notifications",
+  createCutoverGuard("notifications"),
+  notificationUserRoutes,
+);
 
 // Admin Notification System Routes (Admin-Configurable v2: Types & Templates CRUD)
 const notificationApi = require("./modules/workmanagement/routes/notification.api");
-app.use("/api/workmanagement/notifications", notificationApi);
+app.use(
+  "/api/workmanagement/notifications",
+  createCutoverGuard("notifications"),
+  notificationApi,
+);
 
 const mongoose = require("mongoose");
 const mongoURI =
@@ -61,7 +72,7 @@ app.use((err, req, res, next) => {
     false,
     null,
     { message: err.message },
-    err.isOperational ? err.errorType : "Internal Server Error"
+    err.isOperational ? err.errorType : "Internal Server Error",
   );
 });
 app.get("/images", function (request, response) {

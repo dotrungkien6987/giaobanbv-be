@@ -5,11 +5,15 @@
  * Dùng cho deadline notifications (DEADLINE_APPROACHING, DEADLINE_OVERDUE)
  */
 const Agenda = require("agenda");
+const {
+  shouldDisableLegacyJobs,
+} = require("../modules/workmanagement/helpers/legacyCutover");
 
 class AgendaService {
   constructor() {
     this.agenda = null;
     this.isReady = false;
+    this.isDisabled = false;
   }
 
   /**
@@ -22,11 +26,18 @@ class AgendaService {
       return;
     }
 
+    if (shouldDisableLegacyJobs()) {
+      this.isDisabled = true;
+      this.isReady = false;
+      console.log("[AgendaService] ⏭️ Legacy jobs disabled by cutover flag");
+      return;
+    }
+
     // Get MongoDB URI from parameter or environment
     const uri = mongoUri || process.env.MONGODB_URI;
     if (!uri) {
       console.error(
-        "[AgendaService] ❌ MongoDB URI not provided and MONGODB_URI env not set"
+        "[AgendaService] ❌ MongoDB URI not provided and MONGODB_URI env not set",
       );
       return;
     }
@@ -64,7 +75,7 @@ class AgendaService {
       this.agenda.on("fail", (err, job) => {
         console.error(
           `[AgendaService] Job failed: ${job.attrs.name}`,
-          err.message
+          err.message,
         );
       });
 
@@ -115,12 +126,12 @@ class AgendaService {
             name: { $ne: "cleanup-completed-jobs" }, // Don't delete itself
           });
           console.log(
-            `[AgendaService] 🧹 Cleanup complete: removed ${result} old job(s)`
+            `[AgendaService] 🧹 Cleanup complete: removed ${result} old job(s)`,
           );
         } catch (err) {
           console.error("[AgendaService] 🧹 Cleanup error:", err.message);
         }
-      }
+      },
     );
     console.log("[AgendaService] 🧹 Cleanup job defined");
   }
@@ -133,12 +144,12 @@ class AgendaService {
       // Schedule cleanup to run daily at 3:00 AM
       await this.agenda.every("0 3 * * *", "cleanup-completed-jobs");
       console.log(
-        "[AgendaService] 🧹 Cleanup job scheduled (daily at 3:00 AM)"
+        "[AgendaService] 🧹 Cleanup job scheduled (daily at 3:00 AM)",
       );
     } catch (error) {
       console.error(
         "[AgendaService] Error scheduling recurring jobs:",
-        error.message
+        error.message,
       );
     }
   }
@@ -151,6 +162,10 @@ class AgendaService {
    * @returns {Promise<Object|null>} - The created job or null
    */
   async schedule(when, jobName, data) {
+    if (this.isDisabled) {
+      return null;
+    }
+
     if (!this.agenda) {
       console.error("[AgendaService] Not initialized, cannot schedule");
       return null;
@@ -162,13 +177,13 @@ class AgendaService {
         when instanceof Date ? when.toISOString() : when.toString();
       console.log(
         `[AgendaService] 📅 Scheduled "${jobName}" for ${scheduledTime}`,
-        data.taskCode ? `(${data.taskCode})` : ""
+        data.taskCode ? `(${data.taskCode})` : "",
       );
       return job;
     } catch (error) {
       console.error(
         `[AgendaService] Error scheduling ${jobName}:`,
-        error.message
+        error.message,
       );
       return null;
     }
@@ -180,6 +195,8 @@ class AgendaService {
    * @returns {Promise<number>} - Number of jobs cancelled
    */
   async cancel(query) {
+    if (this.isDisabled) return 0;
+
     if (!this.agenda) return 0;
 
     try {
@@ -207,7 +224,7 @@ class AgendaService {
    * @returns {boolean}
    */
   getIsReady() {
-    return this.isReady;
+    return this.isReady && !this.isDisabled;
   }
 
   /**

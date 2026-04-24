@@ -30,6 +30,7 @@ const {
   sendResponse,
   AppError,
 } = require("../../../helpers/utils");
+const { createCutoverGuard } = require("../helpers/legacyCutover");
 
 // ⚠️ CRITICAL: Mount file routes FIRST để tránh conflict với /nhanvien/:id
 // Express match routes theo thứ tự từ trên xuống. Nếu /nhanvien/:id đứng trước,
@@ -67,17 +68,33 @@ router.get(
 
 // Sử dụng các routes
 router.use("/quan-ly-nhan-vien", quanLyNhanVienRoutes);
-router.use("/giao-nhiem-vu", giaoNhiemVuRoutes);
-router.use("/quanlynhanvien", quanLyNhanVienRelationRoutes); // Routes cho quan hệ quản lý
-router.use("/nhom-viec-user", nhomViecUserRoutes); // Routes cho nhóm việc user
-router.use("/kpi", kpiRoutes); // Routes cho hệ thống KPI
-router.use("/chu-ky-danh-gia", chuKyDanhGiaRoutes); // Routes cho chu kỳ đánh giá
+router.use("/giao-nhiem-vu", createCutoverGuard("kpi"), giaoNhiemVuRoutes);
+router.use(
+  "/quanlynhanvien",
+  createCutoverGuard("kpi"),
+  quanLyNhanVienRelationRoutes,
+); // Routes cho quan hệ quản lý
+router.use(
+  "/nhom-viec-user",
+  createCutoverGuard("congviec"),
+  nhomViecUserRoutes,
+); // Routes cho nhóm việc user
+router.use("/kpi", createCutoverGuard("kpi"), kpiRoutes); // Routes cho hệ thống KPI
+router.use("/chu-ky-danh-gia", createCutoverGuard("kpi"), chuKyDanhGiaRoutes); // Routes cho chu kỳ đánh giá
 
 // YeuCau (Ticket System) routes
-router.use("/yeucau", yeuCauRoutes); // Routes cho yêu cầu hỗ trợ
-router.use("/danh-muc-yeu-cau", danhMucYeuCauRoutes); // Routes cho danh mục yêu cầu
-router.use("/ly-do-tu-choi", lyDoTuChoiRoutes); // Routes cho lý do từ chối
-router.use("/cau-hinh-thong-bao-khoa", cauHinhThongBaoKhoaRoutes); // Routes cho cấu hình thông báo khoa
+router.use("/yeucau", createCutoverGuard("yeucau"), yeuCauRoutes); // Routes cho yêu cầu hỗ trợ
+router.use(
+  "/danh-muc-yeu-cau",
+  createCutoverGuard("yeucau"),
+  danhMucYeuCauRoutes,
+); // Routes cho danh mục yêu cầu
+router.use("/ly-do-tu-choi", createCutoverGuard("yeucau"), lyDoTuChoiRoutes); // Routes cho lý do từ chối
+router.use(
+  "/cau-hinh-thong-bao-khoa",
+  createCutoverGuard("yeucau"),
+  cauHinhThongBaoKhoaRoutes,
+); // Routes cho cấu hình thông báo khoa
 
 // Home routes (Trang chủ)
 router.use("/home", homeRoutes); // Routes cho trang chủ dashboard

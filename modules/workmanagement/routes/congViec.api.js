@@ -4,9 +4,28 @@ const router = express.Router();
 const authentication = require("../../../middlewares/authentication");
 const congViecController = require("../controllers/congViec.controller");
 const congViecService = require("../services/congViec.service");
+const { createCutoverGuard } = require("../helpers/legacyCutover");
 
 // Middleware authentication cho tất cả routes
 router.use(authentication.loginRequired);
+router.use(
+  createCutoverGuard((req) => {
+    const relativePath = req.path || "";
+
+    if (
+      relativePath.startsWith("/nhiemvuthuongquy") ||
+      relativePath.startsWith("/chu-ky-danh-gia") ||
+      relativePath.startsWith("/congviec/dashboard-by-nhiemvu") ||
+      relativePath.startsWith("/congviec/summary-other-tasks") ||
+      relativePath.startsWith("/congviec/summary-collab-tasks") ||
+      relativePath.startsWith("/congviec/summary-cross-cycle-tasks")
+    ) {
+      return "kpi";
+    }
+
+    return "congviec";
+  }),
+);
 
 /**
  * @route   GET /api/workmanagement/nhanvien/:nhanvienid

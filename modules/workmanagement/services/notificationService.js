@@ -5,6 +5,7 @@ const Notification = require("../models/Notification");
 const UserNotificationSettings = require("../models/UserNotificationSettings");
 const notificationHelper = require("../../../helpers/notificationHelper");
 const socketService = require("../../../services/socketService");
+const { shouldBypassNotificationType } = require("../helpers/legacyCutover");
 
 /**
  * NotificationService - Admin-Configurable Notification Engine
@@ -35,6 +36,13 @@ class NotificationService {
    * @param {Object} params.data - Flatten data với tất cả variables
    */
   async send({ type, data }) {
+    if (shouldBypassNotificationType(type)) {
+      console.log(
+        `[Notification] ⏭️ Skipped legacy notification for cutover type: ${type}`,
+      );
+      return { success: false, skipped: true, reason: "legacy_cutover" };
+    }
+
     console.log(`[Notification] Type: ${type}, Data keys:`, Object.keys(data));
 
     try {
@@ -56,11 +64,11 @@ class NotificationService {
 
       // 3. Process each template (parallel)
       const results = await Promise.allSettled(
-        templates.map((template) => this.processTemplate(template, data))
+        templates.map((template) => this.processTemplate(template, data)),
       );
 
       const sent = results.filter(
-        (r) => r.status === "fulfilled" && r.value?.success
+        (r) => r.status === "fulfilled" && r.value?.success,
       ).length;
       const failed = results.length - sent;
 
@@ -80,7 +88,7 @@ class NotificationService {
       // 1. Build recipients from config
       const recipientNhanVienIds = this.buildRecipients(
         template.recipientConfig,
-        data
+        data,
       );
 
       if (recipientNhanVienIds.length === 0) {
@@ -90,13 +98,14 @@ class NotificationService {
 
       console.log(
         `[Template ${template.name}] Recipients (NhanVienIDs):`,
-        recipientNhanVienIds.length
+        recipientNhanVienIds.length,
       );
 
       // 2. Convert NhanVienID → UserID
-      const userIds = await notificationHelper.resolveNhanVienListToUserIds(
-        recipientNhanVienIds
-      );
+      const userIds =
+        await notificationHelper.resolveNhanVienListToUserIds(
+          recipientNhanVienIds,
+        );
 
       if (userIds.length === 0) {
         console.warn(`[Template ${template.name}] No users found`);
@@ -105,7 +114,7 @@ class NotificationService {
 
       console.log(
         `[Template ${template.name}] Users (UserIDs):`,
-        userIds.length
+        userIds.length,
       );
 
       // 3. Render templates
@@ -130,15 +139,15 @@ class NotificationService {
             icon: template.icon,
             priority: template.priority,
             metadata: data,
-          })
-        )
+          }),
+        ),
       );
 
       const sentCount = sendResults.filter(
-        (r) => r.status === "fulfilled" && r.value
+        (r) => r.status === "fulfilled" && r.value,
       ).length;
       console.log(
-        `[Template ${template.name}] Sent to ${sentCount}/${userIds.length} users`
+        `[Template ${template.name}] Sent to ${sentCount}/${userIds.length} users`,
       );
 
       return {
@@ -193,7 +202,7 @@ class NotificationService {
       } else {
         console.warn(
           `[BuildRecipients] Unknown value type for ${varName}:`,
-          typeof value
+          typeof value,
         );
       }
     }
@@ -249,7 +258,7 @@ class NotificationService {
       const settings = await UserNotificationSettings.getOrCreate(userId);
       if (!settings.shouldSend(typeCode, "inapp")) {
         console.log(
-          `[SendToUser] User ${userId} disabled ${typeCode} notifications`
+          `[SendToUser] User ${userId} disabled ${typeCode} notifications`,
         );
         return null;
       }
@@ -270,7 +279,7 @@ class NotificationService {
       });
 
       console.log(
-        `[SendToUser] Notification created: ${notification._id} for user ${userId}`
+        `[SendToUser] Notification created: ${notification._id} for user ${userId}`,
       );
 
       // Emit socket event using existing socketService
@@ -424,7 +433,7 @@ class NotificationService {
     const notification = await Notification.findOneAndUpdate(
       { _id: notificationId, recipientId: userId },
       { isRead: true, readAt: new Date() },
-      { new: true }
+      { new: true },
     );
 
     return notification;
@@ -436,7 +445,7 @@ class NotificationService {
   async markAllAsRead(userId) {
     const result = await Notification.updateMany(
       { recipientId: userId, isRead: false },
-      { isRead: true, readAt: new Date() }
+      { isRead: true, readAt: new Date() },
     );
 
     return result;

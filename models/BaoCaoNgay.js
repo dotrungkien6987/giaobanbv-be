@@ -40,7 +40,7 @@ const baocaongaySchema = Schema(
       { _id: false },
     ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 const BaoCaoNgay = mongosee.model("BaoCaoNgay", baocaongaySchema);
 module.exports = BaoCaoNgay;

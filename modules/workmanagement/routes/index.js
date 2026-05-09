@@ -36,9 +36,10 @@ const { createCutoverGuard } = require("../helpers/legacyCutover");
 // Express match routes theo thứ tự từ trên xuống. Nếu /nhanvien/:id đứng trước,
 // request /files/abc123/thumb sẽ bị match nhầm với pattern /:id và bị chặn auth
 router.use("/", filesRoutes); // Routes cho tệp tin - MUST BE FIRST!
+// Mount color config trước congViecRoutes để tránh bị cutover guard của công việc chặn nhầm.
+router.use("/", colorConfigRoutes); // Routes cho cấu hình màu
 router.use("/", congViecRoutes); // Routes cho công việc
 router.use("/admin", fileAdminRoutes); // Admin routes
-router.use("/", colorConfigRoutes); // Routes cho cấu hình màu
 
 // ✅ NEW: Route lấy thông tin NhanVien by ID (for self-assessment)
 // Đặt sau filesRoutes để tránh conflict

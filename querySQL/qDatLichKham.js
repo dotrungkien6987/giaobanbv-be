@@ -58,6 +58,7 @@ const qDatLichKham = {};
  *   - khong_kham         {number}  — số lượt chưa / hủy khám
  *   - co_kham_co_tien    {number}  — số lượt có khám VÀ phát sinh tiền (tong_tien > 0)
  *   - co_kham_khong_tien {number}  — số lượt có khám NHƯNG không phát sinh tiền (tong_tien = 0)
+ *   - ngoai_tru_chua_dong {number} — số lượt có khám có tiền nhưng chưa vào viện và chưa đóng bệnh án
  *   - tong_tien          {number}  — tổng tiền dịch vụ của các lượt có khám
  *   - tong_tien_dichvu   {number}  — tổng tiền dịch vụ (chỉ nhóm BHYT cấu hình, giữ lại đề phòng)
  */
@@ -136,6 +137,14 @@ tong_tien_per_dk AS (
     LEFT JOIN tong_tien_vienphiid tt ON ck.vienphiid = tt.vienphiid
     LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON ck.vienphiid = ttdv.vienphiid
     GROUP BY ck.dangkykhamid
+),
+
+vienphi_dedup AS (
+    SELECT DISTINCT ON (dangkykhamid)
+        dangkykhamid,
+        vienphiid
+    FROM all_vienphi_co_kham
+    ORDER BY dangkykhamid, vienphiid DESC
 )
 
 SELECT
@@ -151,6 +160,13 @@ SELECT
     COUNT(CASE WHEN dl.dangkykhamstatus != 1 THEN 1 END) AS khong_kham,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
+    COUNT(CASE
+        WHEN dl.dangkykhamstatus = 1
+         AND COALESCE(tpd.tong_tien, 0) > 0
+         AND COALESCE(hsba.hinhthucvaovienid, 0) <= 0
+         AND COALESCE(hsba.hosobenhanstatus, 0) <= 0
+        THEN 1
+    END) AS ngoai_tru_chua_dong,
 
     COALESCE(SUM(tpd.tong_tien), 0) AS tong_tien,
     COALESCE(SUM(tpd.tong_tien_dichvu), 0) AS tong_tien_dichvu
@@ -163,6 +179,12 @@ LEFT JOIN departmentgroup dg
 -- JOIN 1:1 — tong_tien_per_dk đã GROUP BY dangkykhamid
 LEFT JOIN tong_tien_per_dk tpd
     ON dl.dangkykhamid = tpd.dangkykhamid
+LEFT JOIN vienphi_dedup vd
+    ON dl.dangkykhamid = vd.dangkykhamid
+LEFT JOIN vienphi vp
+    ON vd.vienphiid = vp.vienphiid
+LEFT JOIN hosobenhan hsba
+    ON vp.hosobenhanid = hsba.hosobenhanid
 
 GROUP BY
     dl.nguoigioithieuid,
@@ -247,6 +269,13 @@ tong_tien_per_dk AS (
     LEFT JOIN tong_tien_vienphiid tt ON ck.vienphiid = tt.vienphiid
     LEFT JOIN tong_tien_dichvu_vienphiid ttdv ON ck.vienphiid = ttdv.vienphiid
     GROUP BY ck.dangkykhamid
+),
+vienphi_dedup AS (
+    SELECT DISTINCT ON (dangkykhamid)
+        dangkykhamid,
+        vienphiid
+    FROM all_vienphi_co_kham
+    ORDER BY dangkykhamid, vienphiid DESC
 )
 SELECT
     dl.nguoigioithieuid,
@@ -260,6 +289,13 @@ SELECT
     COUNT(CASE WHEN dl.dangkykhamstatus != 1 THEN 1 END) AS khong_kham,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) > 0 THEN 1 END) AS co_kham_co_tien,
     COUNT(CASE WHEN dl.dangkykhamstatus = 1 AND COALESCE(tpd.tong_tien, 0) = 0 THEN 1 END) AS co_kham_khong_tien,
+    COUNT(CASE
+        WHEN dl.dangkykhamstatus = 1
+         AND COALESCE(tpd.tong_tien, 0) > 0
+         AND COALESCE(hsba.hinhthucvaovienid, 0) <= 0
+         AND COALESCE(hsba.hosobenhanstatus, 0) <= 0
+        THEN 1
+    END) AS ngoai_tru_chua_dong,
     COALESCE(SUM(tpd.tong_tien), 0)          AS tong_tien,
     COALESCE(SUM(tpd.tong_tien_dichvu), 0) AS tong_tien_dichvu
 FROM dat_lich dl
@@ -269,6 +305,12 @@ LEFT JOIN departmentgroup dg
     ON ngt.departmentgroupid = dg.departmentgroupid
 LEFT JOIN tong_tien_per_dk tpd
     ON dl.dangkykhamid = tpd.dangkykhamid
+LEFT JOIN vienphi_dedup vd
+    ON dl.dangkykhamid = vd.dangkykhamid
+LEFT JOIN vienphi vp
+    ON vd.vienphiid = vp.vienphiid
+LEFT JOIN hosobenhan hsba
+    ON vp.hosobenhanid = hsba.hosobenhanid
 GROUP BY
     dl.nguoigioithieuid,
     ngt.nguoigioithieucode,
@@ -483,6 +525,7 @@ SELECT
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
     hsba.loaibenhanid,
+    hsba.hinhthucvaovienid,
     COALESCE(hsba.patientname,   pt.patientname)   AS patientname,
     COALESCE(hsba.birthday,      pt.birthday)      AS birthday,
     COALESCE(hsba.gioitinhname,  pt.gioitinhcode)  AS gioitinhname,
@@ -492,7 +535,15 @@ SELECT
 
     -- Tổng tiền (SUM tất cả vienphi cùng ngày, 0 nếu chưa khám)
     COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
-    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu
+    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu,
+    CASE
+        WHEN dl.dangkykhamstatus = 1
+         AND COALESCE(tpd.tong_tien, 0) > 0
+         AND COALESCE(hsba.hinhthucvaovienid, 0) <= 0
+         AND COALESCE(hsba.hosobenhanstatus, 0) <= 0
+        THEN TRUE
+        ELSE FALSE
+    END                                                 AS la_ngoai_tru_chua_dong
 
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt
@@ -675,6 +726,7 @@ SELECT
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
     hsba.loaibenhanid,
+    hsba.hinhthucvaovienid,
     COALESCE(hsba.patientname,   pt.patientname)   AS patientname,
     COALESCE(hsba.birthday,      pt.birthday)      AS birthday,
     COALESCE(hsba.gioitinhname,  pt.gioitinhcode)  AS gioitinhname,
@@ -682,7 +734,15 @@ SELECT
     COALESCE(hsba.hc_huyenname,  pt.hc_huyencode) AS hc_huyenname,
     COALESCE(hsba.hc_tinhname,   pt.hc_tinhcode)  AS hc_tinhname,
     COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
-    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu
+    COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu,
+    CASE
+        WHEN dl.dangkykhamstatus = 1
+         AND COALESCE(tpd.tong_tien, 0) > 0
+         AND COALESCE(hsba.hinhthucvaovienid, 0) <= 0
+         AND COALESCE(hsba.hosobenhanstatus, 0) <= 0
+        THEN TRUE
+        ELSE FALSE
+    END                                                 AS la_ngoai_tru_chua_dong
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt
     ON dl.nguoigioithieuid = ngt.nguoigioithieuid
@@ -932,6 +992,7 @@ SELECT
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
     hsba.loaibenhanid,
+    hsba.hinhthucvaovienid,
     COALESCE(hsba.patientname,   pt.patientname)   AS patientname,
     COALESCE(hsba.birthday,      pt.birthday)      AS birthday,
     COALESCE(hsba.gioitinhname,  pt.gioitinhcode)  AS gioitinhname,
@@ -942,6 +1003,14 @@ SELECT
     -- Tổng tiền (SUM tất cả vienphi cùng ngày, 0 nếu chưa khám)
     COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
     COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu,
+    CASE
+        WHEN dl.dangkykhamstatus = 1
+         AND COALESCE(tpd.tong_tien, 0) > 0
+         AND COALESCE(hsba.hinhthucvaovienid, 0) <= 0
+         AND COALESCE(hsba.hosobenhanstatus, 0) <= 0
+        THEN TRUE
+        ELSE FALSE
+    END                                                 AS la_ngoai_tru_chua_dong,
 
     -- Lịch sử khám 1 năm gần nhất (JSON, mảng sắp xếp mới nhất trước)
     lsh.lichsu                                          AS lichsu_kham
@@ -1155,6 +1224,7 @@ SELECT
     hsba.hosobenhancode,
     hsba.hosobenhanstatus,
     hsba.loaibenhanid,
+    hsba.hinhthucvaovienid,
     COALESCE(hsba.patientname,   pt.patientname)   AS patientname,
     COALESCE(hsba.birthday,      pt.birthday)      AS birthday,
     COALESCE(hsba.gioitinhname,  pt.gioitinhcode)  AS gioitinhname,
@@ -1163,6 +1233,14 @@ SELECT
     COALESCE(hsba.hc_tinhname,   pt.hc_tinhcode)  AS hc_tinhname,
     COALESCE(tpd.tong_tien, 0)                          AS tong_tien,
     COALESCE(tpd.tong_tien_dichvu, 0)                   AS tong_tien_dichvu,
+    CASE
+        WHEN dl.dangkykhamstatus = 1
+         AND COALESCE(tpd.tong_tien, 0) > 0
+         AND COALESCE(hsba.hinhthucvaovienid, 0) <= 0
+         AND COALESCE(hsba.hosobenhanstatus, 0) <= 0
+        THEN TRUE
+        ELSE FALSE
+    END                                                 AS la_ngoai_tru_chua_dong,
     lsh.lichsu                                          AS lichsu_kham
 FROM dat_lich dl
 LEFT JOIN nguoigioithieu ngt

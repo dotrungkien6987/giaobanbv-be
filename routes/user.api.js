@@ -6,6 +6,16 @@ const validators = require("../middlewares/validators");
 const { use } = require("./auth.api");
 const authentication = require("../middlewares/authentication");
 
+const allowedRoles = [
+  "admin",
+  "manager",
+  "nomal",
+  "daotao",
+  "noibo",
+  "qlcl",
+  "cntt",
+];
+
 /**
  * @route POST /user
  * @description  Insert a new account
@@ -18,11 +28,27 @@ router.post(
   authentication.adminRequired,
   validators.validate([
     body("UserName", "Invalid name").exists().notEmpty(),
-    body("PassWord", "Invalid password").exists().notEmpty(),
-    body("KhoaID", "không có khoaID").exists().notEmpty(),
-    body("PhanQuyen", "Không có phân quyền").exists().notEmpty(),
+    body("PassWord", "Mật khẩu phải có ít nhất 6 ký tự")
+      .exists()
+      .isString()
+      .trim()
+      .isLength({ min: 6 }),
+    body("KhoaID", "Khoa không hợp lệ")
+      .exists()
+      .isString()
+      .custom(validators.checkObjectId),
+    body("NhanVienID", "Nhân viên không hợp lệ")
+      .optional({ nullable: true })
+      .custom((value) => value === null || validators.checkObjectId(value)),
+    body("Email", "Email không hợp lệ")
+      .optional({ checkFalsy: true })
+      .isEmail(),
+    body("PhanQuyen", "Không có phân quyền")
+      .exists()
+      .isString()
+      .isIn(allowedRoles),
   ]),
-  userController.insertOne
+  userController.insertOne,
 );
 
 //thieeu authentication.loginRequired
@@ -30,14 +56,14 @@ router.get(
   "/",
   authentication.loginRequired,
   authentication.adminRequired,
-  userController.getUsers
+  userController.getUsers,
 );
 
 router.get(
   "/all",
   authentication.loginRequired,
   authentication.adminRequired,
-  userController.getAllUsers
+  userController.getAllUsers,
 );
 
 /**
@@ -56,7 +82,7 @@ router.get("/me", authentication.loginRequired, userController.getCurrentUser);
 router.get(
   "/me/full",
   authentication.loginRequired,
-  userController.getCurrentUserFull
+  userController.getCurrentUserFull,
 );
 
 /**
@@ -71,8 +97,27 @@ router.put(
   authentication.adminRequired,
   validators.validate([
     param("id").exists().isString().custom(validators.checkObjectId),
+    body("UserName", "UserName không hợp lệ")
+      .optional()
+      .isString()
+      .trim()
+      .notEmpty(),
+    body("KhoaID", "Khoa không hợp lệ")
+      .optional()
+      .isString()
+      .custom(validators.checkObjectId),
+    body("NhanVienID", "Nhân viên không hợp lệ")
+      .optional({ nullable: true })
+      .custom((value) => value === null || validators.checkObjectId(value)),
+    body("Email", "Email không hợp lệ")
+      .optional({ checkFalsy: true })
+      .isEmail(),
+    body("PhanQuyen", "Phân quyền không hợp lệ")
+      .optional()
+      .isString()
+      .isIn(allowedRoles),
   ]),
-  userController.updateUser
+  userController.updateUser,
 );
 
 /**
@@ -87,8 +132,13 @@ router.put(
   authentication.adminRequired,
   validators.validate([
     param("id").exists().isString().custom(validators.checkObjectId),
+    body("PassWord", "Mật khẩu phải có ít nhất 6 ký tự")
+      .exists()
+      .isString()
+      .trim()
+      .isLength({ min: 6 }),
   ]),
-  userController.resetPass
+  userController.resetPass,
 );
 
 /**
@@ -101,7 +151,7 @@ router.put(
   "/me/resetpass",
   authentication.loginRequired,
 
-  userController.resetPassMe
+  userController.resetPassMe,
 );
 
 /**
@@ -117,7 +167,7 @@ router.delete(
   validators.validate([
     param("id").exists().isString().custom(validators.checkObjectId),
   ]),
-  userController.deleteUser
+  userController.deleteUser,
 );
 
 module.exports = router;

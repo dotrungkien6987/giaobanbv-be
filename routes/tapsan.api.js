@@ -4,7 +4,9 @@ const authentication = require("../middlewares/authentication");
 const ctrl = require("../controllers/tapsan.controller");
 
 router.use(authentication.loginRequired);
+router.use(authentication.tapSanAccessRequired);
 
+router.get("/nhanvien-options", ctrl.listNhanVienOptions);
 router.post("/", ctrl.create);
 router.get("/", ctrl.list);
 router.get("/:id", ctrl.getById);

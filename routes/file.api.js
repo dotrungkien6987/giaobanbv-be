@@ -1,9 +1,13 @@
 const express = require("express");
 const router = express.Router();
+const authentication = require("../middlewares/authentication");
 const fileController = require("../controllers/file.controller");
+const { uploadLimiter } = require("../helpers/uploadRateLimit");
+
+router.use(authentication.loginRequired);
 
 // API upload file
-router.post("/upload", fileController.uploadFile);
+router.post("/upload", uploadLimiter, fileController.uploadFile);
 
 // API download file
 router.get("/download/:filename", fileController.downloadFile);

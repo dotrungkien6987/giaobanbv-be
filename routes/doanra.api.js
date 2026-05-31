@@ -14,6 +14,7 @@ const { body } = require("express-validator");
 router.post(
   "/",
   authentication.loginRequired,
+  authentication.doanHopTacPrivilegedRequired,
   validators.validate([
     body("NgayKyVanBan", "Ngày ký văn bản là bắt buộc")
       .exists()
@@ -27,7 +28,7 @@ router.post(
     body("TuNgay", "Từ ngày phải là ngày hợp lệ").optional().isISO8601(),
     body("DenNgay", "Đến ngày phải là ngày hợp lệ").optional().isISO8601(),
   ]),
-  doanRaController.createDoanRa
+  doanRaController.createDoanRa,
 );
 
 /**
@@ -36,7 +37,12 @@ router.post(
  * @query {page, limit, search, fromDate, toDate, quocGia}
  * @access Login required
  */
-router.get("/", authentication.loginRequired, doanRaController.getAllDoanRas);
+router.get(
+  "/",
+  authentication.loginRequired,
+  authentication.doanHopTacPrivilegedRequired,
+  doanRaController.getAllDoanRas,
+);
 
 /**
  * @route GET /api/doanra/stats/country
@@ -60,20 +66,23 @@ router.get("/", authentication.loginRequired, doanRaController.getAllDoanRas);
 router.get(
   "/members",
   authentication.loginRequired,
-  doanRaController.getMembers
+  authentication.doanHopTacPrivilegedRequired,
+  doanRaController.getMembers,
 );
 
 // Options for filters (Mục đích xuất cảnh, Nguồn kinh phí)
 router.get(
   "/options",
   authentication.loginRequired,
-  doanRaController.getOptions
+  authentication.doanHopTacPrivilegedRequired,
+  doanRaController.getOptions,
 );
 
 router.get(
   "/:id",
   authentication.loginRequired,
-  doanRaController.getDoanRaById
+  authentication.doanHopTacPrivilegedRequired,
+  doanRaController.getDoanRaById,
 );
 
 /**
@@ -86,6 +95,7 @@ router.get(
 router.put(
   "/:id",
   authentication.loginRequired,
+  authentication.doanHopTacPrivilegedRequired,
   validators.validate([
     body("NgayKyVanBan", "Ngày ký văn bản phải là ngày hợp lệ")
       .optional()
@@ -97,7 +107,7 @@ router.put(
     body("TuNgay", "Từ ngày phải là ngày hợp lệ").optional().isISO8601(),
     body("DenNgay", "Đến ngày phải là ngày hợp lệ").optional().isISO8601(),
   ]),
-  doanRaController.updateDoanRa
+  doanRaController.updateDoanRa,
 );
 
 /**
@@ -109,7 +119,8 @@ router.put(
 router.delete(
   "/:id",
   authentication.loginRequired,
-  doanRaController.deleteDoanRa
+  authentication.doanHopTacPrivilegedRequired,
+  doanRaController.deleteDoanRa,
 );
 
 module.exports = router;

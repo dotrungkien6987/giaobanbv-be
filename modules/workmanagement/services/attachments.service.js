@@ -5,6 +5,22 @@ const mongoose = require("mongoose");
 const TepTin = require("../models/TepTin");
 const { AppError } = require("../../../helpers/utils");
 const config = require("../helpers/uploadConfig");
+const DOAN_HOPTAC_OWNER_TYPES = new Set(["doanra", "doanvao"]);
+const DOAN_HOPTAC_ALLOWED_ROLES = new Set([
+  "admin",
+  "superadmin",
+  "daotao",
+  "cntt",
+]);
+const TAPSAN_OWNER_TYPES = new Set(["tapsan", "tapsanbaibao"]);
+const TAPSAN_ALLOWED_ROLES = new Set([
+  "admin",
+  "superadmin",
+  "daotao",
+  "manager",
+  "nomal",
+  "noibo",
+]);
 
 function toAsciiFilename(name, fallback = "file") {
   try {
@@ -26,10 +42,26 @@ function encodeRFC5987ValueChars(str) {
     .replace(/\*/g, "%2A");
 }
 
-function canAccessGeneric(ownerType, ownerId, req) {
-  // For now, generic attachments require login only; no further ACL
-  // You can expand here per ownerType in future.
+function canAccessOwnerType(ownerType, req) {
   if (!req.userId) return false;
+
+  const normalizedOwnerType = String(ownerType || "").toLowerCase();
+  if (!normalizedOwnerType) return false;
+
+  const currentRole = (req.user?.PhanQuyen || "").toLowerCase();
+  if (DOAN_HOPTAC_OWNER_TYPES.has(normalizedOwnerType)) {
+    return DOAN_HOPTAC_ALLOWED_ROLES.has(currentRole);
+  }
+
+  if (TAPSAN_OWNER_TYPES.has(normalizedOwnerType)) {
+    return TAPSAN_ALLOWED_ROLES.has(currentRole);
+  }
+
+  return true;
+}
+
+function canAccessGeneric(ownerType, ownerId, req) {
+  if (!canAccessOwnerType(ownerType, req)) return false;
   return Boolean(ownerType && ownerId);
 }
 
@@ -44,7 +76,7 @@ svc.upload = async (ownerType, ownerId, field, files, { moTa }, req) => {
   if (!user.NhanVienID)
     throw new AppError(
       400,
-      "Tài khoản chưa liên kết nhân viên, không thể tải tệp"
+      "Tài khoản chưa liên kết nhân viên, không thể tải tệp",
     );
 
   const items = [];
@@ -77,7 +109,7 @@ svc.upload = async (ownerType, ownerId, field, files, { moTa }, req) => {
     });
     doc = await doc.populate(
       "NguoiTaiLenID",
-      "Ten HoTen MaNhanVien AnhDaiDien"
+      "Ten HoTen MaNhanVien AnhDaiDien",
     );
     items.push(svc.toDTO(doc));
   }
@@ -89,7 +121,7 @@ svc.list = async (
   ownerId,
   field,
   { page = 1, size = 50 } = {},
-  req
+  req,
 ) => {
   if (!canAccessGeneric(ownerType, ownerId, req))
     throw new AppError(403, "Không có quyền truy cập");
@@ -125,8 +157,9 @@ svc.count = async (ownerType, ownerId, field, req) => {
 
 // Batch count many ownerIDs
 svc.batchCount = async (ownerType, field, ids, req) => {
-  if (!req.userId) throw new AppError(401, "Không xác thực người dùng");
   const oType = String(ownerType || "").toLowerCase();
+  if (!canAccessOwnerType(oType, req))
+    throw new AppError(403, "Không có quyền truy cập");
   const f = String(field || "default").toLowerCase();
   const out = {};
   if (!oType || !Array.isArray(ids) || !ids.length) return out;
@@ -150,8 +183,9 @@ svc.batchCount = async (ownerType, field, ids, req) => {
 
 // Batch preview first N files per ownerID
 svc.batchPreview = async (ownerType, field, ids, limit, req) => {
-  if (!req.userId) throw new AppError(401, "Không xác thực người dùng");
   const oType = String(ownerType || "").toLowerCase();
+  if (!canAccessOwnerType(oType, req))
+    throw new AppError(403, "Không có quyền truy cập");
   const f = String(field || "default").toLowerCase();
   const lim = Math.max(1, Math.min(+limit || 3, 10));
   const out = {};
@@ -186,6 +220,8 @@ svc.softDelete = async (fileId, req) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
+  if (!canAccessOwnerType(doc.OwnerType, req))
+    throw new AppError(403, "Không có quyền truy cập");
   // Same rule as WM: uploader or admin can delete; for now, check user's role
   const user = await require("../../../models/User")
     .findById(req.userId)
@@ -204,6 +240,8 @@ svc.renameOrUpdateDesc = async (fileId, { TenGoc, MoTa }, req) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
+  if (!canAccessOwnerType(doc.OwnerType, req))
+    throw new AppError(403, "Không có quyền truy cập");
   const user = await require("../../../models/User")
     .findById(req.userId)
     .lean();
@@ -222,8 +260,8 @@ svc.streamInline = async (fileId, req, res) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
-  // For generic, only login required; optionally expand ACL by ownerType later
-  if (!req.userId) throw new AppError(401, "Không xác thực người dùng");
+  if (!canAccessOwnerType(doc.OwnerType, req))
+    throw new AppError(403, "Không có quyền truy cập");
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
     : config.toAbs(doc.DuongDan);
@@ -233,7 +271,7 @@ svc.streamInline = async (fileId, req, res) => {
   if (!fileExists) {
     throw new AppError(
       410,
-      `Tệp không tồn tại trên hệ thống lưu trữ (ID: ${fileId})`
+      `Tệp không tồn tại trên hệ thống lưu trữ (ID: ${fileId})`,
     );
   }
 
@@ -250,7 +288,7 @@ svc.streamInline = async (fileId, req, res) => {
   const encoded = encodeRFC5987ValueChars(displayName);
   res.setHeader(
     "Content-Disposition",
-    `inline; filename="${sanitized}"; filename*=UTF-8''${encoded}`
+    `inline; filename="${sanitized}"; filename*=UTF-8''${encoded}`,
   );
 
   const stream = fs.createReadStream(filePath);
@@ -271,7 +309,8 @@ svc.streamDownload = async (fileId, req, res) => {
   const doc = await TepTin.findById(fileId);
   if (!doc || doc.TrangThai === "DELETED")
     throw new AppError(404, "Không tìm thấy tệp");
-  if (!req.userId) throw new AppError(401, "Không xác thực người dùng");
+  if (!canAccessOwnerType(doc.OwnerType, req))
+    throw new AppError(403, "Không có quyền truy cập");
   const filePath = path.isAbsolute(doc.DuongDan)
     ? doc.DuongDan
     : config.toAbs(doc.DuongDan);
@@ -281,7 +320,7 @@ svc.streamDownload = async (fileId, req, res) => {
   if (!fileExists) {
     throw new AppError(
       410,
-      `Tệp không tồn tại trên hệ thống lưu trữ (ID: ${fileId})`
+      `Tệp không tồn tại trên hệ thống lưu trữ (ID: ${fileId})`,
     );
   }
 
@@ -298,7 +337,7 @@ svc.streamDownload = async (fileId, req, res) => {
   const encoded = encodeRFC5987ValueChars(displayName);
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${sanitized}"; filename*=UTF-8''${encoded}`
+    `attachment; filename="${sanitized}"; filename*=UTF-8''${encoded}`,
   );
 
   const stream = fs.createReadStream(filePath);
@@ -341,8 +380,8 @@ svc.toDTO = (d) => {
   const uploaderId = uploaderPop
     ? String(uploaderPop._id)
     : doc.NguoiTaiLenID
-    ? String(doc.NguoiTaiLenID)
-    : null;
+      ? String(doc.NguoiTaiLenID)
+      : null;
 
   return {
     _id: String(doc._id),

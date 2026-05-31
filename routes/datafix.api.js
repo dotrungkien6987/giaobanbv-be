@@ -15,12 +15,13 @@ const authentication = require("../middlewares/authentication");
 router.get(
   "/getAll",
   authentication.loginRequired,
-  datafixController.getDataFix
+  datafixController.getDataFix,
 );
 
 router.post(
   "/insertOrUpdate",
   authentication.loginRequired,
-  datafixController.insertOrUpdateDataFix
+  authentication.adminRequired,
+  datafixController.insertOrUpdateDataFix,
 );
 module.exports = router;

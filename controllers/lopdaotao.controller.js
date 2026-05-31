@@ -10,11 +10,82 @@ const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const NhanVien = require("../models/NhanVien");
 const HoiDong = require("../models/HoiDong");
 const lopdaotaoController = {};
+const LOPDAOTAO_MANAGE_ROLES = ["admin", "superadmin"];
+const LOPDAOTAO_ROSTER_READ_ROLES = ["admin", "superadmin", "daotao"];
+
+const getCurrentUserId = (req) => {
+  if (req.user?.userId) return req.user.userId;
+  if (req.user?._id) return req.user._id.toString();
+  if (req.userId) return req.userId;
+  return null;
+};
+
+const getNormalizedRole = (req) => (req.user?.PhanQuyen || "").toLowerCase();
+
+const isLopDaoTaoManageRole = (role) => LOPDAOTAO_MANAGE_ROLES.includes(role);
+
+async function assertCanManageLopDaoTao(req, lopdaotaoOrId) {
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    throw new AppError(
+      401,
+      "Khong tim thay thong tin nguoi dung",
+      "Authentication Error",
+    );
+  }
+
+  const lopdaotao =
+    typeof lopdaotaoOrId === "string"
+      ? await LopDaoTao.findById(lopdaotaoOrId)
+      : lopdaotaoOrId;
+
+  if (!lopdaotao) {
+    throw new AppError(404, "lopdaotao not found", "Update lopdaotao Error");
+  }
+
+  const role = getNormalizedRole(req);
+  if (isLopDaoTaoManageRole(role)) {
+    return lopdaotao;
+  }
+
+  if (lopdaotao.UserIDCreated?.toString() === currentUserId) {
+    return lopdaotao;
+  }
+
+  throw new AppError(
+    403,
+    "Ban khong co quyen thao tac voi lop dao tao nay",
+    "AUTHORIZATION_ERROR",
+  );
+}
+
+const canViewLopDaoTaoRoster = (req, lopdaotao) => {
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId || !lopdaotao) {
+    return false;
+  }
+
+  if (LOPDAOTAO_ROSTER_READ_ROLES.includes(getNormalizedRole(req))) {
+    return true;
+  }
+
+  return lopdaotao.UserIDCreated?.toString() === currentUserId;
+};
 
 lopdaotaoController.insertOne = catchAsync(async (req, res, next) => {
   //get data from request
   // let { Ngay,KhoaID, BSTruc, DDTruc, GhiChu,CBThemGio,UserID,ChiTietBenhNhan,ChiTietChiSo } = req.body;
   const lopdaotaoData = { ...req.body.lopdaotaoData };
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    throw new AppError(
+      401,
+      "Khong tim thay thong tin nguoi dung",
+      "Authentication Error",
+    );
+  }
+
+  lopdaotaoData.UserIDCreated = currentUserId;
   console.log("reqbody", lopdaotaoData);
 
   //Business Logic Validation
@@ -26,10 +97,10 @@ lopdaotaoController.insertOne = catchAsync(async (req, res, next) => {
   const hinhthuccapnhats = await HinhThucCapNhat.find();
 
   const hinhthuccapnhat = hinhthuccapnhats.find(
-    (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+    (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat,
   );
   const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
-    (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+    (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat,
   );
   lopdaotao = {
     ...lopdaotao.toObject(),
@@ -60,16 +131,17 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
   let lopdaotao = await LopDaoTao.findById(lopdaotaoID);
   if (!lopdaotao)
     throw new AppError(400, "lopdaotao not found", "Update  lopdaotao Error");
+  const allowRosterRead = canViewLopDaoTaoRoster(req, lopdaotao);
 
   const nhomhinhthuccapnhats = (await DaTaFix.findOne()).NhomHinhThucCapNhat;
 
   const hinhthuccapnhats = await HinhThucCapNhat.find();
 
   const hinhthuccapnhat = hinhthuccapnhats.find(
-    (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+    (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat,
   );
   const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
-    (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+    (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat,
   );
   lopdaotao = {
     ...lopdaotao.toObject(),
@@ -78,7 +150,7 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
     TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
   };
   let lopdaotaonhanvien = [];
-  if (!isTam) {
+  if (allowRosterRead && !isTam) {
     console.log("tam", tam);
     lopdaotaonhanvien = await LopDaoTaoNhanVien.find({
       LopDaoTaoID: lopdaotaoID,
@@ -90,7 +162,7 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
           path: "KhoaID",
         },
       });
-  } else {
+  } else if (allowRosterRead) {
     lopdaotaonhanvien = await LopDaoTaoNhanVienTam.find({
       LopDaoTaoID: lopdaotaoID,
       UserID: userID,
@@ -104,16 +176,19 @@ lopdaotaoController.getById = catchAsync(async (req, res, next) => {
       });
   }
 
-  let lopdaotaonhanvienDT06 = await LopDaoTaoNhanVienDT06.find({
-    LopDaoTaoID: lopdaotaoID,
-  });
+  let lopdaotaonhanvienDT06 = [];
+  if (allowRosterRead) {
+    lopdaotaonhanvienDT06 = await LopDaoTaoNhanVienDT06.find({
+      LopDaoTaoID: lopdaotaoID,
+    });
+  }
   return sendResponse(
     res,
     200,
     true,
     { lopdaotao, lopdaotaonhanvien, lopdaotaonhanvienDT06 },
     null,
-    "Get lopdaotao successful"
+    "Get lopdaotao successful",
   );
 });
 
@@ -162,10 +237,10 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
       lopdaotaos.map(async (lopdaotao) => {
         const hinhthuccapnhat = hinhthuccapnhats.find(
           (hinhthuccapnhat) =>
-            hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+            hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat,
         );
         const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
-          (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+          (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat,
         );
 
         // Kiểm tra nếu MaHinhThucCapNhat bắt đầu bằng "ĐT06"
@@ -191,7 +266,7 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
           TenNhomHinhThucCapNhat: nhomhinhthuccapnhat.Ten,
           CanBoThamGia: canBoThamGia || "", // Nếu không có NhanVien, ghi ""
         };
-      })
+      }),
     );
 
     return sendResponse(
@@ -200,9 +275,9 @@ lopdaotaoController.getlopdaotaosPhanTrang = catchAsync(
       true,
       { lopdaotaos, totalPages, count },
       null,
-      ""
+      "",
     );
-  }
+  },
 );
 lopdaotaoController.getlopdaotaosPhanTrang1 = catchAsync(
   async (req, res, next) => {
@@ -235,10 +310,10 @@ lopdaotaoController.getlopdaotaosPhanTrang1 = catchAsync(
 
     lopdaotaos = lopdaotaos.map((lopdaotao) => {
       const hinhthuccapnhat = hinhthuccapnhats.find(
-        (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+        (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat,
       );
       const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
-        (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+        (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat,
       );
 
       // const nhanvien = NhanVien.findOne({LopDaoTaoID:lopdaotao._id})
@@ -256,32 +331,34 @@ lopdaotaoController.getlopdaotaosPhanTrang1 = catchAsync(
       true,
       { lopdaotaos, totalPages, count },
       null,
-      ""
+      "",
     );
-  }
+  },
 );
 
 lopdaotaoController.deleteOneLopDaoTao = catchAsync(async (req, res, next) => {
   const lopdaotaoID = req.params.lopdaotaoID;
+
+  await assertCanManageLopDaoTao(req, lopdaotaoID);
 
   const lopdaotao = await LopDaoTao.findOneAndUpdate(
     {
       _id: lopdaotaoID,
     },
     { isDeleted: true },
-    { new: true }
+    { new: true },
   );
 
   if (!lopdaotao) {
     return next(
-      new AppError(404, "LopDaoTao not found", "Delete LopDaoTao error")
+      new AppError(404, "LopDaoTao not found", "Delete LopDaoTao error"),
     );
   }
 
   // Tìm và cập nhật tất cả các LopDaoTaoNhanVien liên quan, đánh dấu là đã xóa (isDeleted: true)
   await LopDaoTaoNhanVien.updateMany(
     { LopDaoTaoID: lopdaotaoID },
-    { isDeleted: true }
+    { isDeleted: true },
   );
 
   return sendResponse(
@@ -290,7 +367,7 @@ lopdaotaoController.deleteOneLopDaoTao = catchAsync(async (req, res, next) => {
     true,
     lopdaotao,
     null,
-    "Delete LopDaoTao successful"
+    "Delete LopDaoTao successful",
   );
 });
 
@@ -302,9 +379,10 @@ lopdaotaoController.updateOneLopDaoTao = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "lopdaotaoUpdate not found",
-      "Update lopdaotaoUpdate error"
+      "Update lopdaotaoUpdate error",
     );
   if (lopdaotaoUpdate) {
+    await assertCanManageLopDaoTao(req, lopdaotaoUpdate);
     const oldSoLuong = lopdaotaoUpdate.SoLuong;
     const newSoLuong = lopdaotao.SoLuong;
 
@@ -319,10 +397,10 @@ lopdaotaoController.updateOneLopDaoTao = catchAsync(async (req, res, next) => {
     const hinhthuccapnhats = await HinhThucCapNhat.find();
 
     const hinhthuccapnhat = hinhthuccapnhats.find(
-      (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat
+      (hinhthuccapnhat) => hinhthuccapnhat.Ma === lopdaotao.MaHinhThucCapNhat,
     );
     const nhomhinhthuccapnhat = nhomhinhthuccapnhats.find(
-      (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat
+      (nhom) => nhom.Ma === hinhthuccapnhat.MaNhomHinhThucCapNhat,
     );
     lopdaotao = {
       ...lopdaotao,
@@ -362,7 +440,7 @@ lopdaotaoController.updateOneLopDaoTao = catchAsync(async (req, res, next) => {
     true,
     lopdaotaoUpdate,
     null,
-    "Update Suco successful"
+    "Update Suco successful",
   );
 });
 lopdaotaoController.updateHoiDongIDForLopDaoTao = catchAsync(
@@ -374,15 +452,16 @@ lopdaotaoController.updateHoiDongIDForLopDaoTao = catchAsync(
       throw new AppError(
         400,
         "lopdaotaoUpdate not found",
-        "Update lopdaotaoUpdate error"
+        "Update lopdaotaoUpdate error",
       );
     if (lopdaotaoUpdate) {
+      await assertCanManageLopDaoTao(req, lopdaotaoUpdate);
       lopdaotaoUpdate = await LopDaoTao.findByIdAndUpdate(
         lopdaotaoID,
         { HoiDongID: hoidongID },
         {
           new: true,
-        }
+        },
       );
     }
     console.log("lopdaotaoupdate", lopdaotaoUpdate);
@@ -392,9 +471,9 @@ lopdaotaoController.updateHoiDongIDForLopDaoTao = catchAsync(
       true,
       lopdaotaoUpdate,
       null,
-      "Update HoiDongID for LopDaoTao successful"
+      "Update HoiDongID for LopDaoTao successful",
     );
-  }
+  },
 );
 lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(
   async (req, res, next) => {
@@ -405,15 +484,16 @@ lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(
       throw new AppError(
         400,
         "lopdaotaoUpdate not found",
-        "Update lopdaotaoUpdate error"
+        "Update lopdaotaoUpdate error",
       );
     if (lopdaotaoUpdate) {
+      await assertCanManageLopDaoTao(req, lopdaotaoUpdate);
       lopdaotaoUpdate = await LopDaoTao.findByIdAndUpdate(
         lopdaotaoID,
         { TrangThai },
         {
           new: true,
-        }
+        },
       );
     }
     console.log("lopdaotaoupdate", lopdaotaoUpdate);
@@ -423,9 +503,9 @@ lopdaotaoController.updateTrangThaiLopDaoTao = catchAsync(
       true,
       lopdaotaoUpdate,
       null,
-      "Update Suco successful"
+      "Update Suco successful",
     );
-  }
+  },
 );
 
 lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(
@@ -433,6 +513,8 @@ lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(
     const { lopdaotaoID } = req.params;
 
     console.log("lopdaotaoID", lopdaotaoID);
+
+    await assertCanManageLopDaoTao(req, lopdaotaoID);
 
     // Lấy tất cả các bản ghi của LopDaoTaoNhanVienTam theo LopDaoTaoID
     let nhanVienTamList = await LopDaoTaoNhanVienTam.find({
@@ -448,7 +530,7 @@ lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(
       if (!uniqueNhanVienMap.has(nhanVienTam.NhanVienID._id.toString())) {
         uniqueNhanVienMap.set(
           nhanVienTam.NhanVienID._id.toString(),
-          nhanVienTam
+          nhanVienTam,
         );
       }
     });
@@ -465,9 +547,9 @@ lopdaotaoController.getUniqueNhanVienByLopDaoTaoID = catchAsync(
       true,
       uniqueNhanVienList,
       null,
-      "Get unique NhanVien by LopDaoTaoID successful"
+      "Get unique NhanVien by LopDaoTaoID successful",
     );
-  }
+  },
 );
 
 module.exports = lopdaotaoController;

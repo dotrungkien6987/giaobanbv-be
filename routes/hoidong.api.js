@@ -6,41 +6,41 @@ const validators = require("../middlewares/validators");
 const hoidongController = require("../controllers/hoidong.controller");
 const authentication = require("../middlewares/authentication");
 
+router.use(authentication.loginRequired);
+
 /**
  * @route POST /hoidong
  * @description Insert  new hoidong
  * @body {hoidong}
- * @access  login require,
+ * @access  Admin/DaoTao require,
  */
 router.post(
   "/",
-  authentication.loginRequired,
-  
-  hoidongController.insertOne
+  authentication.adminDaotaoRequired,
+  hoidongController.insertOne,
 );
 /**
  * @route PUT /hoidong
  * @description Insert  new hoidong
  * @body {hoidong}
- * @access  login require,
+ * @access  Admin/DaoTao require,
  */
 router.put(
   "/",
-  authentication.loginRequired,
-  
-  hoidongController.updateOneHoiDong
+  authentication.adminDaotaoRequired,
+  hoidongController.updateOneHoiDong,
 );
 
 /**
  * @route GET /hoidong
  * @description Get all hoidong
  
- * @access  login require,
+ * @access  Admin/DaoTao require,
  */
 router.get(
   "/",
-  authentication.loginRequired,
-  hoidongController.gethoidongsPhanTrang
+  authentication.adminDaotaoRequired,
+  hoidongController.gethoidongsPhanTrang,
 );
 
 /**
@@ -50,14 +50,13 @@ router.get(
  * @access  login require,
  */
 
-
 router.delete(
   "/:hoidongID",
-  authentication.loginRequired,
+  authentication.adminDaotaoRequired,
   validators.validate([
     param("hoidongID").exists().isString().custom(validators.checkObjectId),
-      ]),
-      hoidongController.deleteOneHoiDong
+  ]),
+  hoidongController.deleteOneHoiDong,
 );
 
 module.exports = router;

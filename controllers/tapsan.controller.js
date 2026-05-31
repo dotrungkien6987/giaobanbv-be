@@ -1,5 +1,6 @@
 const { sendResponse, catchAsync, AppError } = require("../helpers/utils");
 const TapSan = require("../models/TapSan");
+const NhanVien = require("../models/NhanVien");
 
 function normalize(input = {}) {
   const o = {};
@@ -23,7 +24,7 @@ async function assertUnique({ Loai, NamXuatBan, SoXuatBan }, excludeId = null) {
 
 exports.create = catchAsync(async (req, res) => {
   const { Loai, NamXuatBan, SoXuatBan, GhiChu, TrangThai } = normalize(
-    req.body || {}
+    req.body || {},
   );
   if (!Loai || !NamXuatBan || !SoXuatBan)
     throw new AppError(400, "Thiếu dữ liệu bắt buộc");
@@ -115,7 +116,58 @@ exports.list = catchAsync(async (req, res) => {
     true,
     { items, total, page, size, totalPages: Math.ceil(total / size) },
     null,
-    "Lấy danh sách Tập san thành công"
+    "Lấy danh sách Tập san thành công",
+  );
+});
+
+exports.listNhanVienOptions = catchAsync(async (req, res) => {
+  const search = String(req.query.search || "").trim();
+  const limit = Math.min(
+    Math.max(parseInt(req.query.limit || "500", 10), 1),
+    2000,
+  );
+
+  const filter = {};
+  if (search) {
+    filter.$or = [
+      { Ten: { $regex: search, $options: "i" } },
+      { MaNhanVien: { $regex: search, $options: "i" } },
+      { ChucDanh: { $regex: search, $options: "i" } },
+      { ChucVu: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const docs = await NhanVien.findDangLamViec(filter)
+    .select("Ten MaNhanVien KhoaID ChucDanh ChucVu TrinhDoChuyenMon Avatar")
+    .populate("KhoaID", "TenKhoa")
+    .sort({ Ten: 1, MaNhanVien: 1 })
+    .limit(limit)
+    .lean();
+
+  const items = docs.map((doc) => ({
+    _id: String(doc._id),
+    Ten: doc.Ten || "",
+    MaNhanVien: doc.MaNhanVien || "",
+    KhoaID: doc.KhoaID
+      ? {
+          _id: String(doc.KhoaID._id || doc.KhoaID),
+          TenKhoa: doc.KhoaID.TenKhoa || "",
+        }
+      : null,
+    TenKhoa: doc.KhoaID?.TenKhoa || "",
+    ChucDanh: doc.ChucDanh || "",
+    ChucVu: doc.ChucVu || "",
+    TrinhDoChuyenMon: doc.TrinhDoChuyenMon || "",
+    Avatar: doc.Avatar || "",
+  }));
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    { items, total: items.length },
+    null,
+    "Lấy danh sách nhân viên cho TapSan thành công",
   );
 });
 
@@ -130,7 +182,7 @@ exports.update = catchAsync(async (req, res) => {
   const doc = await TapSan.findById(id);
   if (!doc || doc.isDeleted) throw new AppError(404, "Không tìm thấy Tập san");
   const { Loai, NamXuatBan, SoXuatBan, GhiChu, TrangThai } = normalize(
-    req.body || {}
+    req.body || {},
   );
   const next = { ...doc.toObject() };
   if (Loai) next.Loai = Loai;
@@ -148,7 +200,7 @@ exports.update = catchAsync(async (req, res) => {
       NamXuatBan: next.NamXuatBan,
       SoXuatBan: next.SoXuatBan,
     },
-    id
+    id,
   );
   doc.Loai = next.Loai;
   doc.NamXuatBan = next.NamXuatBan;
@@ -174,7 +226,7 @@ exports.remove = catchAsync(async (req, res) => {
     true,
     { _id: doc._id },
     null,
-    "Xóa (ẩn) thành công"
+    "Xóa (ẩn) thành công",
   );
 });
 

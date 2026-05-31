@@ -5,31 +5,87 @@ const LopDaoTao = require("../models/LopDaoTao");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const lopdaotaonhanvientamController = {};
+const LOPDAOTAO_TAM_MANAGE_ROLES = ["admin", "superadmin"];
+
+const getCurrentUserId = (req) => {
+  if (req.user?.userId) return req.user.userId;
+  if (req.user?._id) return req.user._id.toString();
+  if (req.userId) return req.userId;
+  return null;
+};
+
+const getNormalizedRole = (req) => (req.user?.PhanQuyen || "").toLowerCase();
+
+const isLopDaoTaoTamManageRole = (role) =>
+  LOPDAOTAO_TAM_MANAGE_ROLES.includes(role);
+
+async function assertCanManageLopDaoTaoTam(req, lopDaoTaoId) {
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    throw new AppError(
+      401,
+      "Khong tim thay thong tin nguoi dung",
+      "Authentication Error",
+    );
+  }
+
+  const lopdaotao = await LopDaoTao.findById(lopDaoTaoId);
+  if (!lopdaotao) {
+    throw new AppError(404, "lopdaotao not found", "Update lopdaotao Error");
+  }
+
+  const role = getNormalizedRole(req);
+  if (isLopDaoTaoTamManageRole(role)) {
+    return lopdaotao;
+  }
+
+  if (lopdaotao.UserIDCreated?.toString() === currentUserId) {
+    return lopdaotao;
+  }
+
+  throw new AppError(
+    403,
+    "Ban khong co quyen thao tac voi lop dao tao nay",
+    "AUTHORIZATION_ERROR",
+  );
+}
 
 lopdaotaonhanvientamController.insertOrUpdateLopdaotaoNhanVienTam = catchAsync(
   async (req, res, next) => {
     // Lấy dữ liệu từ request
     console.log("reqbody", req.body);
+    const currentUserId = getCurrentUserId(req);
+    if (!currentUserId) {
+      throw new AppError(
+        401,
+        "Khong tim thay thong tin nguoi dung",
+        "Authentication Error",
+      );
+    }
+
+    const currentUserName = req.user?.UserName || "";
     const lopdaotaonhanvienData = req.body.lopdaotaonhanvienData.map(
       (item) => ({
         ...item,
         LopDaoTaoID: new mongoose.Types.ObjectId(item.LopDaoTaoID),
         NhanVienID: new mongoose.Types.ObjectId(item.NhanVienID),
-      })
+        UserID: currentUserId,
+        UserName: currentUserName,
+      }),
     );
 
     console.log("lopdaotaonhanvienData", lopdaotaonhanvienData);
     const lopdaotaoID = new mongoose.Types.ObjectId(req.body.lopdaotaoID);
-    const userID = new mongoose.Types.ObjectId(req.body.userID);
+    const userID = currentUserId;
 
-    const lopdaotao = await LopDaoTao.findById(lopdaotaoID);
-    
+    await assertCanManageLopDaoTaoTam(req, lopdaotaoID);
+
     // Tìm tất cả các bản ghi trong LopDaoTaoNhanVienTam theo lopdaotaoID,nhanvienID
     const lopdaotaonhanvienOld = await LopDaoTaoNhanVienTam.find({
       LopDaoTaoID: lopdaotaoID,
       UserID: userID,
     });
-console.log("lopdaotaonhanvienOld",lopdaotaonhanvienOld)
+    console.log("lopdaotaonhanvienOld", lopdaotaonhanvienOld);
     // So sánh dữ liệu
     const toInsert = [];
     const toUpdate = [];
@@ -38,8 +94,8 @@ console.log("lopdaotaonhanvienOld",lopdaotaonhanvienOld)
         !lopdaotaonhanvienData.some(
           (newItem) =>
             newItem.LopDaoTaoID.toString() === oldItem.LopDaoTaoID.toString() &&
-            newItem.NhanVienID.toString() === oldItem.NhanVienID.toString()
-        )
+            newItem.NhanVienID.toString() === oldItem.NhanVienID.toString(),
+        ),
     );
     console.log("toDelete", toDelete);
 
@@ -47,18 +103,17 @@ console.log("lopdaotaonhanvienOld",lopdaotaonhanvienOld)
       const matchingOldItem = lopdaotaonhanvienOld.find(
         (oldItem) =>
           newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) &&
-          newItem.NhanVienID.equals(oldItem.NhanVienID)
+          newItem.NhanVienID.equals(oldItem.NhanVienID),
       );
       if (matchingOldItem) {
         toUpdate.push(newItem);
         console.log("newItem", newItem);
       } else {
-       
         toInsert.push(newItem);
       }
     });
-console.log("toInsert",toInsert)
-console.log("toUpdate",toUpdate)  
+    console.log("toInsert", toInsert);
+    console.log("toUpdate", toUpdate);
     // Thực hiện insert, delete, update trong DB
     await LopDaoTaoNhanVienTam.insertMany(toInsert);
     await LopDaoTaoNhanVienTam.deleteMany({
@@ -69,7 +124,7 @@ console.log("toUpdate",toUpdate)
       const oldItem = lopdaotaonhanvienOld.find(
         (oldItem) =>
           newItem.LopDaoTaoID.equals(oldItem.LopDaoTaoID) &&
-          newItem.NhanVienID.equals(oldItem.NhanVienID)
+          newItem.NhanVienID.equals(oldItem.NhanVienID),
       );
       const updatedItem = {
         ...oldItem.toObject(),
@@ -81,6 +136,7 @@ console.log("toUpdate",toUpdate)
     // Lấy mảng mới trong DB
     const newLopDaoTaoNhanVien = await LopDaoTaoNhanVienTam.find({
       LopDaoTaoID: lopdaotaoID,
+      UserID: userID,
     });
 
     // Response
@@ -90,9 +146,9 @@ console.log("toUpdate",toUpdate)
       true,
       newLopDaoTaoNhanVien,
       null,
-      "Cập nhật thành công"
+      "Cập nhật thành công",
     );
-  }
+  },
 );
 
 lopdaotaonhanvientamController.getById = catchAsync(async (req, res, next) => {
@@ -103,7 +159,7 @@ lopdaotaonhanvientamController.getById = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "lopdaotaonhanvien not found",
-      "Update  lopdaotaonhanvien Error"
+      "Update  lopdaotaonhanvien Error",
     );
 
   return sendResponse(
@@ -112,7 +168,7 @@ lopdaotaonhanvientamController.getById = catchAsync(async (req, res, next) => {
     true,
     lopdaotaonhanvien,
     null,
-    "Get lopdaotaonhanvien successful"
+    "Get lopdaotaonhanvien successful",
   );
 });
 
@@ -146,10 +202,9 @@ lopdaotaonhanvientamController.getAllPhanTrang = catchAsync(
       true,
       { lopdaotaonhanviens, totalPages, count },
       null,
-      ""
-    ); 
-  }
+      "",
+    );
+  },
 );
-
 
 module.exports = lopdaotaonhanvientamController;

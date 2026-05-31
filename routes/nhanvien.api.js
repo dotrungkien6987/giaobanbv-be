@@ -19,8 +19,8 @@ const {
 router.post(
   "/",
   authentication.loginRequired,
-
-  nhanvienController.insertOne
+  authentication.nhanVienPrivilegedRequired,
+  nhanvienController.insertOne,
 );
 
 // ===== Self-service profile for logged-in user (NhanVien linked by User.NhanVienID) =====
@@ -33,7 +33,7 @@ router.post(
   authentication.loginRequired,
   uploadAvatar.single("avatar"),
   verifyAvatarMagic,
-  nhanvienController.uploadMyAvatar
+  nhanvienController.uploadMyAvatar,
 );
 
 // Serve avatar by NhanVienID (login required)
@@ -43,7 +43,7 @@ router.get(
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
   ]),
-  nhanvienController.getAvatarByNhanVienID
+  nhanvienController.getAvatarByNhanVienID,
 );
 /**
  * @route PUT /nhanvien
@@ -54,8 +54,8 @@ router.get(
 router.put(
   "/",
   authentication.loginRequired,
-
-  nhanvienController.updateOneNhanVien
+  authentication.nhanVienPrivilegedRequired,
+  nhanvienController.updateOneNhanVien,
 );
 
 /**
@@ -67,37 +67,37 @@ router.put(
 router.get(
   "/",
   authentication.loginRequired,
-  nhanvienController.getNhanviensPhanTrang
+  nhanvienController.getNhanviensPhanTrang,
 );
 
 router.get(
   "/tichluytinchi",
   authentication.loginRequired,
-  nhanvienController.getAllNhanVienWithTinChiTichLuy
+  nhanvienController.getAllNhanVienWithTinChiTichLuy,
 );
 router.get(
   "/tichluytinchitheokhoa/",
   authentication.loginRequired,
 
-  nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa
+  nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa,
 );
 
 router.get(
   "/soluongthuchien",
   authentication.loginRequired,
-  nhanvienController.getTongHopSoLuongThucHien
+  nhanvienController.getTongHopSoLuongThucHien,
 );
 
 router.get(
   "/soluongtheokhoa",
   authentication.loginRequired,
-  nhanvienController.getTongHopSoLuongTheoKhoa
+  nhanvienController.getTongHopSoLuongTheoKhoa,
 );
 
 router.get(
   "/cocaunhanluc",
   authentication.loginRequired,
-  nhanvienController.getCoCauNguonNhanLuc
+  nhanvienController.getCoCauNguonNhanLuc,
 );
 
 router.get(
@@ -106,7 +106,7 @@ router.get(
   validators.validate([
     param("khoaID").exists().isString().custom(validators.checkObjectId),
   ]),
-  nhanvienController.getCoCauNguonNhanLucByKhoa
+  nhanvienController.getCoCauNguonNhanLucByKhoa,
 );
 
 /**
@@ -117,7 +117,8 @@ router.get(
 router.get(
   "/deleted",
   authentication.loginRequired,
-  nhanvienController.getNhanViensDeleted
+  authentication.nhanVienPrivilegedRequired,
+  nhanvienController.getNhanViensDeleted,
 );
 
 /**
@@ -132,7 +133,7 @@ router.get(
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
   ]),
-  nhanvienController.getOneByNhanVienID
+  nhanvienController.getOneByNhanVienID,
 );
 
 router.get(
@@ -141,7 +142,7 @@ router.get(
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
   ]),
-  nhanvienController.getById
+  nhanvienController.getById,
 );
 
 /**
@@ -153,10 +154,11 @@ router.get(
 router.patch(
   "/:nhanvienID/restore",
   authentication.loginRequired,
+  authentication.nhanVienPrivilegedRequired,
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
   ]),
-  nhanvienController.restoreNhanVien
+  nhanvienController.restoreNhanVien,
 );
 
 /**
@@ -169,16 +171,18 @@ router.patch(
 router.delete(
   "/:nhanvienID",
   authentication.loginRequired,
+  authentication.nhanVienPrivilegedRequired,
   validators.validate([
     param("nhanvienID").exists().isString().custom(validators.checkObjectId),
   ]),
-  nhanvienController.deleteOneNhanVien
+  nhanvienController.deleteOneNhanVien,
 );
 
 router.post(
   "/import",
   authentication.loginRequired,
-  nhanvienController.importNhanVien
+  authentication.nhanVienPrivilegedRequired,
+  nhanvienController.importNhanVien,
 );
 
 module.exports = router;

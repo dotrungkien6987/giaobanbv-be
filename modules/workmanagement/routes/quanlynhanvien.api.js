@@ -5,6 +5,8 @@ const quanLyNhanVienController = require("../controllers/quanLyNhanVienControlle
 const authentication = require("../../../middlewares/authentication");
 const { validateQuanLy } = require("../middlewares/validateQuanLy");
 
+router.use(authentication.loginRequired);
+
 /**
  * @route GET /api/workmanagement/quan-ly-nhan-vien/nhan-vien-duoc-quan-ly
  * @description Lấy danh sách nhân viên mà current user được phép quản lý (dùng cho KPI/Giao việc)
@@ -13,9 +15,8 @@ const { validateQuanLy } = require("../middlewares/validateQuanLy");
  */
 router.get(
   "/nhan-vien-duoc-quan-ly",
-  authentication.loginRequired,
   validateQuanLy("KPI"),
-  quanLyNhanVienController.getNhanVienDuocQuanLyByCurrentUser
+  quanLyNhanVienController.getNhanVienDuocQuanLyByCurrentUser,
 );
 
 /**
@@ -25,7 +26,7 @@ router.get(
  */
 router.get(
   "/giaoviec/:nhanVienId",
-  quanLyNhanVienController.getGiaoViecByNhanVienQuanLy
+  quanLyNhanVienController.getGiaoViecByNhanVienQuanLy,
 );
 
 /**
@@ -35,7 +36,7 @@ router.get(
  */
 router.get(
   "/chamkpi/:nhanVienId",
-  quanLyNhanVienController.getChamKPIByNhanVienQuanLy
+  quanLyNhanVienController.getChamKPIByNhanVienQuanLy,
 );
 
 /**
@@ -66,7 +67,7 @@ router.post(
     console.log("========================");
     next();
   },
-  quanLyNhanVienController.syncQuanLyNhanVienList
+  quanLyNhanVienController.syncQuanLyNhanVienList,
 );
 
 /**

@@ -13,6 +13,102 @@ const LopDaoTaoNhanVienDT06 = require("../models/LopDaoTaoNhanVienDT06");
 const Khoa = require("../models/Khoa");
 const moment = require("moment-timezone");
 const nhanvienController = {};
+const NHANVIEN_PRIVILEGED_ROLES = ["admin", "superadmin", "cntt", "daotao"];
+
+function normalizeId(value) {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (value._id && value._id !== value) return normalizeId(value._id);
+  if (typeof value.toString === "function") return value.toString();
+  return null;
+}
+
+function getCurrentRole(req) {
+  return (req.user?.PhanQuyen || "").toLowerCase();
+}
+
+function isNhanVienPrivilegedRole(role) {
+  return NHANVIEN_PRIVILEGED_ROLES.includes(role);
+}
+
+function assertNhanVienPrivileged(req, message) {
+  const role = getCurrentRole(req);
+  if (isNhanVienPrivilegedRole(role)) {
+    return role;
+  }
+
+  throw new AppError(
+    403,
+    message || "Bạn không có quyền quản trị nhân viên",
+    "AUTHORIZATION_ERROR",
+  );
+}
+
+async function getNhanVienReadAccess(req) {
+  const role = getCurrentRole(req);
+  const currentNhanVienId = normalizeId(req.user?.NhanVienID);
+
+  if (isNhanVienPrivilegedRole(role)) {
+    return { role, scope: "all", currentNhanVienId };
+  }
+
+  if (!currentNhanVienId) {
+    throw new AppError(
+      400,
+      "Tài khoản chưa liên kết với nhân viên",
+      "NHANVIEN_NOT_LINKED",
+    );
+  }
+
+  if (role === "manager") {
+    const currentNhanVien = await NhanVien.findById(currentNhanVienId)
+      .select("KhoaID")
+      .lean();
+
+    const managerKhoaId = normalizeId(currentNhanVien?.KhoaID);
+    if (!managerKhoaId) {
+      throw new AppError(
+        400,
+        "Không xác định được khoa của tài khoản quản lý",
+        "NHANVIEN_SCOPE_ERROR",
+      );
+    }
+
+    return { role, scope: "sameKhoa", currentNhanVienId, managerKhoaId };
+  }
+
+  return { role, scope: "self", currentNhanVienId };
+}
+
+function assertCanReadNhanVien(access, nhanVien, message) {
+  if (access.scope === "all") {
+    return;
+  }
+
+  const targetNhanVienId = normalizeId(nhanVien?._id || nhanVien);
+  if (access.scope === "self") {
+    if (targetNhanVienId === access.currentNhanVienId) {
+      return;
+    }
+
+    throw new AppError(
+      403,
+      message || "Bạn chỉ có thể xem hồ sơ nhân viên của chính mình",
+      "AUTHORIZATION_ERROR",
+    );
+  }
+
+  const targetKhoaId = normalizeId(nhanVien?.KhoaID);
+  if (access.scope === "sameKhoa" && targetKhoaId === access.managerKhoaId) {
+    return;
+  }
+
+  throw new AppError(
+    403,
+    message || "Bạn không có quyền xem hồ sơ nhân viên này",
+    "AUTHORIZATION_ERROR",
+  );
+}
 
 function pickAllowedNhanVienSelfUpdate(payload = {}) {
   const allowed = [
@@ -71,7 +167,7 @@ nhanvienController.getMe = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "User chưa được gán nhân viên",
-      "NHANVIEN_NOT_LINKED"
+      "NHANVIEN_NOT_LINKED",
     );
   }
 
@@ -89,7 +185,7 @@ nhanvienController.getMe = catchAsync(async (req, res, next) => {
     true,
     nhanVien,
     null,
-    "Lấy thông tin nhân viên thành công"
+    "Lấy thông tin nhân viên thành công",
   );
 });
 
@@ -99,7 +195,7 @@ nhanvienController.updateMe = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "User chưa được gán nhân viên",
-      "NHANVIEN_NOT_LINKED"
+      "NHANVIEN_NOT_LINKED",
     );
   }
 
@@ -108,7 +204,7 @@ nhanvienController.updateMe = catchAsync(async (req, res, next) => {
   const updated = await NhanVien.findOneAndUpdate(
     { _id: nhanVienId, isDeleted: false },
     updateData,
-    { new: true, runValidators: true }
+    { new: true, runValidators: true },
   )
     .populate("KhoaID")
     .populate({ path: "LoaiChuyenMonID", select: "LoaiChuyenMon TrinhDo" });
@@ -123,7 +219,7 @@ nhanvienController.updateMe = catchAsync(async (req, res, next) => {
     true,
     updated,
     null,
-    "Cập nhật thông tin nhân viên thành công"
+    "Cập nhật thông tin nhân viên thành công",
   );
 });
 
@@ -133,7 +229,7 @@ nhanvienController.uploadMyAvatar = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "User chưa được gán nhân viên",
-      "NHANVIEN_NOT_LINKED"
+      "NHANVIEN_NOT_LINKED",
     );
   }
   if (!req.file?.filename) {
@@ -166,23 +262,31 @@ nhanvienController.uploadMyAvatar = catchAsync(async (req, res, next) => {
     true,
     { Avatar: nhanVien.Avatar },
     null,
-    "Cập nhật avatar thành công"
+    "Cập nhật avatar thành công",
   );
 });
 
 nhanvienController.getAvatarByNhanVienID = catchAsync(
   async (req, res, next) => {
     const nhanVienId = req.params.nhanvienID;
+    const access = await getNhanVienReadAccess(req);
 
     const nhanVien = await NhanVien.findOne({
       _id: nhanVienId,
       isDeleted: false,
     })
-      .select("Avatar")
+      .select("Avatar KhoaID")
       .lean();
     if (!nhanVien) {
       throw new AppError(404, "Không tìm thấy nhân viên", "NHANVIEN_NOT_FOUND");
     }
+
+    assertCanReadNhanVien(
+      access,
+      { _id: nhanVienId, KhoaID: nhanVien.KhoaID },
+      "Bạn không có quyền xem avatar của nhân viên này",
+    );
+
     if (!nhanVien.Avatar) {
       throw new AppError(404, "Nhân viên chưa có avatar", "NO_AVATAR");
     }
@@ -193,7 +297,7 @@ nhanvienController.getAvatarByNhanVienID = catchAsync(
       throw new AppError(
         404,
         "Không tìm thấy file avatar",
-        "AVATAR_FILE_NOT_FOUND"
+        "AVATAR_FILE_NOT_FOUND",
       );
     }
 
@@ -201,7 +305,7 @@ nhanvienController.getAvatarByNhanVienID = catchAsync(
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "private, max-age=3600");
     return res.sendFile(abs);
-  }
+  },
 );
 
 // Helper: build aggregated cơ cấu nguồn nhân lực (theo LoaiChuyenMon + CCHN)
@@ -276,7 +380,7 @@ function buildCoCauNguonNhanLuc(nhanViens, dataFix) {
   // cocauKhac: những nhân viên không thuộc 4 mã trên
   const otherCodes = new Set(["BAC_SI", "DUOC_SI", "DIEU_DUONG", "KTV"]);
   const groupKhac = activeNhanViens.filter(
-    (nv) => !otherCodes.has(getLoaiCode(nv))
+    (nv) => !otherCodes.has(getLoaiCode(nv)),
   );
   const mapKhac = new Map();
   let khacCount = 0;
@@ -299,7 +403,7 @@ function buildCoCauNguonNhanLuc(nhanViens, dataFix) {
 
   // 3) Thống kê chứng chỉ hành nghề (trên nhân viên active)
   const coChungChi = activeNhanViens.filter(
-    (nv) => nv?.SoCCHN && nv.SoCCHN.toString().trim() !== ""
+    (nv) => nv?.SoCCHN && nv.SoCCHN.toString().trim() !== "",
   ).length;
   const khongChungChi = activeNhanViens.length - coChungChi;
   const resultChungChiHanhNghe = [
@@ -319,6 +423,8 @@ function buildCoCauNguonNhanLuc(nhanViens, dataFix) {
 }
 
 nhanvienController.insertOne = catchAsync(async (req, res, next) => {
+  assertNhanVienPrivileged(req, "Bạn không có quyền tạo nhân viên");
+
   //get data from request
   // let { Ngay,KhoaID, BSTruc, DDTruc, GhiChu,CBThemGio,UserID,ChiTietBenhNhan,ChiTietChiSo } = req.body;
   console.log("reqbody", req.body);
@@ -347,10 +453,19 @@ async function getLoai(maHinhThucCapNhat) {
 
 nhanvienController.getById = catchAsync(async (req, res, next) => {
   const nhanvienID = req.params.nhanvienID;
-  console.log("userID", nhanvienID);
+  const access = await getNhanVienReadAccess(req);
 
-  let nhanvien = await NhanVien.findById(nhanvienID).populate("KhoaID");
-  if (!nhanvien) throw new AppError(400, "NhanVien not found", "Error");
+  let nhanvien = await NhanVien.findOne({
+    _id: nhanvienID,
+    isDeleted: false,
+  }).populate("KhoaID");
+  if (!nhanvien) throw new AppError(404, "NhanVien not found", "Error");
+
+  assertCanReadNhanVien(
+    access,
+    nhanvien,
+    "Bạn không có quyền xem hồ sơ nhân viên này",
+  );
 
   // Lấy danh sách LopDaoTaoNhanVien của nhanvienID với các điều kiện
   const daotaos = await LopDaoTaoNhanVien.find({
@@ -454,10 +569,10 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
 
   // Sắp xếp daotaosFiltered và nghiencuukhoahocsFiltered theo NgayBatDau
   daotaosFiltered.sort(
-    (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau)
+    (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau),
   );
   nghiencuukhoahocsFiltered.sort(
-    (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau)
+    (a, b) => new Date(a.NgayBatDau) - new Date(b.NgayBatDau),
   );
 
   // Chuyển đổi tinChiTichLuys thành mảng và sắp xếp theo năm
@@ -485,12 +600,21 @@ nhanvienController.getById = catchAsync(async (req, res, next) => {
 nhanvienController.getNhanviensPhanTrang = catchAsync(
   async (req, res, next) => {
     // const curentUserId = req.userId;
+    const access = await getNhanVienReadAccess(req);
 
     let { page, limit, ...filter } = { ...req.query };
     page = parseInt(page) || 1;
     limit = parseInt(limit) || 2000;
 
     const filterConditions = [{ isDeleted: false }];
+
+    if (access.scope === "self") {
+      filterConditions.push({ _id: access.currentNhanVienId });
+    }
+
+    if (access.scope === "sameKhoa") {
+      filterConditions.push({ KhoaID: access.managerKhoaId });
+    }
 
     const filterCriteria = filterConditions.length
       ? { $and: filterConditions }
@@ -523,12 +647,14 @@ nhanvienController.getNhanviensPhanTrang = catchAsync(
       true,
       { nhanviens, totalPages, count },
       null,
-      ""
+      "",
     );
-  }
+  },
 );
 
 nhanvienController.deleteOneNhanVien = catchAsync(async (req, res, next) => {
+  assertNhanVienPrivileged(req, "Bạn không có quyền xóa nhân viên");
+
   const nhanvienID = req.params.nhanvienID;
   console.log("nhanvienID", req.params);
   const nhanvien = await NhanVien.findOneAndUpdate(
@@ -536,13 +662,15 @@ nhanvienController.deleteOneNhanVien = catchAsync(async (req, res, next) => {
       _id: nhanvienID,
     },
     { isDeleted: true },
-    { new: true }
+    { new: true },
   );
 
   return sendResponse(res, 200, true, nhanvien, null, "Delete User successful");
 });
 
 nhanvienController.updateOneNhanVien = catchAsync(async (req, res, next) => {
+  assertNhanVienPrivileged(req, "Bạn không có quyền cập nhật nhân viên");
+
   let { nhanvien } = req.body;
   console.log("body", nhanvien);
   let nhanvienUpdate = await NhanVien.findById(nhanvien._id || 0);
@@ -550,7 +678,7 @@ nhanvienController.updateOneNhanVien = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "nhanvienUpdate not found",
-      "Update nhanvienUpdate error"
+      "Update nhanvienUpdate error",
     );
   if (nhanvienUpdate) {
     const id = nhanvienUpdate._id;
@@ -567,11 +695,13 @@ nhanvienController.updateOneNhanVien = catchAsync(async (req, res, next) => {
     true,
     nhanvienUpdate,
     null,
-    "Update Suco successful"
+    "Update Suco successful",
   );
 });
 
 nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
+  assertNhanVienPrivileged(req, "Bạn không có quyền import nhân viên");
+
   console.log("body", req.body);
   const nhanVienArray = req.body.jsonData; // Mảng đối tượng nhân viên
 
@@ -579,7 +709,7 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
     throw new AppError(
       400,
       "Dữ liệu nhập vào không hợp lệ",
-      "Import NhanVien Error"
+      "Import NhanVien Error",
     );
   }
 
@@ -590,7 +720,7 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
       throw new AppError(
         400,
         `Không tìm thấy khoa với tên: ${nhanvien.TenKhoa}`,
-        "Import NhanVien Error"
+        "Import NhanVien Error",
       );
     }
     nhanvien.KhoaID = khoa._id;
@@ -614,7 +744,7 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
       throw new AppError(
         400,
         `Giới tính không hợp lệ: ${nhanvien.GioiTinh}`,
-        "Import NhanVien Error"
+        "Import NhanVien Error",
       );
     }
 
@@ -640,7 +770,7 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
       throw new AppError(
         400,
         `Dữ liệu không hợp lệ cho nhân viên: ${JSON.stringify(nhanvien)}`,
-        validationError.message
+        validationError.message,
       );
     }
 
@@ -648,7 +778,7 @@ nhanvienController.importNhanVien = catchAsync(async (req, res, next) => {
     await NhanVien.findOneAndUpdate(
       { MaNhanVien: nhanvien.MaNhanVien },
       { $set: nhanvien },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
   }
 
@@ -664,7 +794,7 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
       throw new AppError(
         400,
         "FromDate and ToDate are required",
-        "Get NhanVien Error"
+        "Get NhanVien Error",
       );
     }
 
@@ -720,9 +850,9 @@ nhanvienController.getNhanVienWithTinChiTichLuy = catchAsync(
       true,
       result,
       null,
-      "Get NhanVien with TinChiTichLuy successful"
+      "Get NhanVien with TinChiTichLuy successful",
     );
-  }
+  },
 );
 
 //Tinh tin chi tich luy cho tung nhan vien
@@ -735,7 +865,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyCu = catchAsync(
       throw new AppError(
         400,
         "FromDate and ToDate are required",
-        "Get NhanVien Error"
+        "Get NhanVien Error",
       );
     }
 
@@ -854,9 +984,9 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyCu = catchAsync(
       true,
       result,
       null,
-      "Get NhanVien with TinChiTichLuy successful"
+      "Get NhanVien with TinChiTichLuy successful",
     );
-  }
+  },
 );
 nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
   async (req, res, next) => {
@@ -867,7 +997,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
       throw new AppError(
         400,
         "FromDate, ToDate and khoaID are required",
-        "Get NhanVien Error"
+        "Get NhanVien Error",
       );
     }
 
@@ -985,9 +1115,9 @@ nhanvienController.getAllNhanVienWithTinChiTichLuyByKhoa = catchAsync(
       true,
       result,
       null,
-      "Get NhanVien with TinChiTichLuy by Khoa successful"
+      "Get NhanVien with TinChiTichLuy by Khoa successful",
     );
-  }
+  },
 );
 
 nhanvienController.getTongHopSoLuongThucHien = catchAsync(
@@ -999,7 +1129,7 @@ nhanvienController.getTongHopSoLuongThucHien = catchAsync(
       throw new AppError(
         400,
         "FromDate and ToDate are required",
-        "Get Summary Error"
+        "Get Summary Error",
       );
     }
 
@@ -1027,7 +1157,7 @@ nhanvienController.getTongHopSoLuongThucHien = catchAsync(
 
       const totalSoThanhVien = lopDaoTaoList.reduce(
         (acc, curr) => acc + curr.SoThanhVien,
-        0
+        0,
       );
       const lopDaoTaoCount = lopDaoTaoList.length;
 
@@ -1048,9 +1178,9 @@ nhanvienController.getTongHopSoLuongThucHien = catchAsync(
       true,
       result,
       null,
-      "Get Summary by HinhThucCapNhat successful"
+      "Get Summary by HinhThucCapNhat successful",
     );
-  }
+  },
 );
 
 nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
@@ -1060,15 +1190,15 @@ nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
     const nhomQuyDoi1 = [
       ...new Set(
         dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi1).filter(
-          (quyDoi) => quyDoi
-        )
+          (quyDoi) => quyDoi,
+        ),
       ),
     ];
     const nhomQuyDoi2 = [
       ...new Set(
         dataFix.TrinhDoChuyenMon.map((td) => td.QuyDoi2).filter(
-          (quyDoi) => quyDoi
-        )
+          (quyDoi) => quyDoi,
+        ),
       ),
     ];
 
@@ -1080,7 +1210,7 @@ nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
       const soLuong = nhanViens.filter((nv) => {
         const trinhDo = nv.TrinhDoChuyenMon;
         return dataFix.TrinhDoChuyenMon.some(
-          (td) => td.QuyDoi1 === quyDoi1 && td.TrinhDoChuyenMon === trinhDo
+          (td) => td.QuyDoi1 === quyDoi1 && td.TrinhDoChuyenMon === trinhDo,
         );
       }).length;
       return { QuyDoi: quyDoi1, SoLuong: soLuong };
@@ -1098,7 +1228,7 @@ nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
       const soLuong = nhanViens.filter((nv) => {
         const trinhDo = nv.TrinhDoChuyenMon;
         return dataFix.TrinhDoChuyenMon.some(
-          (td) => td.QuyDoi2 === quyDoi2 && td.TrinhDoChuyenMon === trinhDo
+          (td) => td.QuyDoi2 === quyDoi2 && td.TrinhDoChuyenMon === trinhDo,
         );
       }).length;
       return { QuyDoi: quyDoi2, SoLuong: soLuong };
@@ -1118,9 +1248,9 @@ nhanvienController.getCoCauNguonNhanLuc1 = catchAsync(
       true,
       { nhomQuyDoi1: resultQuyDoi1, nhomQuyDoi2: resultQuyDoi2 },
       null,
-      "Lấy dữ liệu nhân viên theo QuyDoi thành công"
+      "Lấy dữ liệu nhân viên theo QuyDoi thành công",
     );
-  }
+  },
 );
 
 nhanvienController.getCoCauNguonNhanLuc = catchAsync(async (req, res, next) => {
@@ -1138,7 +1268,7 @@ nhanvienController.getCoCauNguonNhanLuc = catchAsync(async (req, res, next) => {
     true,
     data,
     null,
-    "Get CoCauNguonNhanLuc successful"
+    "Get CoCauNguonNhanLuc successful",
   );
 });
 
@@ -1152,7 +1282,7 @@ nhanvienController.getCoCauNguonNhanLucByKhoa = catchAsync(
       throw new AppError(
         404,
         "DataFix not found",
-        "Get CoCauNguonNhanLuc error"
+        "Get CoCauNguonNhanLuc error",
       );
     }
 
@@ -1169,9 +1299,9 @@ nhanvienController.getCoCauNguonNhanLucByKhoa = catchAsync(
       true,
       data,
       null,
-      "Get CoCauNguonNhanLuc successful"
+      "Get CoCauNguonNhanLuc successful",
     );
-  }
+  },
 );
 
 nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
@@ -1183,7 +1313,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       throw new AppError(
         400,
         "FromDate and ToDate are required",
-        "Get Khoa Summary Error"
+        "Get Khoa Summary Error",
       );
     }
 
@@ -1286,7 +1416,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       const khoaIdStr = khoa._id.toString();
       const nhanVienList = nhanVienValues.filter(
         (v) =>
-          v.nhanVien.KhoaID && v.nhanVien.KhoaID._id.toString() === khoaIdStr
+          v.nhanVien.KhoaID && v.nhanVien.KhoaID._id.toString() === khoaIdStr,
       );
       if (nhanVienList.length === 0) continue;
 
@@ -1300,7 +1430,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
           KhuyenCao &&
           v.nhanVien.SoCCHN &&
           v.nhanVien.SoCCHN.trim() !== "" &&
-          v.totalSoTinChiTichLuy >= Number(KhuyenCao)
+          v.totalSoTinChiTichLuy >= Number(KhuyenCao),
       ).length;
       const countDatFalse = countSoCCHN - countDatTrue;
 
@@ -1318,7 +1448,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
     const orphanList = nhanVienValues.filter(
       (v) =>
         !v.nhanVien.KhoaID ||
-        !validKhoaIdSet.has(v.nhanVien.KhoaID._id?.toString())
+        !validKhoaIdSet.has(v.nhanVien.KhoaID._id?.toString()),
     );
     if (orphanList.length > 0) {
       const totalNhanVien = orphanList.length;
@@ -1331,7 +1461,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
           KhuyenCao &&
           v.nhanVien.SoCCHN &&
           v.nhanVien.SoCCHN.trim() !== "" &&
-          v.totalSoTinChiTichLuy >= Number(KhuyenCao)
+          v.totalSoTinChiTichLuy >= Number(KhuyenCao),
       ).length;
       const countDatFalse = countSoCCHN - countDatTrue;
       result.push({
@@ -1360,7 +1490,7 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
         acc.countDatFalse += item.countDatFalse;
         return acc;
       },
-      { totalNhanVien: 0, countSoCCHN: 0, countDatTrue: 0, countDatFalse: 0 }
+      { totalNhanVien: 0, countSoCCHN: 0, countDatTrue: 0, countDatFalse: 0 },
     );
 
     result.unshift({
@@ -1375,9 +1505,9 @@ nhanvienController.getTongHopSoLuongTheoKhoa = catchAsync(
       true,
       result,
       null,
-      "Get Summary by Khoa successful"
+      "Get Summary by Khoa successful",
     );
-  }
+  },
 );
 nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
   async (req, res, next) => {
@@ -1393,7 +1523,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
       throw new AppError(
         400,
         "FromDate and ToDate are required",
-        "Get NhanVien Error"
+        "Get NhanVien Error",
       );
     }
 
@@ -1434,7 +1564,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
             totalSoTinChiTichLuy: 0,
             ...MaHinhThucCapNhatList.reduce(
               (acc, ma) => ({ ...acc, [ma]: 0 }),
-              {}
+              {},
             ),
           });
         }
@@ -1483,7 +1613,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
             totalSoTinChiTichLuy: 0,
             ...MaHinhThucCapNhatList.reduce(
               (acc, ma) => ({ ...acc, [ma]: 0 }),
-              {}
+              {},
             ),
           });
         }
@@ -1514,7 +1644,7 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
           totalSoTinChiTichLuy: 0,
           ...MaHinhThucCapNhatList.reduce(
             (acc, ma) => ({ ...acc, [ma]: 0 }),
-            {}
+            {},
           ),
         });
       }
@@ -1536,19 +1666,29 @@ nhanvienController.getAllNhanVienWithTinChiTichLuy = catchAsync(
       true,
       result,
       null,
-      "Get NhanVien with TinChiTichLuy successful"
+      "Get NhanVien with TinChiTichLuy successful",
     );
-  }
+  },
 );
 
 // Hàm đơn giản chỉ trả thông tin cơ bản nhân viên cho QuanLyNhanVien
 nhanvienController.getOneByNhanVienID = catchAsync(async (req, res, next) => {
   const nhanvienID = req.params.nhanvienID;
+  const access = await getNhanVienReadAccess(req);
 
-  let nhanvien = await NhanVien.findById(nhanvienID).populate("KhoaID");
+  let nhanvien = await NhanVien.findOne({
+    _id: nhanvienID,
+    isDeleted: false,
+  }).populate("KhoaID");
   if (!nhanvien) {
-    throw new AppError(400, "NhanVien not found");
+    throw new AppError(404, "NhanVien not found");
   }
+
+  assertCanReadNhanVien(
+    access,
+    nhanvien,
+    "Bạn không có quyền xem nhân viên này",
+  );
 
   return sendResponse(
     res,
@@ -1556,12 +1696,17 @@ nhanvienController.getOneByNhanVienID = catchAsync(async (req, res, next) => {
     true,
     nhanvien,
     null,
-    "Get NhanVien successful"
+    "Get NhanVien successful",
   );
 });
 
 // Lấy danh sách nhân viên đã xóa mềm (isDeleted = true)
 nhanvienController.getNhanViensDeleted = catchAsync(async (req, res, next) => {
+  assertNhanVienPrivileged(
+    req,
+    "Bạn không có quyền xem danh sách nhân viên đã xóa",
+  );
+
   let { page, limit, ...filter } = { ...req.query };
   page = parseInt(page) || 1;
   limit = parseInt(limit) || 2000;
@@ -1598,12 +1743,14 @@ nhanvienController.getNhanViensDeleted = catchAsync(async (req, res, next) => {
     true,
     { nhanviens, totalPages, count },
     null,
-    "Lấy danh sách nhân viên đã xóa thành công"
+    "Lấy danh sách nhân viên đã xóa thành công",
   );
 });
 
 // Phục hồi nhân viên đã xóa mềm (update isDeleted = false)
 nhanvienController.restoreNhanVien = catchAsync(async (req, res, next) => {
+  assertNhanVienPrivileged(req, "Bạn không có quyền phục hồi nhân viên");
+
   const nhanvienID = req.params.nhanvienID;
 
   const nhanvien = await NhanVien.findOneAndUpdate(
@@ -1612,7 +1759,7 @@ nhanvienController.restoreNhanVien = catchAsync(async (req, res, next) => {
       isDeleted: true, // Chỉ phục hồi những nhân viên đã bị xóa
     },
     { isDeleted: false },
-    { new: true }
+    { new: true },
   )
     .populate("KhoaID")
     .populate("LoaiChuyenMonID");
@@ -1621,7 +1768,7 @@ nhanvienController.restoreNhanVien = catchAsync(async (req, res, next) => {
     throw new AppError(
       404,
       "Nhân viên không tồn tại hoặc chưa bị xóa",
-      "Not Found"
+      "Not Found",
     );
   }
 
@@ -1631,7 +1778,7 @@ nhanvienController.restoreNhanVien = catchAsync(async (req, res, next) => {
     true,
     nhanvien,
     null,
-    "Phục hồi nhân viên thành công"
+    "Phục hồi nhân viên thành công",
   );
 });
 

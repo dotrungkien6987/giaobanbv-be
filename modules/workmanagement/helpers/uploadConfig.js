@@ -1,6 +1,8 @@
 const path = require("path");
 
 const MB = 1024 * 1024;
+const DEFAULT_MAX_FILE_SIZE_MB = 20;
+const DEFAULT_MAX_TOTAL_UPLOAD_MB = 200;
 
 const uploadRoot =
   process.env.WM_UPLOAD_ROOT ||
@@ -12,9 +14,15 @@ const config = {
   UPLOAD_DIR: uploadRoot,
   UPLOAD_ROOT: uploadRoot,
   MAX_FILE_SIZE:
-    (parseInt(process.env.MAX_FILE_SIZE_MB || "50", 10) || 50) * MB,
+    (parseInt(
+      process.env.MAX_FILE_SIZE_MB || String(DEFAULT_MAX_FILE_SIZE_MB),
+      10,
+    ) || DEFAULT_MAX_FILE_SIZE_MB) * MB,
   MAX_TOTAL_UPLOAD:
-    (parseInt(process.env.MAX_TOTAL_UPLOAD_MB || "200", 10) || 200) * MB,
+    (parseInt(
+      process.env.MAX_TOTAL_UPLOAD_MB || String(DEFAULT_MAX_TOTAL_UPLOAD_MB),
+      10,
+    ) || DEFAULT_MAX_TOTAL_UPLOAD_MB) * MB,
   ALLOWED_MIME: (
     process.env.ALLOWED_MIME ||
     "image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain"
@@ -40,4 +48,9 @@ function toAbs(relOrAbs) {
   return abs;
 }
 
-module.exports = { ...config, toAbs };
+module.exports = {
+  ...config,
+  DEFAULT_MAX_FILE_SIZE_MB,
+  DEFAULT_MAX_TOTAL_UPLOAD_MB,
+  toAbs,
+};

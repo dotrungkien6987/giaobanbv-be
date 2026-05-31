@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
-const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { authenticateAccessToken } = require("../helpers/accessTokenAuth");
 const {
   shouldDisableLegacyRealtime,
 } = require("../modules/workmanagement/helpers/legacyCutover");
@@ -56,12 +56,8 @@ class SocketService {
           return next(new Error("Authentication token required"));
         }
 
-        // Verify JWT - sử dụng JWT_SECRET_KEY như trong project
-        const decoded = jwt.verify(
-          token,
-          process.env.JWT_SECRET_KEY || process.env.JWT_SECRET,
-        );
-        const user = await User.findById(decoded._id);
+        const authContext = await authenticateAccessToken(token);
+        const user = await User.findById(authContext.userId);
 
         if (!user) {
           return next(new Error("User not found"));
@@ -70,6 +66,8 @@ class SocketService {
         // Attach user to socket
         socket.userId = user._id.toString();
         socket.user = user;
+        socket.authJti = authContext.jti || null;
+        socket.data.authJti = authContext.jti || null;
         next();
       } catch (error) {
         console.error("[SocketService] Auth error:", error.message);
@@ -192,6 +190,26 @@ class SocketService {
    */
   getIO() {
     return this.io;
+  }
+
+  async disconnectByAuthJti(jti) {
+    if (this.isDisabled || !this.io || !jti) {
+      return 0;
+    }
+
+    const sockets = await this.io.fetchSockets();
+    let disconnectedCount = 0;
+
+    sockets.forEach((socket) => {
+      if ((socket.data?.authJti || socket.authJti) !== jti) {
+        return;
+      }
+
+      disconnectedCount += 1;
+      socket.disconnect(true);
+    });
+
+    return disconnectedCount;
   }
 }
 

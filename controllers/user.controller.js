@@ -3,11 +3,23 @@ const { sendResponse, catchAsync, AppError } = require("../helpers/utils");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const Khoa = require("../models/Khoa");
+const { getPasswordPolicyError } = require("../helpers/passwordPolicy");
 const userController = {};
+
+function ensureStrongPassword(password) {
+  const passwordError = getPasswordPolicyError(password);
+  if (passwordError) {
+    throw new AppError(400, passwordError, "Password Policy Error");
+  }
+}
+
+async function hashPassword(password) {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+}
 
 userController.insertOne = catchAsync(async (req, res, next) => {
   //get data from request
-  console.log(req.body);
   let {
     UserName,
     Email,
@@ -28,8 +40,8 @@ userController.insertOne = catchAsync(async (req, res, next) => {
     throw new AppError(400, "User already exists", "Registration Error");
   // const user = await User.findOne({ UserName }, "+PassWord");
   //Process
-  const salt = await bcrypt.genSalt(10);
-  PassWord = await bcrypt.hash(PassWord, salt);
+  ensureStrongPassword(PassWord);
+  PassWord = await hashPassword(PassWord);
   user = await User.create({
     UserName,
     Email,
@@ -56,7 +68,7 @@ userController.insertOne = catchAsync(async (req, res, next) => {
     true,
     { user: userWithTenKhoa, accessToken },
     null,
-    "Created User success"
+    "Created User success",
   );
 });
 
@@ -72,7 +84,7 @@ userController.getCurrentUser = catchAsync(async (req, res, next) => {
     true,
     user,
     null,
-    "Get current User successful"
+    "Get current User successful",
   );
 });
 
@@ -113,7 +125,7 @@ userController.getCurrentUserFull = catchAsync(async (req, res, next) => {
       nhanVienKhoaId,
     },
     null,
-    "Get current User with full info successful"
+    "Get current User with full info successful",
   );
 });
 
@@ -153,7 +165,6 @@ userController.getUsers = catchAsync(async (req, res, next) => {
   const totalPages = Math.ceil(count / limit);
   const offset = limit * (page - 1);
 
-  console.log("filter", filterConditions);
   let users = await User.find(filterCriteria)
     .select("+PassWord")
     .sort({ createdAt: -1 })
@@ -165,7 +176,6 @@ userController.getUsers = catchAsync(async (req, res, next) => {
 
 userController.updateUser = catchAsync(async (req, res, next) => {
   const userId = req.params.id;
-  console.log("userID", userId);
   let user = await User.findById(userId);
   if (!user) throw new AppError(400, "User not found", "Update  User Error");
 
@@ -198,27 +208,31 @@ userController.updateUser = catchAsync(async (req, res, next) => {
 
 userController.resetPass = catchAsync(async (req, res, next) => {
   const userId = req.params.id;
-  console.log("userID", userId);
   let user = await User.findById(userId);
   if (!user) throw new AppError(400, "User not found", "Update  User Error");
 
-  const salt = await bcrypt.genSalt(10);
   let PassWord = req.body["PassWord"];
 
-  PassWord = await bcrypt.hash(PassWord, salt);
+  ensureStrongPassword(PassWord);
+  PassWord = await hashPassword(PassWord);
 
   user["PassWord"] = PassWord;
+  user.mustChangePassword = true;
+  user.failedLoginAttempts = 0;
+  user.lockUntil = null;
   await user.save();
   return sendResponse(res, 200, true, user, null, "Update User successful");
 });
 
 userController.resetPassMe = catchAsync(async (req, res, next) => {
   //get data from request
-  console.log("body", req.body);
-  let { UserName, PassWordOld, PassWordNew } = req.body;
+  let { PassWordOld, PassWordNew } = req.body;
 
   //Business Logic Validation
-  let user = await User.findOne({ UserName }, "+PassWord");
+  let user = await User.findById(
+    req.userId,
+    "+PassWord +failedLoginAttempts +lockUntil",
+  );
 
   if (!user) throw new AppError(400, "Không tồn tại user", "Reset pass error");
   //Process
@@ -226,9 +240,12 @@ userController.resetPassMe = catchAsync(async (req, res, next) => {
   if (!isMatch)
     throw new AppError(400, "Mật khẩu cũ không đúng", "Reset pass error");
 
-  const salt = await bcrypt.genSalt(10);
-  PassWordNew = await bcrypt.hash(PassWordNew, salt);
+  ensureStrongPassword(PassWordNew);
+  PassWordNew = await hashPassword(PassWordNew);
   user.PassWord = PassWordNew;
+  user.mustChangePassword = false;
+  user.failedLoginAttempts = 0;
+  user.lockUntil = null;
   await user.save();
   //Response
   sendResponse(res, 200, true, { user }, null, "Reset Pass success");
@@ -242,7 +259,7 @@ userController.deleteUser = catchAsync(async (req, res, next) => {
       _id: userId,
     },
     { isDeleted: true },
-    { new: true }
+    { new: true },
   );
 
   return sendResponse(res, 200, true, user, null, "Delete User successful");

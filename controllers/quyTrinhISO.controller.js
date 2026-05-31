@@ -14,6 +14,31 @@ const fs = require("fs-extra");
 const config = require("../modules/workmanagement/helpers/uploadConfig");
 
 const controller = {};
+const QLCL_READ_ROLES = ["qlcl", "admin", "superadmin"];
+
+function isQLCLUser(user) {
+  return QLCL_READ_ROLES.includes((user?.PhanQuyen || "").toLowerCase());
+}
+
+async function assertCanReadQuyTrinh(currentUser, quyTrinh) {
+  if (isQLCLUser(currentUser)) {
+    return;
+  }
+
+  // User thường chỉ được xem quy trình ACTIVE đã phân phối cho khoa mình.
+  if (!currentUser?.KhoaID || quyTrinh?.TrangThai !== "ACTIVE") {
+    throw new AppError(403, "Không có quyền xem quy trình này", "FORBIDDEN");
+  }
+
+  const hasAccess = await QuyTrinhISO_KhoaPhanPhoi.exists({
+    QuyTrinhISOID: quyTrinh._id,
+    KhoaID: currentUser.KhoaID,
+  });
+
+  if (!hasAccess) {
+    throw new AppError(403, "Không có quyền xem quy trình này", "FORBIDDEN");
+  }
+}
 
 // ==================== AUDIT LOG HELPER ====================
 function logAudit(quyTrinhISOID, hanhDong, nguoiThucHienID, chiTiet) {
@@ -78,9 +103,7 @@ controller.list = catchAsync(async (req, res) => {
     includeDistribution,
   } = req.query;
   const currentUser = req.user;
-  const isQLCL = ["qlcl", "admin", "superadmin"].includes(
-    currentUser.PhanQuyen,
-  );
+  const isQLCL = isQLCLUser(currentUser);
 
   // Base query — QLCL thấy mọi trạng thái non-deleted, user thường chỉ thấy ACTIVE
   let query = isQLCL
@@ -211,9 +234,6 @@ controller.list = catchAsync(async (req, res) => {
 controller.detail = catchAsync(async (req, res) => {
   const { id } = req.params;
   const currentUser = req.user;
-  const isQLCL = ["qlcl", "admin", "superadmin"].includes(
-    currentUser.PhanQuyen,
-  );
 
   const quyTrinh = await QuyTrinhISO.findById(id)
     .populate("KhoaXayDungID", "TenKhoa MaKhoa")
@@ -224,16 +244,7 @@ controller.detail = catchAsync(async (req, res) => {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
-  // Permission check for non-QLCL: only see ACTIVE docs they have distribution for
-  if (!isQLCL) {
-    const hasAccess = await QuyTrinhISO_KhoaPhanPhoi.exists({
-      QuyTrinhISOID: id,
-      KhoaID: currentUser.KhoaID,
-    });
-    if (!hasAccess) {
-      throw new AppError(403, "Không có quyền xem quy trình này", "FORBIDDEN");
-    }
-  }
+  await assertCanReadQuyTrinh(currentUser, quyTrinh);
 
   // Get distribution list
   const phanPhoi = await QuyTrinhISO_KhoaPhanPhoi.find({ QuyTrinhISOID: id })
@@ -513,25 +524,14 @@ controller.delete = catchAsync(async (req, res) => {
 controller.getVersions = catchAsync(async (req, res) => {
   const { id } = req.params;
   const currentUser = req.user;
-  const isQLCL = ["qlcl", "admin", "superadmin"].includes(
-    currentUser.PhanQuyen,
-  );
+  const isQLCL = isQLCLUser(currentUser);
 
   const current = await QuyTrinhISO.findById(id).lean();
   if (!current || current.IsDeleted) {
     throw new AppError(404, "Không tìm thấy quy trình", "NOT_FOUND");
   }
 
-  // Permission check for non-QLCL
-  if (!isQLCL) {
-    const hasAccess = await QuyTrinhISO_KhoaPhanPhoi.exists({
-      QuyTrinhISOID: id,
-      KhoaID: currentUser.KhoaID,
-    });
-    if (!hasAccess) {
-      throw new AppError(403, "Không có quyền xem quy trình này", "FORBIDDEN");
-    }
-  }
+  await assertCanReadQuyTrinh(currentUser, current);
 
   // QLCL sees all versions, regular users only see ACTIVE versions
   const versionQuery = {
@@ -689,9 +689,7 @@ controller.copyFilesFromVersion = catchAsync(async (req, res) => {
 // ==================== STATISTICS (Dashboard) ====================
 controller.getStatistics = catchAsync(async (req, res) => {
   const currentUser = req.user;
-  const isQLCL = ["qlcl", "admin", "superadmin"].includes(
-    currentUser.PhanQuyen,
-  );
+  const isQLCL = isQLCLUser(currentUser);
 
   let baseQuery = { IsDeleted: false, TrangThai: "ACTIVE" };
 

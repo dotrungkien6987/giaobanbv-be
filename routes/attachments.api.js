@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const authentication = require("../middlewares/authentication");
+const { uploadLimiter } = require("../helpers/uploadRateLimit");
 const ctrl = require("../modules/workmanagement/controllers/attachments.controller");
 const {
   upload,
@@ -12,9 +13,10 @@ router.use(authentication.loginRequired);
 // Upload: /api/attachments/:ownerType/:ownerId/:field?/files
 router.post(
   "/:ownerType/:ownerId/:field?/files",
+  uploadLimiter,
   upload.array("files"),
   verifyMagicAndTotalSize,
-  ctrl.upload
+  ctrl.upload,
 );
 
 // List files

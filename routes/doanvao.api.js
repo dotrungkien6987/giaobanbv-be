@@ -14,6 +14,7 @@ const { body } = require("express-validator");
 router.post(
   "/",
   authentication.loginRequired,
+  authentication.doanHopTacPrivilegedRequired,
   validators.validate([
     body("NgayKyVanBan", "Ngày ký văn bản là bắt buộc")
       .exists()
@@ -27,7 +28,7 @@ router.post(
       .if(body("ThanhVien").exists())
       .isISO8601(),
   ]),
-  doanVaoController.createDoanVao
+  doanVaoController.createDoanVao,
 );
 
 /**
@@ -36,7 +37,12 @@ router.post(
  * @query {page, limit, search, fromDate, toDate}
  * @access Login required
  */
-router.get("/", authentication.loginRequired, doanVaoController.getDoanVaos);
+router.get(
+  "/",
+  authentication.loginRequired,
+  authentication.doanHopTacPrivilegedRequired,
+  doanVaoController.getDoanVaos,
+);
 
 /**
  * @route GET /api/doanvao/stats
@@ -47,7 +53,8 @@ router.get("/", authentication.loginRequired, doanVaoController.getDoanVaos);
 router.get(
   "/stats",
   authentication.loginRequired,
-  doanVaoController.getDoanVaoStats
+  authentication.doanHopTacPrivilegedRequired,
+  doanVaoController.getDoanVaoStats,
 );
 
 /**
@@ -65,13 +72,15 @@ router.get(
 router.get(
   "/members",
   authentication.loginRequired,
-  doanVaoController.getMembers
+  authentication.doanHopTacPrivilegedRequired,
+  doanVaoController.getMembers,
 );
 
 router.get(
   "/:id",
   authentication.loginRequired,
-  doanVaoController.getDoanVaoById
+  authentication.doanHopTacPrivilegedRequired,
+  doanVaoController.getDoanVaoById,
 );
 
 /**
@@ -84,13 +93,14 @@ router.get(
 router.put(
   "/:id",
   authentication.loginRequired,
+  authentication.doanHopTacPrivilegedRequired,
   validators.validate([
     body("NgayKyVanBan", "Ngày ký văn bản phải là ngày hợp lệ")
       .optional()
       .isISO8601(),
     body("ThanhVien", "Danh sách thành viên phải là mảng").optional().isArray(),
   ]),
-  doanVaoController.updateDoanVao
+  doanVaoController.updateDoanVao,
 );
 
 /**
@@ -102,7 +112,8 @@ router.put(
 router.delete(
   "/:id",
   authentication.loginRequired,
-  doanVaoController.deleteDoanVao
+  authentication.doanHopTacPrivilegedRequired,
+  doanVaoController.deleteDoanVao,
 );
 
 module.exports = router;

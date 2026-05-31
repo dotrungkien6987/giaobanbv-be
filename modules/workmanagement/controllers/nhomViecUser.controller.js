@@ -7,32 +7,80 @@ const {
 } = require("../../../helpers/utils");
 
 const nhomViecUserController = {};
+const WRITE_ROLES = ["admin", "superadmin", "manager"];
+
+const getCurrentUserId = (req) => {
+  if (req.user?.userId) return req.user.userId;
+  if (req.user?._id) return req.user._id.toString();
+  if (req.userId) return req.userId;
+  return null;
+};
+
+const getNormalizedRole = (req) => (req.user?.PhanQuyen || "").toLowerCase();
+
+const isAdminRole = (role) => role === "admin" || role === "superadmin";
+
+const normalizeId = (value) => {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (value._id && value._id !== value) return normalizeId(value._id);
+  if (typeof value.toString === "function") return value.toString();
+  return null;
+};
+
+const assertCanWriteNhomViecUser = (req, message) => {
+  const role = getNormalizedRole(req);
+
+  if (!WRITE_ROLES.includes(role)) {
+    throw new AppError(
+      403,
+      message || "Bạn không có quyền thao tác với nhóm việc",
+    );
+  }
+
+  return role;
+};
+
+const assertCanManageExistingNhomViecUser = (req, ownerId, message) => {
+  const role = assertCanWriteNhomViecUser(req, message);
+
+  if (isAdminRole(role)) {
+    return;
+  }
+
+  if (normalizeId(ownerId) === normalizeId(getCurrentUserId(req))) {
+    return;
+  }
+
+  throw new AppError(
+    403,
+    message || "Bạn chỉ có thể thao tác với nhóm việc do mình tạo",
+  );
+};
 
 /**
  * Lấy danh sách nhóm việc của người dùng hiện tại
  */
 nhomViecUserController.getMyNhomViecs = catchAsync(async (req, res, next) => {
-  // authentication.loginRequired chỉ set req.userId, cần lấy user đầy đủ
-  const userId = req.user?._id || req.userId;
+  const userId = getCurrentUserId(req);
   if (!userId)
     return next(new AppError(401, "Không tìm thấy thông tin người dùng"));
 
-  // Lấy user đầy đủ nếu chưa có
   let user = req.user;
-  if (!user) {
+  if (!user?.PhanQuyen) {
     const User = require("../../../models/User");
     user = await User.findById(userId).select("_id PhanQuyen");
     if (!user) return next(new AppError(401, "User không tồn tại"));
-    req.user = user; // cache lại
+    req.user = user;
   }
 
-  const includeAll = req.query.includeAll === "true";
-  const isAdmin = user.PhanQuyen === "admin";
+  const role = (user.PhanQuyen || "").toLowerCase();
+  const includeAll = req.query.includeAll === "true" && isAdminRole(role);
 
   const nhomViecs =
-    isAdmin || includeAll
+    isAdminRole(role) || includeAll
       ? await nhomViecUserService.getAllActive()
-      : await nhomViecUserService.getNhomViecByNguoiTao(user._id);
+      : await nhomViecUserService.getNhomViecByNguoiTao(userId);
 
   return sendResponse(
     res,
@@ -40,19 +88,29 @@ nhomViecUserController.getMyNhomViecs = catchAsync(async (req, res, next) => {
     true,
     nhomViecs,
     null,
-    "Lấy danh sách nhóm việc thành công"
+    "Lấy danh sách nhóm việc thành công",
   );
 });
 
 // GET /api/nhomviec-user - Lấy tất cả nhóm việc
 nhomViecUserController.getAll = catchAsync(async (req, res, next) => {
   const { page = 1, limit = 2000, includeDeleted = false } = req.query;
+  const role = getNormalizedRole(req);
+  const currentUserId = getCurrentUserId(req);
+
+  if (!currentUserId) {
+    throw new AppError(401, "Không tìm thấy thông tin người dùng");
+  }
 
   const filterConditions = [];
 
   // Mặc định chỉ lấy các bản ghi chưa bị xóa
   if (includeDeleted !== "true") {
     filterConditions.push({ isDeleted: false });
+  }
+
+  if (!isAdminRole(role)) {
+    filterConditions.push({ NguoiTaoID: currentUserId });
   }
 
   const filterCriteria = filterConditions.length
@@ -75,21 +133,31 @@ nhomViecUserController.getAll = catchAsync(async (req, res, next) => {
     true,
     { nhomViecUsers, totalPages, count },
     null,
-    ""
+    "",
   );
 });
 
 // POST /api/nhomviec-user - Tạo mới
 nhomViecUserController.insertOne = catchAsync(async (req, res, next) => {
+  assertCanWriteNhomViecUser(req, "Bạn không có quyền tạo nhóm việc");
+
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    throw new AppError(401, "Không tìm thấy thông tin người dùng");
+  }
+
   const nhomViecUser = {
-    ...req.body,
+    TenNhom: req.body.TenNhom,
+    MoTa: req.body.MoTa,
+    TrangThaiHoatDong: req.body.TrangThaiHoatDong !== false,
+    NguoiTaoID: currentUserId,
     isDeleted: false, // Đảm bảo isDeleted được set mặc định
   };
 
   const created = await NhomViecUser.create(nhomViecUser);
   const populated = await NhomViecUser.findById(created._id).populate(
     "NguoiTaoID",
-    "HoTen Email"
+    "HoTen Email",
   );
   return sendResponse(res, 200, true, populated, null, "Tạo thành công");
 });
@@ -98,6 +166,10 @@ nhomViecUserController.insertOne = catchAsync(async (req, res, next) => {
 nhomViecUserController.updateOne = catchAsync(async (req, res, next) => {
   const { nhomViecUser } = req.body;
 
+  if (!nhomViecUser?._id) {
+    throw new AppError(400, "Thiếu thông tin nhóm việc cần cập nhật");
+  }
+
   // Kiểm tra nhóm việc có tồn tại và chưa bị xóa
   let existing = await NhomViecUser.findOne({
     _id: nhomViecUser._id,
@@ -105,17 +177,32 @@ nhomViecUserController.updateOne = catchAsync(async (req, res, next) => {
   });
 
   if (!existing) {
-    throw new Error("Không tìm thấy nhóm việc hoặc nhóm việc đã bị xóa");
+    throw new AppError(
+      404,
+      "Không tìm thấy nhóm việc hoặc nhóm việc đã bị xóa",
+    );
   }
 
+  assertCanManageExistingNhomViecUser(
+    req,
+    existing.NguoiTaoID,
+    "Bạn không có quyền cập nhật nhóm việc này",
+  );
+
   // Đảm bảo không thay đổi trạng thái isDeleted qua update thường
-  const updateData = { ...nhomViecUser };
-  delete updateData.isDeleted;
+  const updateData = {
+    TenNhom: nhomViecUser.TenNhom,
+    MoTa: nhomViecUser.MoTa,
+  };
+
+  if (nhomViecUser.TrangThaiHoatDong !== undefined) {
+    updateData.TrangThaiHoatDong = nhomViecUser.TrangThaiHoatDong;
+  }
 
   const updated = await NhomViecUser.findByIdAndUpdate(
     nhomViecUser._id,
     updateData,
-    { new: true }
+    { new: true },
   ).populate("NguoiTaoID", "HoTen Email");
   return sendResponse(res, 200, true, updated, null, "Cập nhật thành công");
 });
@@ -131,8 +218,17 @@ nhomViecUserController.deleteOne = catchAsync(async (req, res, next) => {
   });
 
   if (!existing) {
-    throw new Error("Không tìm thấy nhóm việc hoặc nhóm việc đã bị xóa");
+    throw new AppError(
+      404,
+      "Không tìm thấy nhóm việc hoặc nhóm việc đã bị xóa",
+    );
   }
+
+  assertCanManageExistingNhomViecUser(
+    req,
+    existing.NguoiTaoID,
+    "Bạn không có quyền xóa nhóm việc này",
+  );
 
   // Kiểm tra xem có công việc nào đang gán vào nhóm này không
   // (Nếu có model CongViecDuocGiao)
@@ -156,7 +252,7 @@ nhomViecUserController.deleteOne = catchAsync(async (req, res, next) => {
       isDeleted: true,
       deletedAt: new Date(), // Có thể thêm timestamp xóa
     },
-    { new: true }
+    { new: true },
   );
 
   return sendResponse(res, 200, true, nhomViecUserID, null, "Xóa thành công");

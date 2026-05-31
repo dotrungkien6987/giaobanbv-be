@@ -14,6 +14,7 @@ const authentication = require("../middlewares/authentication");
 router.post(
   "/",
   authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     body("TenKhoa", "Tên khoa không được để trống").exists().notEmpty(),
     body("LoaiKhoa", "Loại khoa không hợp lệ")
@@ -50,9 +51,25 @@ router.get("/all", authentication.loginRequired, khoaController.getAll);
 /**
  * @route GET /khoa/iso
  * @description Lấy danh sách khoa liên quan ISO (IsISORelevant = true)
+ * @access QLCL required
+ */
+router.get(
+  "/iso",
+  authentication.loginRequired,
+  authentication.qlclRequired,
+  khoaController.getISORelevant,
+);
+
+/**
+ * @route GET /khoa/iso/accessible
+ * @description Lấy danh sách khoa ISO theo phạm vi truy cập của người dùng hiện tại
  * @access Login required
  */
-router.get("/iso", authentication.loginRequired, khoaController.getISORelevant);
+router.get(
+  "/iso/accessible",
+  authentication.loginRequired,
+  khoaController.getAccessibleISORelevant,
+);
 
 /**
  * @route GET /khoa/iso/check-distributions
@@ -114,6 +131,7 @@ router.put(
 router.put(
   "/:id",
   authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     param("id", "ID không hợp lệ").isMongoId(),
     body("TenKhoa", "Tên khoa không được để trống").optional().notEmpty(),
@@ -149,6 +167,7 @@ router.put(
 router.delete(
   "/:id",
   authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([param("id", "ID không hợp lệ").isMongoId()]),
   khoaController.deleteOne,
 );

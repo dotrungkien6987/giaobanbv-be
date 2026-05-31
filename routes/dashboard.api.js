@@ -16,54 +16,61 @@ const authentication = require("../middlewares/authentication");
 router.get(
   "/",
   authentication.loginRequired,
-  dashboardController.getOneNewestByNgay
+  authentication.adminRequired,
+  dashboardController.getOneNewestByNgay,
 );
 router.get(
   "/khoa",
   authentication.loginRequired,
-  dashboardController.getOneNewestByNgayKhoa
+  dashboardController.getOneNewestByNgayKhoa,
 );
 
 router.get(
   "/all",
   authentication.loginRequired,
-  dashboardController.getAllByNgay
+  authentication.adminRequired,
+  dashboardController.getAllByNgay,
 );
 
 // GET /api/dashboard/lopdaotao-by-year
 router.get(
   "/lopdaotao-by-year",
   authentication.loginRequired,
-  dashboardController.getLopDaoTaoCountByYear
+  authentication.adminRequired,
+  dashboardController.getLopDaoTaoCountByYear,
 );
 
 // New dashboard aggregates
 router.get(
   "/doanra-by-year",
   authentication.loginRequired,
-  dashboardController.getDoanRaByYear
+  authentication.adminRequired,
+  dashboardController.getDoanRaByYear,
 );
 router.get(
   "/doanvao-by-year",
   authentication.loginRequired,
-  dashboardController.getDoanVaoByYear
+  authentication.adminRequired,
+  dashboardController.getDoanVaoByYear,
 );
 router.get(
   "/tapsan-by-year",
   authentication.loginRequired,
-  dashboardController.getTapSanByYear
+  authentication.adminRequired,
+  dashboardController.getTapSanByYear,
 );
 router.get(
   "/tapsan-baibao-by-year",
   authentication.loginRequired,
-  dashboardController.getTapSanBaiBaoByYear
+  authentication.adminRequired,
+  dashboardController.getTapSanBaiBaoByYear,
 );
 
 router.delete(
   "/delbyngay",
   authentication.loginRequired,
   authentication.adminRequired,
-  dashboardController.deleteByNgay
+  dashboardController.deleteByNgay,
 );
 
 module.exports = router;

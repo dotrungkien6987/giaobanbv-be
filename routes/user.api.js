@@ -3,8 +3,8 @@ const userController = require("../controllers/user.controller");
 const router = express.Router();
 const { body, param } = require("express-validator");
 const validators = require("../middlewares/validators");
-const { use } = require("./auth.api");
 const authentication = require("../middlewares/authentication");
+const { getPasswordPolicyError } = require("../helpers/passwordPolicy");
 
 const allowedRoles = [
   "admin",
@@ -15,6 +15,15 @@ const allowedRoles = [
   "qlcl",
   "cntt",
 ];
+
+function validateStrongPassword(value) {
+  const passwordError = getPasswordPolicyError(value);
+  if (passwordError) {
+    throw new Error(passwordError);
+  }
+
+  return true;
+}
 
 /**
  * @route POST /user
@@ -31,8 +40,7 @@ router.post(
     body("PassWord", "Mật khẩu phải có ít nhất 6 ký tự")
       .exists()
       .isString()
-      .trim()
-      .isLength({ min: 6 }),
+      .custom(validateStrongPassword),
     body("KhoaID", "Khoa không hợp lệ")
       .exists()
       .isString()
@@ -135,8 +143,7 @@ router.put(
     body("PassWord", "Mật khẩu phải có ít nhất 6 ký tự")
       .exists()
       .isString()
-      .trim()
-      .isLength({ min: 6 }),
+      .custom(validateStrongPassword),
   ]),
   userController.resetPass,
 );
@@ -150,7 +157,15 @@ router.put(
 router.put(
   "/me/resetpass",
   authentication.loginRequired,
-
+  validators.validate([
+    body("PassWordOld", "Mật khẩu cũ không hợp lệ")
+      .exists({ values: "falsy" })
+      .isString(),
+    body("PassWordNew")
+      .exists({ values: "falsy" })
+      .isString()
+      .custom(validateStrongPassword),
+  ]),
   userController.resetPassMe,
 );
 

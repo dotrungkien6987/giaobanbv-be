@@ -5,6 +5,7 @@ const authentication = require("../middlewares/authentication");
 
 // Middleware xác thực cho tất cả routes
 router.use(authentication.loginRequired);
+router.use(authentication.tapSanAccessRequired);
 
 // Routes cho bài báo theo TapSan
 // GET /api/tapsan/:tapSanId/baibao - Lấy danh sách bài báo của tập san

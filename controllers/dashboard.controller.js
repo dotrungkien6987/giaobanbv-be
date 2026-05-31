@@ -4,11 +4,109 @@ const LopDaoTao = require("../models/LopDaoTao");
 const HinhThucCapNhat = require("../models/HinhThucCapNhat");
 const DoanRa = require("../models/DoanRa");
 const DoanVao = require("../models/DoanVao");
+const Khoa = require("../models/Khoa");
 const TapSan = require("../models/TapSan");
 const TapSanBaiBao = require("../models/TapSanBaiBao");
 
 const dashboardController = {};
 const moment = require("moment-timezone");
+
+function normalizeMaKhoa(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function resolveDashboardKhoaScope(user) {
+  const primaryKhoaId = user?.KhoaID || null;
+  const delegatedMaKhoas = Array.isArray(user?.KhoaTaiChinh)
+    ? [...new Set(user.KhoaTaiChinh.map(normalizeMaKhoa).filter(Boolean))]
+    : [];
+
+  const scopeConditions = [];
+
+  if (primaryKhoaId) {
+    scopeConditions.push({ _id: primaryKhoaId });
+  }
+
+  if (delegatedMaKhoas.length > 0) {
+    scopeConditions.push({ MaKhoa: { $in: delegatedMaKhoas } });
+  }
+
+  if (scopeConditions.length === 0) {
+    return {
+      allowedDashboardKhoaIds: [],
+      defaultDashboardKhoaId: null,
+    };
+  }
+
+  const khoas = await Khoa.find({ $or: scopeConditions })
+    .select("MaKhoa HisDepartmentGroupID")
+    .lean();
+
+  const allowedDashboardKhoaIds = [];
+  let defaultDashboardKhoaId = null;
+
+  khoas.forEach((khoa) => {
+    const dashboardKhoaId = Number(khoa.HisDepartmentGroupID);
+
+    if (!Number.isInteger(dashboardKhoaId)) {
+      return;
+    }
+
+    allowedDashboardKhoaIds.push(dashboardKhoaId);
+
+    if (
+      primaryKhoaId &&
+      khoa?._id &&
+      khoa._id.toString() === primaryKhoaId.toString()
+    ) {
+      defaultDashboardKhoaId = dashboardKhoaId;
+    }
+  });
+
+  return {
+    allowedDashboardKhoaIds: [...new Set(allowedDashboardKhoaIds)],
+    defaultDashboardKhoaId:
+      defaultDashboardKhoaId ?? allowedDashboardKhoaIds[0] ?? null,
+  };
+}
+
+async function resolveRequestedDashboardKhoaId(req) {
+  const role = (req.user?.PhanQuyen || "").toLowerCase();
+  const isAdmin = ["admin", "superadmin"].includes(role);
+
+  if (!isAdmin && role !== "manager") {
+    throw new AppError(
+      403,
+      "Ban khong co quyen xem dashboard theo khoa",
+      "AUTHORIZATION_ERROR",
+    );
+  }
+
+  const { allowedDashboardKhoaIds, defaultDashboardKhoaId } =
+    await resolveDashboardKhoaScope(req.user);
+
+  const requestedKhoaRaw = req.query.KhoaID;
+  const requestedKhoaId =
+    requestedKhoaRaw === undefined ||
+    requestedKhoaRaw === null ||
+    requestedKhoaRaw === ""
+      ? defaultDashboardKhoaId
+      : Number.parseInt(requestedKhoaRaw, 10);
+
+  if (!Number.isInteger(requestedKhoaId)) {
+    throw new AppError(400, "KhoaID khong hop le", "Validation Error");
+  }
+
+  if (!isAdmin && !allowedDashboardKhoaIds.includes(requestedKhoaId)) {
+    throw new AppError(
+      403,
+      "Ban khong co quyen xem dashboard khoa nay",
+      "AUTHORIZATION_ERROR",
+    );
+  }
+
+  return requestedKhoaId;
+}
 // dashboardController.getOneNewestByNgay = catchAsync(async (req, res, next) => {
 //     // Lấy dữ liệu từ request
 //     console.log("reqbody", req.query);
@@ -90,15 +188,15 @@ dashboardController.getAllByNgay = catchAsync(async (req, res, next) => {
   let dashBoards = await DashBoard.find({ Ngay }).populate("KhoaID");
   console.log("dashboard", dashBoards);
   if (!dashBoards) {
-    (dashBoards = []),
+    ((dashBoards = []),
       sendResponse(
         res,
         200,
         true,
         { dashBoards },
         null,
-        "Get dashBoard All success, Chưa có dữ lệu nào"
-      );
+        "Get dashBoard All success, Chưa có dữ lệu nào",
+      ));
   } else {
     //Response
     sendResponse(
@@ -107,7 +205,7 @@ dashboardController.getAllByNgay = catchAsync(async (req, res, next) => {
       true,
       { dashBoards },
       null,
-      "Get BaoCaoNgay All success,"
+      "Get BaoCaoNgay All success,",
     );
   }
 
@@ -178,7 +276,7 @@ dashboardController.getOneNewestByNgay = catchAsync(async (req, res, next) => {
       true,
       { dashboard: dashboard[0] },
       null,
-      "Get dashboard success, dashboard đã có trong DB"
+      "Get dashboard success, dashboard đã có trong DB",
     );
   } else {
     throw new AppError(400, "dashboard not found", "Chưa có dữ liệu dashboard");
@@ -189,7 +287,7 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
   async (req, res, next) => {
     console.log("reqbody", req.query);
     const NgayISO = req.query.Ngay;
-    const KhoaID = req.query.KhoaID;
+    const KhoaID = await resolveRequestedDashboardKhoaId(req);
 
     // Chuyển đổi NgayISO sang giờ Việt Nam và thiết lập thời gian bắt đầu và kết thúc của ngày
     const NgayStart = moment
@@ -255,7 +353,7 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
       throw new AppError(
         404,
         "Data not found",
-        "Không tìm thấy dữ liệu cho ngày và khoaid này"
+        "Không tìm thấy dữ liệu cho ngày và khoaid này",
       );
     }
     console.log("dashboard 2", dashboard[0].ChiSoDashBoard);
@@ -265,7 +363,7 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
     dashboard[0].ChiSoDashBoard.forEach((item) => {
       const chiSoJson = item.Value !== "null" ? JSON.parse(item.Value) : []; // Chuyển đổi từ chuỗi JSON thành đối tượng
       const chiSoTheoKhoaid = chiSoJson.filter(
-        (item) => item.khoaid === parseInt(KhoaID, 10) // Lọc theo khoaid
+        (item) => item.khoaid === KhoaID, // Lọc theo khoaid
       );
       chisoKhoa[item.Code] = chiSoTheoKhoaid;
       chisoKhoa["Ngay"] = dashboard[0].Ngay;
@@ -273,7 +371,7 @@ dashboardController.getOneNewestByNgayKhoa = catchAsync(
 
     // Trả về kết quả
     sendResponse(res, 200, true, { chisoKhoa }, null, "Lấy dữ liệu thành công");
-  }
+  },
 );
 
 dashboardController.deleteByNgay = catchAsync(async (req, res, next) => {
@@ -298,8 +396,8 @@ dashboardController.deleteByNgay = catchAsync(async (req, res, next) => {
       new AppError(
         404,
         "No records found for the given date",
-        "Không tìm thấy bản ghi"
-      )
+        "Không tìm thấy bản ghi",
+      ),
     );
   }
 
@@ -318,7 +416,7 @@ dashboardController.deleteByNgay = catchAsync(async (req, res, next) => {
       true,
       { deletedCount: deleteResult.deletedCount },
       null,
-      "Old records deleted successfully"
+      "Old records deleted successfully",
     );
   }
 });
@@ -384,7 +482,7 @@ dashboardController.getLopDaoTaoCountByYear = catchAsync(
           count: 1,
         },
       },
-      { $sort: { year: 1, MaHinhThucCapNhat: 1 } }
+      { $sort: { year: 1, MaHinhThucCapNhat: 1 } },
     );
 
     let data = await LopDaoTao.aggregate(pipeline);
@@ -393,7 +491,7 @@ dashboardController.getLopDaoTaoCountByYear = catchAsync(
       const maSet = [...new Set(data.map((d) => d.MaHinhThucCapNhat))];
       const meta = await HinhThucCapNhat.find(
         { Ma: { $in: maSet } },
-        { Ma: 1, Ten: 1, TenBenhVien: 1, MaNhomHinhThucCapNhat: 1, Loai: 1 }
+        { Ma: 1, Ten: 1, TenBenhVien: 1, MaNhomHinhThucCapNhat: 1, Loai: 1 },
       ).lean();
       const metaByMa = Object.fromEntries(meta.map((m) => [m.Ma, m]));
       data = data.map((d) => ({
@@ -411,9 +509,9 @@ dashboardController.getLopDaoTaoCountByYear = catchAsync(
       true,
       { data, filters: { fromYear, toYear, onlyCompleted, tz } },
       null,
-      "Thống kê số lớp theo năm và mã hình thức thành công"
+      "Thống kê số lớp theo năm và mã hình thức thành công",
     );
-  }
+  },
 );
 
 // Đoàn Ra theo năm: HoSo (số hồ sơ) + ThanhVien (tổng thành viên)
@@ -482,7 +580,7 @@ dashboardController.getDoanRaByYear = catchAsync(async (req, res, next) => {
     true,
     { data: [...hoso, ...tv] },
     null,
-    "Thống kê Đoàn Ra theo năm"
+    "Thống kê Đoàn Ra theo năm",
   );
 });
 
@@ -552,7 +650,7 @@ dashboardController.getDoanVaoByYear = catchAsync(async (req, res, next) => {
     true,
     { data: [...hoso, ...tv] },
     null,
-    "Thống kê Đoàn Vào theo năm"
+    "Thống kê Đoàn Vào theo năm",
   );
 });
 
@@ -585,7 +683,7 @@ dashboardController.getTapSanByYear = catchAsync(async (req, res, next) => {
     true,
     { data },
     null,
-    "Thống kê Tạp san theo năm"
+    "Thống kê Tạp san theo năm",
   );
 });
 
@@ -621,7 +719,7 @@ dashboardController.getTapSanBaiBaoByYear = catchAsync(
     pipeline.push(
       { $group: { _id: { year: "$year", Key: "$Key" }, count: { $sum: 1 } } },
       { $project: { _id: 0, Key: "$_id.Key", year: "$_id.year", count: 1 } },
-      { $sort: { year: 1, Key: 1 } }
+      { $sort: { year: 1, Key: 1 } },
     );
 
     const data = await TapSanBaiBao.aggregate(pipeline);
@@ -631,7 +729,7 @@ dashboardController.getTapSanBaiBaoByYear = catchAsync(
       true,
       { data },
       null,
-      "Thống kê Bài báo theo năm"
+      "Thống kê Bài báo theo năm",
     );
-  }
+  },
 );

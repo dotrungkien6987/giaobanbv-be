@@ -1,46 +1,124 @@
-const jwt = require("jsonwebtoken");
-const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY;
 const { AppError, catchAsync } = require("../helpers/utils");
+const { authenticateAccessToken } = require("../helpers/accessTokenAuth");
 
 const User = require("../models/User");
 // NhanVien references removed from loginRequired per request
 
 const authentication = {};
+const PASSWORD_CHANGE_REQUIRED_MESSAGE =
+  "Ban can doi mat khau truoc khi tiep tuc su dung he thong.";
+const ADMIN_DAOTAO_ROLES = ["admin", "superadmin", "daotao"];
+const NHANVIEN_PRIVILEGED_ROLES = ["admin", "superadmin", "cntt", "daotao"];
+const DOAN_HOPTAC_PRIVILEGED_ROLES = ["admin", "superadmin", "cntt", "daotao"];
+const TAPSAN_ALLOWED_ROLES = [
+  "admin",
+  "superadmin",
+  "daotao",
+  "manager",
+  "nomal",
+  "noibo",
+];
+
+function getRequestPath(req) {
+  return `${req.baseUrl || ""}${req.path || ""}`;
+}
+
+function canBypassPasswordChange(req) {
+  const requestPath = getRequestPath(req);
+
+  if (req.method === "GET") {
+    return (
+      requestPath === "/api/user/me" || requestPath === "/api/user/me/full"
+    );
+  }
+
+  if (req.method === "PUT") {
+    return requestPath === "/api/user/me/resetpass";
+  }
+
+  return false;
+}
+
+function normalizeRole(role) {
+  return typeof role === "string" ? role.toLowerCase() : "";
+}
+
+function normalizeStringArray(values) {
+  return Array.isArray(values)
+    ? values.filter((value) => typeof value === "string")
+    : [];
+}
+
+function buildRequestUser(user) {
+  return {
+    userId: user._id.toString(),
+    UserName: user.UserName,
+    Email: user.Email,
+    PhanQuyen: user.PhanQuyen,
+    NhanVienID: user.NhanVienID ? user.NhanVienID.toString() : null,
+    KhoaID: user.KhoaID ? user.KhoaID.toString() : null,
+    KhoaTaiChinh: normalizeStringArray(user.KhoaTaiChinh),
+    mustChangePassword: Boolean(user.mustChangePassword),
+  };
+}
+
+async function ensureRequestAuth(req, options = {}) {
+  if (req.auth?.userId) {
+    req.userId = req.auth.userId;
+    return req.auth;
+  }
+
+  const authContext = await authenticateAccessToken(
+    req.headers.authorization,
+    options,
+  );
+
+  req.auth = authContext;
+  req.userId = authContext.userId;
+  return authContext;
+}
+
+async function getRoleFromRequest(req) {
+  const requestRole = normalizeRole(req.user?.PhanQuyen);
+  if (requestRole) {
+    return requestRole;
+  }
+
+  await ensureRequestAuth(req);
+  const user = await User.findById(req.userId).select("PhanQuyen").lean();
+  return normalizeRole(user?.PhanQuyen);
+}
+
+function assertAllowedRole(role, allowedRoles, message) {
+  if (allowedRoles.includes(role)) {
+    return;
+  }
+
+  throw new AppError(403, message, "AUTHORIZATION_ERROR");
+}
 
 authentication.loginRequired = async (req, res, next) => {
   try {
-    const tokenString = req.headers.authorization;
-    if (!tokenString)
-      throw new AppError(401, "Login required", "Authentication Error");
-    const token = tokenString.replace("Bearer ", "");
-    let payload;
-    try {
-      payload = jwt.verify(token, JWT_SECRET_KEY);
-    } catch (err) {
-      if (err.name === "TokenExpiredError") {
-        throw new AppError(401, "Token expired", "Authenticate Error");
-      }
-      throw new AppError(401, "Token is invalid", "Authentication Error");
-    }
-    req.userId = payload._id;
+    const authContext = await ensureRequestAuth(req);
 
-    // ✅ FIX: Populate full user info including NhanVienID and PhanQuyen
-    const user = await User.findById(req.userId)
-      .select("UserName Email PhanQuyen NhanVienID KhoaID")
+    const user = await User.findById(authContext.userId)
+      .select(
+        "UserName Email PhanQuyen NhanVienID KhoaID KhoaTaiChinh mustChangePassword",
+      )
       .lean();
     if (!user) {
       throw new AppError(401, "User không tồn tại", "Authentication Error");
     }
 
-    // ✅ Set đầy đủ thông tin vào req.user
-    req.user = {
-      userId: user._id.toString(),
-      UserName: user.UserName,
-      Email: user.Email,
-      PhanQuyen: user.PhanQuyen,
-      NhanVienID: user.NhanVienID ? user.NhanVienID.toString() : null,
-      KhoaID: user.KhoaID ? user.KhoaID.toString() : null,
-    };
+    req.user = buildRequestUser(user);
+
+    if (user.mustChangePassword && !canBypassPasswordChange(req)) {
+      throw new AppError(
+        403,
+        PASSWORD_CHANGE_REQUIRED_MESSAGE,
+        "PASSWORD_CHANGE_REQUIRED",
+      );
+    }
 
     next();
   } catch (error) {
@@ -48,143 +126,90 @@ authentication.loginRequired = async (req, res, next) => {
   }
 };
 
-authentication.adminRequired = catchAsync(async (req, res, next) => {
+authentication.logoutAllowed = async (req, res, next) => {
   try {
-    // Prefer using context from loginRequired when available
-    const role = (req.user?.PhanQuyen || "").toLowerCase();
-    if (role) {
-      if (role === "admin" || role === "superadmin") return next();
-      throw new AppError(403, "Admin required", "AUTHORIZATION_ERROR");
-    }
-
-    // Fallback (if used without loginRequired)
-    const tokenString = req.headers.authorization;
-    if (!tokenString)
-      throw new AppError(401, "Login required", "Authentication Error");
-    const token = tokenString.replace("Bearer ", "");
-
-    let payload;
-    try {
-      payload = jwt.verify(token, JWT_SECRET_KEY);
-    } catch (err) {
-      if (err.name === "TokenExpiredError") {
-        throw new AppError(401, "Token expired", "Authenticate Error");
-      }
-      throw new AppError(401, "Token is invalid", "Authentication Error");
-    }
-
-    req.userId = payload._id;
-    const user = await User.findById(req.userId).select("PhanQuyen");
-    const fallbackRole = (user?.PhanQuyen || "").toLowerCase();
-    if (!(fallbackRole === "admin" || fallbackRole === "superadmin"))
-      throw new AppError(403, "Admin required", "AUTHORIZATION_ERROR");
-
+    await ensureRequestAuth(req, { allowRevoked: true });
     next();
   } catch (error) {
     next(error);
   }
+};
+
+authentication.adminRequired = catchAsync(async (req, res, next) => {
+  const role = await getRoleFromRequest(req);
+  assertAllowedRole(role, ["admin", "superadmin"], "Admin required");
+  next();
+});
+
+authentication.adminDaotaoRequired = catchAsync(async (req, res, next) => {
+  const role = await getRoleFromRequest(req);
+  assertAllowedRole(role, ADMIN_DAOTAO_ROLES, "Admin or DaoTao required");
+  next();
 });
 
 authentication.adminOrCnttRequired = catchAsync(async (req, res, next) => {
-  try {
-    const role = (req.user?.PhanQuyen || "").toLowerCase();
-    if (role) {
-      if (["admin", "superadmin", "cntt"].includes(role)) return next();
-      throw new AppError(403, "Admin or CNTT required", "AUTHORIZATION_ERROR");
-    }
+  const role = await getRoleFromRequest(req);
+  assertAllowedRole(
+    role,
+    ["admin", "superadmin", "cntt"],
+    "Admin or CNTT required",
+  );
+  next();
+});
 
-    // Fallback (if used without loginRequired)
-    const tokenString = req.headers.authorization;
-    if (!tokenString)
-      throw new AppError(401, "Login required", "Authentication Error");
-    const token = tokenString.replace("Bearer ", "");
-
-    let payload;
-    try {
-      payload = jwt.verify(token, JWT_SECRET_KEY);
-    } catch (err) {
-      if (err.name === "TokenExpiredError") {
-        throw new AppError(401, "Token expired", "Authenticate Error");
-      }
-      throw new AppError(401, "Token is invalid", "Authentication Error");
-    }
-
-    req.userId = payload._id;
-    const user = await User.findById(req.userId).select("PhanQuyen");
-    const fallbackRole = (user?.PhanQuyen || "").toLowerCase();
-    if (!["admin", "superadmin", "cntt"].includes(fallbackRole))
-      throw new AppError(403, "Admin or CNTT required", "AUTHORIZATION_ERROR");
-
+authentication.nhanVienPrivilegedRequired = catchAsync(
+  async (req, res, next) => {
+    const role = await getRoleFromRequest(req);
+    assertAllowedRole(
+      role,
+      NHANVIEN_PRIVILEGED_ROLES,
+      "Quyen quan tri nhan vien bi tu choi",
+    );
     next();
-  } catch (error) {
-    next(error);
-  }
+  },
+);
+
+authentication.doanHopTacPrivilegedRequired = catchAsync(
+  async (req, res, next) => {
+    const role = await getRoleFromRequest(req);
+    assertAllowedRole(
+      role,
+      DOAN_HOPTAC_PRIVILEGED_ROLES,
+      "Ban khong co quyen truy cap chuc nang Doan ra/Doan vao",
+    );
+    next();
+  },
+);
+
+authentication.tapSanAccessRequired = catchAsync(async (req, res, next) => {
+  const role = await getRoleFromRequest(req);
+  assertAllowedRole(
+    role,
+    TAPSAN_ALLOWED_ROLES,
+    "Ban khong co quyen truy cap chuc nang TapSan",
+  );
+  next();
 });
 
 authentication.adminOrTongtrucRequired = catchAsync(async (req, res, next) => {
-  try {
-    const role = (req.user?.PhanQuyen || "").toLowerCase();
-    if (role) {
-      if (role === "admin" || role === "superadmin" || role === "manager")
-        return next();
-      throw new AppError(
-        403,
-        "Admin or Manager required",
-        "AUTHORIZATION_ERROR",
-      );
-    }
-
-    const tokenString = req.headers.authorization;
-    if (!tokenString)
-      throw new AppError(401, "Login required", "Authentication Error");
-    const token = tokenString.replace("Bearer ", "");
-
-    let payload;
-    try {
-      payload = jwt.verify(token, JWT_SECRET_KEY);
-    } catch (err) {
-      if (err.name === "TokenExpiredError") {
-        throw new AppError(401, "Token expired", "Authenticate Error");
-      }
-      throw new AppError(401, "Token is invalid", "Authentication Error");
-    }
-
-    req.userId = payload._id;
-    const user = await User.findById(req.userId).select("PhanQuyen");
-    const fallbackRole = (user?.PhanQuyen || "").toLowerCase();
-    if (
-      !(
-        fallbackRole === "admin" ||
-        fallbackRole === "superadmin" ||
-        fallbackRole === "manager"
-      )
-    ) {
-      throw new AppError(
-        403,
-        "Admin or Manager required",
-        "AUTHORIZATION_ERROR",
-      );
-    }
-
-    next();
-  } catch (error) {
-    next(error);
-  }
+  const role = await getRoleFromRequest(req);
+  assertAllowedRole(
+    role,
+    ["admin", "superadmin", "manager"],
+    "Admin or Manager required",
+  );
+  next();
 });
 
 // Middleware for QLCL (Quality Control) - used for QuyTrinhISO module
 authentication.qlclRequired = catchAsync(async (req, res, next) => {
-  const role = (req.user?.PhanQuyen || "").toLowerCase();
-
-  if (["qlcl", "admin", "superadmin"].includes(role)) {
-    return next();
-  }
-
-  throw new AppError(
-    403,
+  const role = await getRoleFromRequest(req);
+  assertAllowedRole(
+    role,
+    ["qlcl", "admin", "superadmin"],
     "Chỉ người dùng QLCL mới có quyền thực hiện",
-    "AUTHORIZATION_ERROR",
   );
+  next();
 });
 
 module.exports = authentication;

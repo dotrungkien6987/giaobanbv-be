@@ -15,8 +15,8 @@ const authentication = require("../middlewares/authentication");
 router.post(
   "/",
   authentication.loginRequired,
-  
-  baocaosucoController.insertOne
+  authentication.adminRequired,
+  baocaosucoController.insertOne,
 );
 
 /**
@@ -28,24 +28,28 @@ router.post(
 router.get(
   "/",
   authentication.loginRequired,
-  baocaosucoController.getBaocaosucos
+  authentication.adminRequired,
+  baocaosucoController.getBaocaosucos,
 );
 
 router.get(
   "/danhsach",
   authentication.loginRequired,
-  baocaosucoController.getBaocaosucosForDataGrid
+  authentication.adminRequired,
+  baocaosucoController.getBaocaosucosForDataGrid,
 );
 
-router.get( 
+router.get(
   "/tonghop",
   authentication.loginRequired,
-  baocaosucoController.tongHopSuCoYKhoa
+  authentication.adminRequired,
+  baocaosucoController.tongHopSuCoYKhoa,
 );
 router.get(
   "/tonghoptheokhoa",
   authentication.loginRequired,
-  baocaosucoController.tongHopSuCoTheoKhoa
+  authentication.adminRequired,
+  baocaosucoController.tongHopSuCoTheoKhoa,
 );
 
 /**
@@ -56,29 +60,34 @@ router.get(
  */
 router.get(
   "/:sucoId",
-  authentication.loginRequired, validators.validate([param("sucoId").exists().isString().custom(validators.checkObjectId)]),
-  baocaosucoController.getById
+  authentication.loginRequired,
+  authentication.adminRequired,
+  validators.validate([
+    param("sucoId").exists().isString().custom(validators.checkObjectId),
+  ]),
+  baocaosucoController.getById,
 );
 
 router.delete(
   "/:sucoId",
   authentication.loginRequired,
+  authentication.adminRequired,
   validators.validate([
     param("sucoId").exists().isString().custom(validators.checkObjectId),
-      ]),
-  baocaosucoController.deleteOneSuco
+  ]),
+  baocaosucoController.deleteOneSuco,
 );
 router.put(
   "/update",
   authentication.loginRequired,
- 
-  baocaosucoController.updateOneSuco
+  authentication.adminRequired,
+  baocaosucoController.updateOneSuco,
 );
 router.put(
   "/updatetrangthai",
   authentication.loginRequired,
- 
-  baocaosucoController.updateTrangThaiSuco
+  authentication.adminRequired,
+  baocaosucoController.updateTrangThaiSuco,
 );
 
 module.exports = router;

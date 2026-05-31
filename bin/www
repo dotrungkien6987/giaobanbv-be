@@ -134,6 +134,33 @@ async function gracefulShutdown(signal) {
   }
 }
 
+let fatalProcessErrorHandled = false;
+
+function handleFatalProcessError(label, err) {
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error(`[${label}]`, error);
+
+  if (fatalProcessErrorHandled) return;
+  fatalProcessErrorHandled = true;
+
+  server.close(function () {
+    console.error(`[${label}] HTTP server closed`);
+    process.exit(1);
+  });
+
+  setTimeout(function () {
+    process.exit(1);
+  }, 5000).unref();
+}
+
+process.on("uncaughtException", function (err) {
+  handleFatalProcessError("UNCAUGHT EXCEPTION", err);
+});
+
+process.on("unhandledRejection", function (reason) {
+  handleFatalProcessError("UNHANDLED REJECTION", reason);
+});
+
 // Handle termination signals
 process.on("SIGTERM", function () {
   gracefulShutdown("SIGTERM");

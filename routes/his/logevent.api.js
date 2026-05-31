@@ -15,8 +15,8 @@ const authentication = require("../../middlewares/authentication");
 router.post(
   "/",
   authentication.loginRequired,
-  
-  logeventController.insert
+  authentication.adminRequired,
+  logeventController.insert,
 );
 
 /**
@@ -30,19 +30,22 @@ router.post(
 router.get(
   "/",
   authentication.loginRequired,
-  logeventController.getLogEvents
+  authentication.adminRequired,
+  logeventController.getLogEvents,
 );
 
 router.put(
   "/:logeventid",
   authentication.loginRequired,
-  logeventController.updateLogEvent
+  authentication.adminRequired,
+  logeventController.updateLogEvent,
 );
 
 router.patch(
   "/:logeventid",
   authentication.loginRequired,
-   logeventController.partialUpdateLogEvent
+  authentication.adminRequired,
+  logeventController.partialUpdateLogEvent,
 );
 
 module.exports = router;

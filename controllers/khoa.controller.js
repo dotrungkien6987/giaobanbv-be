@@ -1,8 +1,56 @@
 const { catchAsync, sendResponse, AppError } = require("../helpers/utils");
 const Khoa = require("../models/Khoa");
+const QuyTrinhISO = require("../models/QuyTrinhISO");
 const QuyTrinhISO_KhoaPhanPhoi = require("../models/QuyTrinhISO_KhoaPhanPhoi");
 
 const khoaController = {};
+const ISO_READ_ALL_ROLES = new Set(["qlcl", "admin", "superadmin"]);
+
+function hasFullISOReadAccess(user) {
+  return ISO_READ_ALL_ROLES.has((user?.PhanQuyen || "").toLowerCase());
+}
+
+async function listAccessibleISOKhoas(currentUser) {
+  if (hasFullISOReadAccess(currentUser)) {
+    return Khoa.find({ IsISORelevant: true }).sort({ STT: 1 });
+  }
+
+  if (!currentUser?.KhoaID) {
+    return [];
+  }
+
+  const [distributedQuyTrinhIds, ownKhoa] = await Promise.all([
+    QuyTrinhISO_KhoaPhanPhoi.distinct("QuyTrinhISOID", {
+      KhoaID: currentUser.KhoaID,
+    }),
+    Khoa.findOne({ _id: currentUser.KhoaID, IsISORelevant: true })
+      .select("_id")
+      .lean(),
+  ]);
+
+  const distributedBuilderIds =
+    distributedQuyTrinhIds.length > 0
+      ? await QuyTrinhISO.distinct("KhoaXayDungID", {
+          _id: { $in: distributedQuyTrinhIds },
+          IsDeleted: false,
+          TrangThai: "ACTIVE",
+        })
+      : [];
+
+  const khoaIds = new Set(distributedBuilderIds.map((id) => String(id)));
+  if (ownKhoa?._id) {
+    khoaIds.add(String(ownKhoa._id));
+  }
+
+  if (khoaIds.size === 0) {
+    return [];
+  }
+
+  return Khoa.find({
+    _id: { $in: Array.from(khoaIds) },
+    IsISORelevant: true,
+  }).sort({ STT: 1 });
+}
 
 // Create a new Khoa
 khoaController.insertOne = catchAsync(async (req, res, next) => {
@@ -60,6 +108,19 @@ khoaController.getISORelevant = catchAsync(async (req, res, next) => {
     { khoas },
     null,
     "Lấy danh sách khoa liên quan ISO thành công",
+  );
+});
+
+// Get ISO-relevant Khoas scoped to current user's readable ISO surface
+khoaController.getAccessibleISORelevant = catchAsync(async (req, res, next) => {
+  const khoas = await listAccessibleISOKhoas(req.user);
+  sendResponse(
+    res,
+    200,
+    true,
+    { khoas },
+    null,
+    "Lấy danh sách khoa ISO theo phạm vi truy cập thành công",
   );
 });
 

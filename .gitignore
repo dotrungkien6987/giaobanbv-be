@@ -67,3 +67,7 @@ controllers/SQL/schema_docs/
 uploads/
 # Ignore backup directory
 _backups/
+
+# Ignore scratch directory and sensitive files
+scratch/
+verify-uat-security.js

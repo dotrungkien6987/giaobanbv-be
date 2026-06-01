@@ -6,9 +6,10 @@ const { sendResponse, AppError } = require("../helpers/utils");
 const {
   MAX_FILE_SIZE,
   ALLOWED_MIME,
+  UPLOAD_DIR,
 } = require("../modules/workmanagement/helpers/uploadConfig");
 
-const LEGACY_UPLOAD_PATH = "/var/www/uploads/";
+const LEGACY_UPLOAD_PATH = UPLOAD_DIR || path.join(process.cwd(), "uploads");
 const MAX_FILE_SIZE_MB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
 const TEXT_MIME = "text/plain";
 const OLE2_CONTAINER_MIME = "application/x-cfb";

@@ -27,6 +27,10 @@ const baocaongaySchema = Schema(
         HienTai: { type: String, default: "" },
         Images: { type: [String], default: [] },
         GhiChu: { type: String, default: "" },
+        TiepNhanLuc: { type: String, default: "" },
+        DenCapCuuLuc: { type: String, default: "" },
+        LamSang: { type: String, default: "" },
+        ThuocDaDung: { type: String, default: "" },
       },
       { _id: false },
     ],
@@ -36,6 +40,7 @@ const baocaongaySchema = Schema(
       {
         ChiSoCode: { type: String, required: true },
         SoLuong: { type: Number, required: true },
+        GhiChu: { type: String, default: "" },
       },
       { _id: false },
     ],

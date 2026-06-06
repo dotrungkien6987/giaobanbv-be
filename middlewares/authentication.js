@@ -58,6 +58,7 @@ function buildRequestUser(user) {
     NhanVienID: user.NhanVienID ? user.NhanVienID.toString() : null,
     KhoaID: user.KhoaID ? user.KhoaID.toString() : null,
     KhoaTaiChinh: normalizeStringArray(user.KhoaTaiChinh),
+    DashBoard: normalizeStringArray(user.DashBoard),
     mustChangePassword: Boolean(user.mustChangePassword),
   };
 }
@@ -103,7 +104,7 @@ authentication.loginRequired = async (req, res, next) => {
 
     const user = await User.findById(authContext.userId)
       .select(
-        "UserName Email PhanQuyen NhanVienID KhoaID KhoaTaiChinh mustChangePassword",
+        "UserName Email PhanQuyen NhanVienID KhoaID KhoaTaiChinh DashBoard mustChangePassword",
       )
       .lean();
     if (!user) {
@@ -211,5 +212,56 @@ authentication.qlclRequired = catchAsync(async (req, res, next) => {
   );
   next();
 });
+
+authentication.dashboardAccessRequired = catchAsync(async (req, res, next) => {
+  const role = await getRoleFromRequest(req);
+
+  // Admin/superadmin luôn được phép
+  if (["admin", "superadmin"].includes(role)) {
+    return next();
+  }
+
+  // Các user khác: phải có DashBoard không rỗng
+  const user = await User.findById(req.userId).select("DashBoard").lean();
+  const dashBoard = Array.isArray(user?.DashBoard) ? user.DashBoard : [];
+
+  if (dashBoard.length === 0) {
+    throw new AppError(
+      403,
+      "Ban khong co quyen xem dashboard",
+      "AUTHORIZATION_ERROR",
+    );
+  }
+
+  // Gắn DashBoard vào req để controller có thể dùng
+  req.userDashBoard = dashBoard;
+  next();
+});
+
+authentication.dashboardTabRequired = (tabPermission) => {
+  return catchAsync(async (req, res, next) => {
+    const role = await getRoleFromRequest(req);
+    
+    // Admin/superadmin luôn được phép
+    if (["admin", "superadmin"].includes(role)) {
+      return next();
+    }
+    
+    // Kiểm tra DashBoard có chứa quyền yêu cầu không
+    const user = await User.findById(req.userId).select("DashBoard").lean();
+    const dashBoard = Array.isArray(user?.DashBoard) ? user.DashBoard : [];
+    
+    if (!dashBoard.includes(tabPermission)) {
+      throw new AppError(
+        403, 
+        `Ban khong co quyen truy cap, yeu cau quyen: ${tabPermission}`,
+        "AUTHORIZATION_ERROR"
+      );
+    }
+    
+    req.userDashBoard = dashBoard;
+    next();
+  });
+};
 
 module.exports = authentication;

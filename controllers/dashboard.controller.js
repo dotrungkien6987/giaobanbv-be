@@ -270,11 +270,41 @@ dashboardController.getOneNewestByNgay = catchAsync(async (req, res, next) => {
   ]);
 
   if (dashboard && dashboard.length > 0) {
+    let resultDashboard = dashboard[0];
+    const userTabs = req.userDashBoard || [];
+    const role = (req.user?.PhanQuyen || "").toLowerCase();
+    const isAdmin = ["admin", "superadmin"].includes(role);
+
+    // Lọc dữ liệu nguyên khối nếu không phải admin
+    if (!isAdmin) {
+      resultDashboard.ChiSoDashBoard = resultDashboard.ChiSoDashBoard.filter(chiso => {
+        const code = chiso.Code || "";
+        
+        // Tài chính (TC)
+        if (code.includes("doanhthu") || code.includes("vienphi")) {
+          return userTabs.includes("TC");
+        }
+        
+        // Dược vật tư (DVT)
+        if (code.includes("duoc") || code.includes("vattu")) {
+          return userTabs.includes("DVT");
+        }
+        
+        // Bình quân bệnh án (BQBA)
+        if (code.includes("binhquan_benhan")) {
+          return userTabs.includes("BQBA");
+        }
+        
+        // Mặc định giữ lại (CSCL, ĐH)
+        return true;
+      });
+    }
+
     sendResponse(
       res,
       200,
       true,
-      { dashboard: dashboard[0] },
+      { dashboard: resultDashboard },
       null,
       "Get dashboard success, dashboard đã có trong DB",
     );

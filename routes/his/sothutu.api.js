@@ -12,6 +12,7 @@ const authentication = require("../../middlewares/authentication");
 router.post(
   "/stats", 
   authentication.loginRequired, 
+  authentication.dashboardTabRequired("SOTHUTU"),
   soThuTuController.getStatsByTypeAndDepartments
 );
 
@@ -24,6 +25,7 @@ router.post(
 router.post(
   "/all-stats", 
   authentication.loginRequired, 
+  authentication.dashboardTabRequired("SOTHUTU"),
   soThuTuController.getAllStatsByDepartments
 );
 
@@ -36,6 +38,7 @@ router.post(
 router.post(
   "/noi-tru",
   authentication.loginRequired,
+  authentication.dashboardTabRequired("SOTHUTU"),
   soThuTuController.getNoiTruStatsByDepartments
 );
 

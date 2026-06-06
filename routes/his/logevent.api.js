@@ -30,7 +30,7 @@ router.post(
 router.get(
   "/",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.dashboardTabRequired("BNNT"),
   logeventController.getLogEvents,
 );
 

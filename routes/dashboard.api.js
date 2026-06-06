@@ -16,19 +16,20 @@ const authentication = require("../middlewares/authentication");
 router.get(
   "/",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.dashboardAccessRequired,
   dashboardController.getOneNewestByNgay,
 );
 router.get(
   "/khoa",
   authentication.loginRequired,
+  authentication.dashboardTabRequired("TCKHOA"),
   dashboardController.getOneNewestByNgayKhoa,
 );
 
 router.get(
   "/all",
   authentication.loginRequired,
-  authentication.adminRequired,
+  authentication.dashboardAccessRequired,
   dashboardController.getAllByNgay,
 );
 

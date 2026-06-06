@@ -17,6 +17,7 @@ const authentication = require("../../middlewares/authentication");
 router.post(
   "/export-all",
   authentication.loginRequired,
+  authentication.dashboardTabRequired("DICHVUTRUNG"),
   dichVuTrungController.exportAllDuplicates
 );
 
@@ -29,6 +30,7 @@ router.post(
 router.post(
   "/duplicates",
   authentication.loginRequired,
+  authentication.dashboardTabRequired("DICHVUTRUNG"),
   dichVuTrungController.getDuplicates
 );
 
@@ -41,6 +43,7 @@ router.post(
 router.post(
   "/statistics",
   authentication.loginRequired,
+  authentication.dashboardTabRequired("DICHVUTRUNG"),
   dichVuTrungController.getStatistics
 );
 
@@ -53,6 +56,7 @@ router.post(
 router.post(
   "/top-services",
   authentication.loginRequired,
+  authentication.dashboardTabRequired("DICHVUTRUNG"),
   dichVuTrungController.getTopServices
 );
 

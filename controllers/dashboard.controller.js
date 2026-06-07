@@ -273,7 +273,7 @@ dashboardController.getOneNewestByNgay = catchAsync(async (req, res, next) => {
     let resultDashboard = dashboard[0];
     const userTabs = req.userDashBoard || [];
     const role = (req.user?.PhanQuyen || "").toLowerCase();
-    const isAdmin = ["admin", "superadmin"].includes(role);
+    const isAdmin = ["admin", "superadmin", "manager"].includes(role);
 
     // Lọc dữ liệu nguyên khối nếu không phải admin
     if (!isAdmin) {
